@@ -1,7 +1,6 @@
 import { isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { z } from "zod";
-import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import type {
   LinkClassificationHint,
   ProviderDefinition,
@@ -425,7 +424,7 @@ function extractContact(pageText: string): { address: string; phone: string } {
 
 export async function inspectSource(
   rawSource: string,
-  vertical: ImporterVerticalConfig = restaurantConfig,
+  vertical: ImporterVerticalConfig,
 ): Promise<ExtractedSite> {
   const source = sourceSchema.parse(rawSource);
   const looksLikeUrl =

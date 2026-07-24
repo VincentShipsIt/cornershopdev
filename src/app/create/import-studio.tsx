@@ -22,7 +22,9 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
   sampleRestaurant,
+  toRestaurantDraft,
   type RestaurantDraft,
+  type RestaurantSiteDraft,
 } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/restaurant-import";
 
@@ -39,10 +41,13 @@ const stages: Stage[] = [
   { label: "Check and save private preview", threshold: 95 },
 ];
 
+// The API now speaks the nested site shape for every vertical. Phase 7 swaps
+// `<RestaurantSite>` for the vertical-driven renderer, which consumes that shape
+// directly — this conversion disappears with it.
 type ImportResponse =
   | {
       mode: "inline";
-      draft: RestaurantDraft;
+      draft: RestaurantSiteDraft;
       importJobId: string;
       urls: ImportUrls;
     }
@@ -91,7 +96,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
       }
 
       if (result.mode === "inline") {
-        complete(result.draft, result.urls);
+        complete(toRestaurantDraft(result.draft), result.urls);
         return;
       }
 
@@ -107,7 +112,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
             }
           | {
               type: "complete";
-              draft: RestaurantDraft;
+              draft: RestaurantSiteDraft;
               importJobId: string;
               urls: ImportUrls;
             }
@@ -126,7 +131,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
         }
         if (update.type === "complete") {
           events.close();
-          complete(update.draft, update.urls);
+          complete(toRestaurantDraft(update.draft), update.urls);
         }
         if (update.type === "failed") {
           events.close();

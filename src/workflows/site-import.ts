@@ -1,27 +1,24 @@
 import { getWritable } from "workflow";
-import {
-  enhanceRestaurantImage,
-  generateRestaurantDraft,
-} from "@/lib/ai/restaurant-generation";
-import {
-  fetchPublicImage,
-  inspectSource,
-  type ExtractedRestaurant,
-} from "@/lib/importer";
-import type { RestaurantDraft } from "@/lib/restaurant";
+import { fetchPublicImage, type ExtractedSite } from "@/lib/importer";
 import { importFailureMessage } from "@/lib/restaurant-import";
 import {
-  persistRestaurantImport,
+  persistSiteImport,
   recordImportFailure,
   updateImportJob,
-  type PersistedRestaurantImport,
-} from "@/lib/restaurant-import-persistence";
+  type PersistableSiteDraft,
+  type PersistedSiteImport,
+} from "@/lib/site-persistence";
 import {
-  imageStorageIsConfigured,
-  storeSiteImage,
-} from "@/lib/storage/images";
+  crawlSiteSource,
+  enhanceSiteHeroImage,
+  generateDraftForVertical,
+} from "@/lib/site-pipeline";
+import { imageStorageIsConfigured, storeSiteImage } from "@/lib/storage/images";
+import type { VerticalId } from "@/lib/verticals/types";
 
-export type RestaurantImportEvent =
+type PersistedImport = PersistedSiteImport<PersistableSiteDraft>;
+
+export type SiteImportEvent =
   | {
       type: "progress";
       stage: "crawl" | "extract" | "compose" | "persist";
@@ -30,20 +27,28 @@ export type RestaurantImportEvent =
     }
   | {
       type: "complete";
-      draft: RestaurantDraft;
+      draft: PersistableSiteDraft;
+      vertical: VerticalId;
       importJobId: string;
-      urls: PersistedRestaurantImport["urls"];
+      urls: PersistedImport["urls"];
     }
   | { type: "failed"; message: string };
 
-export async function restaurantImportWorkflow(
+/**
+ * Steps receive the plain `Vertical` value, never a resolved `VerticalConfig`:
+ * step arguments cross a serialization boundary and a config carries RegExp and
+ * function members. Re-resolving inside each step also means a config fix
+ * deployed mid-flight is picked up when a suspended run resumes.
+ */
+export async function siteImportWorkflow(
   source: string,
   importJobId: string,
-): Promise<RestaurantDraft> {
+  vertical: VerticalId,
+): Promise<PersistableSiteDraft> {
   "use workflow";
 
   try {
-    console.log(`[restaurant-import] START job=${importJobId}`);
+    console.log(`[site-import] START job=${importJobId} vertical=${vertical}`);
     await setImportStage(importJobId, "CRAWLING");
     await emit({
       type: "progress",
@@ -51,13 +56,13 @@ export async function restaurantImportWorkflow(
       progress: 12,
       message: "Reading the current website",
     });
-    const extracted = await crawlRestaurant(source);
+    const extracted = await crawlSite(source, vertical);
     await setImportStage(importJobId, "EXTRACTING");
     await emit({
       type: "progress",
       stage: "extract",
       progress: 42,
-      message: "Recovering menu, contacts and existing links",
+      message: "Recovering catalog, contacts and existing links",
     });
     await setImportStage(importJobId, "GENERATING");
     await emit({
@@ -66,13 +71,13 @@ export async function restaurantImportWorkflow(
       progress: 65,
       message: "Composing the mobile-first preview",
     });
-    const draft = await composeDraft(extracted);
-    const enhancedDraft = await enhanceDraftImages(draft);
+    const draft = await composeDraft(extracted, vertical);
+    const enhancedDraft = await enhanceDraftImages(draft, vertical);
     await emit({
       type: "progress",
       stage: "compose",
       progress: 88,
-      message: "Checking every photo, menu and integration",
+      message: "Checking every photo, catalog entry and integration",
     });
     await emit({
       type: "progress",
@@ -84,9 +89,10 @@ export async function restaurantImportWorkflow(
       enhancedDraft,
       source,
       importJobId,
+      vertical,
     );
-    await emitComplete(persisted);
-    console.log(`[restaurant-import] DONE slug=${persisted.draft.slug}`);
+    await emitComplete(persisted, vertical);
+    console.log(`[site-import] DONE slug=${persisted.draft.slug}`);
     return persisted.draft;
   } catch (error) {
     const message = importFailureMessage(error);
@@ -96,9 +102,9 @@ export async function restaurantImportWorkflow(
   }
 }
 
-async function emit(event: RestaurantImportEvent): Promise<void> {
+async function emit(event: SiteImportEvent): Promise<void> {
   "use step";
-  const writer = getWritable<RestaurantImportEvent>().getWriter();
+  const writer = getWritable<SiteImportEvent>().getWriter();
   try {
     await writer.write(event);
   } finally {
@@ -106,24 +112,28 @@ async function emit(event: RestaurantImportEvent): Promise<void> {
   }
 }
 
-async function crawlRestaurant(source: string): Promise<ExtractedRestaurant> {
+async function crawlSite(
+  source: string,
+  vertical: VerticalId,
+): Promise<ExtractedSite> {
   "use step";
-  console.log(`[restaurant-import:crawl] START source=${source}`);
-  const result = await inspectSource(source);
+  console.log(`[site-import:crawl] START source=${source}`);
+  const result = await crawlSiteSource(source, vertical);
   console.log(
-    `[restaurant-import:crawl] DONE name=${result.name} links=${result.links.length}`,
+    `[site-import:crawl] DONE name=${result.name} links=${result.links.length}`,
   );
   return result;
 }
 
 async function composeDraft(
-  source: ExtractedRestaurant,
-): Promise<RestaurantDraft> {
+  source: ExtractedSite,
+  vertical: VerticalId,
+): Promise<PersistableSiteDraft> {
   "use step";
-  console.log(`[restaurant-import:compose] START name=${source.name}`);
-  const draft = await generateRestaurantDraft(source);
+  console.log(`[site-import:compose] START name=${source.name}`);
+  const draft = await generateDraftForVertical(source, vertical);
   console.log(
-    `[restaurant-import:compose] DONE slug=${draft.slug} sections=${draft.menuSections.length}`,
+    `[site-import:compose] DONE slug=${draft.slug} sections=${draft.catalogSections.length}`,
   );
   return draft;
 }
@@ -137,41 +147,41 @@ async function setImportStage(
 }
 
 async function persistDraft(
-  draft: RestaurantDraft,
+  draft: PersistableSiteDraft,
   source: string,
   importJobId: string,
-): Promise<PersistedRestaurantImport> {
+  vertical: VerticalId,
+): Promise<PersistedImport> {
   "use step";
-  console.log(`[restaurant-import:persist] START slug=${draft.slug}`);
-  const result = await persistRestaurantImport({
+  console.log(`[site-import:persist] START slug=${draft.slug}`);
+  const result = await persistSiteImport<PersistableSiteDraft>({
     draft,
+    vertical,
     source,
     importJobId,
   });
-  console.log(`[restaurant-import:persist] DONE slug=${result.draft.slug}`);
+  console.log(`[site-import:persist] DONE slug=${result.draft.slug}`);
   return result;
 }
 
-async function failImport(
-  importJobId: string,
-  message: string,
-): Promise<void> {
+async function failImport(importJobId: string, message: string): Promise<void> {
   "use step";
   await recordImportFailure(importJobId, message);
 }
 
 async function enhanceDraftImages(
-  draft: RestaurantDraft,
-): Promise<RestaurantDraft> {
+  draft: PersistableSiteDraft,
+  vertical: VerticalId,
+): Promise<PersistableSiteDraft> {
   "use step";
-  console.log(`[restaurant-import:enhance] START slug=${draft.slug}`);
+  console.log(`[site-import:enhance] START slug=${draft.slug}`);
   if (
     !draft.autoEnhanceImages ||
     !draft.heroImageUrl?.startsWith("https://") ||
     !imageStorageIsConfigured() ||
     (!process.env.VERCEL_OIDC_TOKEN && !process.env.AI_GATEWAY_API_KEY)
   ) {
-    console.log(`[restaurant-import:enhance] SKIP slug=${draft.slug}`);
+    console.log(`[site-import:enhance] SKIP slug=${draft.slug}`);
     return draft;
   }
 
@@ -184,17 +194,20 @@ async function enhanceDraftImages(
       mediaType: originalImage.mediaType,
       purpose: "original-hero",
     });
-    const image = await enhanceRestaurantImage({
-      sourceImageUrl: storedOriginalUrl,
-      restaurantName: draft.name,
-    });
+    const image = await enhanceSiteHeroImage(
+      {
+        sourceImageUrl: storedOriginalUrl,
+        siteName: draft.name,
+      },
+      vertical,
+    );
     const heroImageUrl = await storeSiteImage({
       siteSlug: draft.slug,
       data: image.data,
       mediaType: image.mediaType,
       purpose: "hero",
     });
-    console.log(`[restaurant-import:enhance] DONE slug=${draft.slug}`);
+    console.log(`[site-import:enhance] DONE slug=${draft.slug}`);
     return {
       ...draft,
       heroImageUrl,
@@ -203,7 +216,7 @@ async function enhanceDraftImages(
     };
   } catch (error) {
     console.warn(
-      `[restaurant-import:enhance] FALLBACK slug=${draft.slug} error=${
+      `[site-import:enhance] FALLBACK slug=${draft.slug} error=${
         error instanceof Error ? error.message : "unknown"
       }`,
     );
@@ -212,12 +225,14 @@ async function enhanceDraftImages(
 }
 
 async function emitComplete(
-  persisted: PersistedRestaurantImport,
+  persisted: PersistedImport,
+  vertical: VerticalId,
 ): Promise<void> {
   "use step";
   await emit({
     type: "complete",
     draft: persisted.draft,
+    vertical,
     importJobId: persisted.importJobId,
     urls: persisted.urls,
   });
