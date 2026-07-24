@@ -17,12 +17,11 @@ export async function PUT(request: Request, { params }: RouteContext) {
       return Response.json({ ok: true, persisted: false });
     }
 
-    await getDb().restaurant.update({
+    await getDb().site.update({
       where: { slug },
       data: {
         name: draft.name,
         description: draft.description,
-        cuisine: draft.cuisine,
         address: draft.address,
         phone: draft.phone,
         heroImageUrl: draft.heroImageUrl,
@@ -30,11 +29,14 @@ export async function PUT(request: Request, { params }: RouteContext) {
         heroImageProvenance: toDatabaseImageProvenance(
           draft.heroImageProvenance,
         ),
-        showMenuImages: draft.showMenuImages,
+        attributes: {
+          cuisine: draft.cuisine,
+          showMenuImages: draft.showMenuImages,
+        },
         autoEnhanceImages: draft.autoEnhanceImages,
         defaultLocale: draft.defaultLocale,
         translations: draft.translations,
-        menuSections: {
+        catalogSections: {
           deleteMany: {},
           create: draft.menuSections.map((section, sectionIndex) => ({
             name: section.name,
@@ -46,7 +48,9 @@ export async function PUT(request: Request, { params }: RouteContext) {
                 description: item.description,
                 price: item.price,
                 currency: item.currency,
-                dietaryLabels: item.dietaryLabels,
+                attributes: {
+                  dietaryLabels: item.dietaryLabels,
+                },
                 imageUrl: item.imageUrl,
                 originalImageUrl: item.originalImageUrl,
                 imageProvenance: toDatabaseImageProvenance(

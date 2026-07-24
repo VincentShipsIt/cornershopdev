@@ -1,6 +1,13 @@
-import type { RestaurantDraft } from "@/lib/restaurant";
+import {
+  fromRestaurantDraft,
+  restaurantDraftSchema,
+  toRestaurantDraft,
+  type RestaurantDraft,
+  type RestaurantSiteDraft,
+} from "@/lib/restaurant";
 
-const lePetitMeunier: RestaurantDraft = {
+const lePetitMeunier: RestaurantSiteDraft = fromRestaurantDraft(
+  restaurantDraftSchema.parse({
   slug: "le-petit-meunier",
   name: "Le Petit Meunier",
   eyebrow: "Cuisine de saison · Messimy",
@@ -376,9 +383,17 @@ const lePetitMeunier: RestaurantDraft = {
       url: "https://www.instagram.com/lepetitmeunier/",
     },
   ],
-};
+  }),
+);
 
-export const leadDrafts: Record<string, RestaurantDraft> = {
+export const leadSiteDrafts: Record<string, RestaurantSiteDraft> = {
   [lePetitMeunier.slug]: lePetitMeunier,
   "restaurant-le-petit-meunier": lePetitMeunier,
 };
+
+export const leadDrafts: Record<string, RestaurantDraft> = Object.fromEntries(
+  Object.entries(leadSiteDrafts).map(([slug, draft]) => [
+    slug,
+    toRestaurantDraft(draft),
+  ]),
+);

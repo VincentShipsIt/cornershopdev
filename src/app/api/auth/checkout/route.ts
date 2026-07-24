@@ -57,7 +57,7 @@ export async function GET(request: Request) {
           })
         ).id;
 
-      await tx.restaurant.updateMany({
+      await tx.site.updateMany({
         where: { slug: restaurantSlug },
         data: { organizationId, status: "CLAIMED" },
       });

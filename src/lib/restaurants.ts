@@ -5,6 +5,7 @@ import {
   sampleRestaurant,
   type RestaurantDraft,
 } from "@/lib/restaurant";
+import { getVerticalConfig } from "@/lib/verticals/registry";
 
 export async function getRestaurantDraft(
   slug: string,
@@ -26,11 +27,11 @@ export async function findRestaurantDraft(
     return slug === sampleRestaurant.slug ? sampleRestaurant : null;
   }
 
-  const restaurant = await getDb().restaurant.findUnique({
+  const restaurant = await getDb().site.findUnique({
     where: { slug },
     include: {
       integrations: { orderBy: { createdAt: "asc" } },
-      menuSections: {
+      catalogSections: {
         orderBy: { position: "asc" },
         include: { items: { orderBy: { position: "asc" } } },
       },
@@ -39,6 +40,8 @@ export async function findRestaurantDraft(
   });
 
   if (!restaurant) return null;
+  const vertical = getVerticalConfig(restaurant.vertical);
+  const attributes = vertical.attributesSchema.parse(restaurant.attributes);
   const latestTheme = restaurant.siteVersions[0]?.theme as
     | RestaurantDraft["palette"]
     | undefined;
@@ -46,11 +49,11 @@ export async function findRestaurantDraft(
   return restaurantDraftSchema.parse({
     slug: restaurant.slug,
     name: restaurant.name,
-    eyebrow: `${restaurant.cuisine ?? "Independent restaurant"} · ${
+    eyebrow: `${attributes.cuisine || "Independent restaurant"} · ${
       restaurant.address ?? "Local"
     }`,
     description: restaurant.description ?? sampleRestaurant.description,
-    cuisine: restaurant.cuisine ?? "",
+    cuisine: attributes.cuisine,
     address: restaurant.address ?? "",
     phone: restaurant.phone ?? "",
     sourceUrl: restaurant.sourceUrl,
@@ -59,24 +62,29 @@ export async function findRestaurantDraft(
     heroImageProvenance:
       restaurant.heroImageProvenance?.toLowerCase().replace("_", "-") ?? null,
     palette: latestTheme ?? sampleRestaurant.palette,
-    showMenuImages: restaurant.showMenuImages,
+    showMenuImages: attributes.showMenuImages,
     autoEnhanceImages: restaurant.autoEnhanceImages,
     defaultLocale: restaurant.defaultLocale,
     translations: restaurant.translations,
-    menuSections: restaurant.menuSections.map((section) => ({
+    menuSections: restaurant.catalogSections.map((section) => ({
       name: section.name,
       description: section.description ?? "",
-      items: section.items.map((item) => ({
-        name: item.name,
-        description: item.description ?? "",
-        price: item.price === null ? null : Number(item.price),
-        currency: item.currency,
-        dietaryLabels: item.dietaryLabels,
-        imageUrl: item.imageUrl,
-        originalImageUrl: item.originalImageUrl,
-        imageProvenance:
-          item.imageProvenance?.toLowerCase().replace("_", "-") ?? null,
-      })),
+      items: section.items.map((item) => {
+        const itemAttributes = vertical.itemAttributesSchema.parse(
+          item.attributes,
+        );
+        return {
+          name: item.name,
+          description: item.description ?? "",
+          price: item.price === null ? null : Number(item.price),
+          currency: item.currency,
+          dietaryLabels: itemAttributes.dietaryLabels,
+          imageUrl: item.imageUrl,
+          originalImageUrl: item.originalImageUrl,
+          imageProvenance:
+            item.imageProvenance?.toLowerCase().replace("_", "-") ?? null,
+        };
+      }),
     })),
     integrations: restaurant.integrations.map((integration) => ({
       type: integration.type.toLowerCase(),

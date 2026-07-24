@@ -48,9 +48,9 @@ export async function POST(request: Request) {
     }
 
     const db = process.env.DATABASE_URL ? getDb() : null;
-    let restaurantId: string | null = null;
+    let siteId: string | null = null;
     if (db) {
-      const restaurant = await db.restaurant.findUnique({
+      const restaurant = await db.site.findUnique({
         where: { slug: restaurantSlug },
         select: { id: true },
       });
@@ -59,29 +59,29 @@ export async function POST(request: Request) {
       }
       const existingDomain = await db.domain.findUnique({
         where: { hostname },
-        select: { restaurantId: true },
+        select: { siteId: true },
       });
       if (
         existingDomain &&
-        existingDomain.restaurantId !== restaurant.id
+        existingDomain.siteId !== restaurant.id
       ) {
         return Response.json(
           { error: "This domain is already connected to another restaurant" },
           { status: 409 },
         );
       }
-      restaurantId = restaurant.id;
+      siteId = restaurant.id;
     }
 
     const target = getDomainTarget();
     const verificationToken = randomBytes(24).toString("base64url");
-    if (db && restaurantId) {
+    if (db && siteId) {
       await db.domain.upsert({
         where: { hostname },
-        update: { restaurantId },
+        update: { siteId },
         create: {
           hostname,
-          restaurantId,
+          siteId,
           verificationToken,
         },
       });
@@ -127,19 +127,19 @@ export async function GET(request: Request) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    let restaurantId: string | null = null;
+    let siteId: string | null = null;
     if (process.env.DATABASE_URL) {
       const domain = await getDb().domain.findFirst({
         where: {
           hostname,
-          restaurant: { slug: session.restaurantSlug },
+          site: { slug: session.restaurantSlug },
         },
-        select: { restaurantId: true },
+        select: { siteId: true },
       });
       if (!domain) {
         return Response.json({ error: "Domain not found" }, { status: 404 });
       }
-      restaurantId = domain.restaurantId;
+      siteId = domain.siteId;
     }
 
     const [aResult, cnameResult] = await Promise.allSettled([
@@ -159,7 +159,7 @@ export async function GET(request: Request) {
       await getDb().domain.updateMany({
         where: {
           hostname,
-          ...(restaurantId ? { restaurantId } : {}),
+          ...(siteId ? { siteId } : {}),
         },
         data: { verified: true, verifiedAt: new Date() },
       });

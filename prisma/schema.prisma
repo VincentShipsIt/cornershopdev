@@ -7,12 +7,23 @@ datasource db {
   provider = "postgresql"
 }
 
-enum RestaurantStatus {
+enum Vertical {
+  RESTAURANT
+}
+
+enum SiteStatus {
   PROSPECT
   PREVIEW_READY
   CLAIMED
   LIVE
   PAUSED
+}
+
+enum BookingRequestStatus {
+  NEW
+  NOTIFIED
+  CONTACTED
+  CLOSED
 }
 
 enum ImportStatus {
@@ -60,7 +71,7 @@ model Organization {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   memberships   Membership[]
-  restaurants   Restaurant[]
+  sites         Site[]
   subscriptions Subscription[]
 }
 
@@ -75,12 +86,11 @@ model Membership {
   @@unique([userId, organizationId])
 }
 
-model Restaurant {
+model Site {
   id                   String            @id @default(cuid())
   slug                 String            @unique
   name                 String
   description          String?
-  cuisine              String?
   address              String?
   phone                String?
   email                String?
@@ -90,35 +100,37 @@ model Restaurant {
   heroImageUrl         String?
   heroOriginalImageUrl String?
   heroImageProvenance  ImageProvenance?
-  showMenuImages       Boolean           @default(false)
   autoEnhanceImages    Boolean           @default(true)
   defaultLocale        String            @default("en")
   translations         Json              @default("[]")
-  status               RestaurantStatus  @default(PROSPECT)
+  vertical             Vertical          @default(RESTAURANT)
+  attributes           Json              @default("{}")
+  status               SiteStatus        @default(PROSPECT)
   organizationId       String?
   organization         Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
-  menuSections         MenuSection[]
+  catalogSections      CatalogSection[]
   integrations         Integration[]
   importJobs           ImportJob[]
   domains              Domain[]
   siteVersions         SiteVersion[]
   claimInvitations     ClaimInvitation[]
   auditEvents          AuditEvent[]
+  bookingRequests      BookingRequest[]
 }
 
-model MenuSection {
-  id           String     @id @default(cuid())
-  name         String
-  description  String?
-  position     Int        @default(0)
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  items        MenuItem[]
+model CatalogSection {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  position    Int           @default(0)
+  siteId      String
+  site        Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  items       CatalogItem[]
 }
 
-model MenuItem {
+model CatalogItem {
   id               String           @id @default(cuid())
   name             String
   description      String?
@@ -127,24 +139,24 @@ model MenuItem {
   imageUrl         String?
   originalImageUrl String?
   imageProvenance  ImageProvenance?
-  dietaryLabels    String[]
+  attributes       Json             @default("{}")
   available        Boolean          @default(true)
   position         Int              @default(0)
   sectionId        String
-  section          MenuSection      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  section          CatalogSection   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 }
 
 model Integration {
-  id           String          @id @default(cuid())
-  type         IntegrationType
-  provider     String?
-  label        String
-  url          String
-  enabled      Boolean         @default(true)
-  restaurantId String
-  restaurant   Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id        String          @id @default(cuid())
+  type      IntegrationType
+  provider  String?
+  label     String
+  url       String
+  enabled   Boolean         @default(true)
+  siteId    String
+  site      Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 }
 
 model ImportJob {
@@ -156,8 +168,9 @@ model ImportJob {
   error         String?
   startedAt     DateTime?
   completedAt   DateTime?
-  restaurantId  String?
-  restaurant    Restaurant?  @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  vertical      Vertical     @default(RESTAURANT)
+  siteId        String?
+  site          Site?        @relation(fields: [siteId], references: [id], onDelete: SetNull)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -165,41 +178,41 @@ model ImportJob {
 }
 
 model SiteVersion {
-  id           String     @id @default(cuid())
-  version      Int
-  theme        Json
-  content      Json
-  publishedAt  DateTime?
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  createdAt    DateTime   @default(now())
+  id          String    @id @default(cuid())
+  version     Int
+  theme       Json
+  content     Json
+  publishedAt DateTime?
+  siteId      String
+  site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
 
-  @@unique([restaurantId, version])
+  @@unique([siteId, version])
 }
 
 model Domain {
-  id                String     @id @default(cuid())
-  hostname          String     @unique
-  verified          Boolean    @default(false)
-  verificationToken String     @unique
+  id                String    @id @default(cuid())
+  hostname          String    @unique
+  verified          Boolean   @default(false)
+  verificationToken String    @unique
   verifiedAt        DateTime?
-  restaurantId      String
-  restaurant        Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  siteId            String
+  site              Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 model ClaimInvitation {
-  id           String     @id @default(cuid())
-  email        String
-  tokenHash    String     @unique
-  expiresAt    DateTime
-  acceptedAt   DateTime?
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  createdAt    DateTime   @default(now())
+  id         String    @id @default(cuid())
+  email      String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  siteId     String
+  site       Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
 
-  @@index([restaurantId, email])
+  @@index([siteId, email])
 }
 
 model Subscription {
@@ -216,13 +229,34 @@ model Subscription {
 }
 
 model AuditEvent {
-  id           String     @id @default(cuid())
-  type         String
-  actor        String?
-  metadata     Json?
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  createdAt    DateTime   @default(now())
+  id        String   @id @default(cuid())
+  type      String
+  actor     String?
+  metadata  Json?
+  siteId    String
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
-  @@index([restaurantId, createdAt])
+  @@index([siteId, createdAt])
+}
+
+model BookingRequest {
+  id          String               @id @default(cuid())
+  siteId      String
+  site        Site                 @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name        String
+  email       String?
+  phone       String?
+  requestedAt DateTime?
+  partySize   Int?
+  notes       String?              @db.Text
+  status      BookingRequestStatus @default(NEW)
+  notifiedAt  DateTime?
+  contactedAt DateTime?
+  closedAt    DateTime?
+  source      String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([siteId, status, createdAt])
 }

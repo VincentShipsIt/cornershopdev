@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const session = event.data.object;
     const slug = session.metadata?.restaurantSlug;
     if (slug) {
-      await db.restaurant.updateMany({
+      await db.site.updateMany({
         where: { slug },
         data: { status: "CLAIMED" },
       });

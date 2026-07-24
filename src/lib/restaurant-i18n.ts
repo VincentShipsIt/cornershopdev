@@ -1,24 +1,7 @@
 import type { RestaurantTemplate } from "@/lib/restaurant-templates";
+import { restaurantDictionaryExtensions as dictionaries } from "@/lib/verticals/restaurant/config";
 
 export type SupportedUiLocale = "en" | "fr";
-
-const dictionaries = {
-  en: {
-    language: "Language",
-    reservationsVia: "Reservations via",
-    bookingPartner: "our booking partner",
-    seasonalNotice: "Menu and availability may change with the season.",
-    diningRoomAlt: "Dining room at",
-  },
-  fr: {
-    language: "Langue",
-    reservationsVia: "Réservations via",
-    bookingPartner: "notre partenaire de réservation",
-    seasonalNotice:
-      "Le menu et les disponibilités peuvent évoluer au fil des saisons.",
-    diningRoomAlt: "Salle du restaurant",
-  },
-} satisfies Record<string, Record<string, string>>;
 
 export function getRestaurantDictionary(locale: string) {
   return dictionaries[toUiLocale(locale)];

@@ -18,7 +18,7 @@ export async function POST(request: Request) {
         memberships: {
           include: {
             organization: {
-              include: { restaurants: { take: 1 } },
+              include: { sites: { take: 1 } },
             },
           },
           take: 1,
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     // Keep account existence private.
     if (!user) return Response.json({ ok: true });
-    const restaurant = user.memberships[0]?.organization.restaurants[0];
+    const restaurant = user.memberships[0]?.organization.sites[0];
     if (!restaurant) return Response.json({ ok: true });
 
     const token = createSessionToken({

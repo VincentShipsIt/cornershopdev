@@ -31,14 +31,14 @@ export async function proxy(request: NextRequest) {
 
   const domain = await getDb().domain.findFirst({
     where: { hostname, verified: true },
-    select: { restaurant: { select: { slug: true } } },
+    select: { site: { select: { slug: true } } },
   });
   if (!domain) return new NextResponse("Not found", { status: 404 });
 
   const locale = request.nextUrl.pathname.match(/^\/([a-z]{2})\/?$/i)?.[1];
   const destination = locale
-    ? `/preview/${domain.restaurant.slug}/${locale.toLowerCase()}`
-    : `/preview/${domain.restaurant.slug}`;
+    ? `/preview/${domain.site.slug}/${locale.toLowerCase()}`
+    : `/preview/${domain.site.slug}`;
   return NextResponse.rewrite(new URL(destination, request.url));
 }
 

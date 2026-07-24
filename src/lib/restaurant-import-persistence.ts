@@ -97,14 +97,14 @@ export async function persistRestaurantImport(input: {
     try {
       return await db.$transaction(
         async (tx) => {
-          const identityConditions: Prisma.RestaurantWhereInput[] = [
+          const identityConditions: Prisma.SiteWhereInput[] = [
             { sourceKey },
           ];
           if (draft.sourceUrl) {
             identityConditions.push({ sourceUrl: draft.sourceUrl });
           }
 
-          let existing = await tx.restaurant.findFirst({
+          let existing = await tx.site.findFirst({
             where: { OR: identityConditions },
             select: {
               id: true,
@@ -125,7 +125,7 @@ export async function persistRestaurantImport(input: {
                 requestedSlug,
                 collisionIndex,
               );
-              const collision = await tx.restaurant.findUnique({
+              const collision = await tx.site.findUnique({
                 where: { slug: candidate },
                 select: {
                   id: true,
@@ -162,12 +162,12 @@ export async function persistRestaurantImport(input: {
           }
 
           const restaurant = existing
-            ? await tx.restaurant.update({
+            ? await tx.site.update({
                 where: { id: existing.id },
                 data: restaurantUpdateData(draft, sourceKey),
                 select: { id: true, slug: true },
               })
-            : await tx.restaurant.create({
+            : await tx.site.create({
                 data: restaurantCreateData(draft, sourceKey, slug),
                 select: { id: true, slug: true },
               });
@@ -184,7 +184,7 @@ export async function persistRestaurantImport(input: {
                 sourceKey,
                 previousStatus: existing?.status ?? null,
               },
-              restaurantId: restaurant.id,
+              siteId: restaurant.id,
             },
           });
           await tx.importJob.update({
@@ -194,7 +194,7 @@ export async function persistRestaurantImport(input: {
               status: "READY",
               error: null,
               completedAt: new Date(),
-              restaurantId: restaurant.id,
+              siteId: restaurant.id,
             },
           });
 
@@ -230,14 +230,14 @@ function requireImportDatabase() {
 function restaurantUpdateData(
   draft: RestaurantDraft,
   sourceKey: string,
-): Prisma.RestaurantUpdateInput {
+): Prisma.SiteUpdateInput {
   return {
     ...restaurantScalarData(draft, sourceKey),
     integrations: {
       deleteMany: {},
       create: integrationCreateData(draft),
     },
-    menuSections: {
+    catalogSections: {
       deleteMany: {},
       create: menuSectionCreateData(draft),
     },
@@ -248,12 +248,12 @@ function restaurantCreateData(
   draft: RestaurantDraft,
   sourceKey: string,
   slug: string,
-): Prisma.RestaurantCreateInput {
+): Prisma.SiteCreateInput {
   return {
     slug,
     ...restaurantScalarData(draft, sourceKey),
     integrations: { create: integrationCreateData(draft) },
-    menuSections: { create: menuSectionCreateData(draft) },
+    catalogSections: { create: menuSectionCreateData(draft) },
   };
 }
 
@@ -261,7 +261,6 @@ function restaurantScalarData(draft: RestaurantDraft, sourceKey: string) {
   return {
     name: draft.name,
     description: draft.description,
-    cuisine: draft.cuisine,
     address: draft.address,
     phone: draft.phone,
     sourceUrl: draft.sourceUrl,
@@ -271,7 +270,10 @@ function restaurantScalarData(draft: RestaurantDraft, sourceKey: string) {
     heroImageProvenance: toDatabaseImageProvenance(
       draft.heroImageProvenance,
     ),
-    showMenuImages: draft.showMenuImages,
+    attributes: {
+      cuisine: draft.cuisine,
+      showMenuImages: draft.showMenuImages,
+    },
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
     translations: draft.translations,
@@ -299,7 +301,9 @@ function menuSectionCreateData(draft: RestaurantDraft) {
         description: item.description,
         price: item.price,
         currency: item.currency,
-        dietaryLabels: item.dietaryLabels,
+        attributes: {
+          dietaryLabels: item.dietaryLabels,
+        },
         imageUrl: item.imageUrl,
         originalImageUrl: item.originalImageUrl,
         imageProvenance: toDatabaseImageProvenance(

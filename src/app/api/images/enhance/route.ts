@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     if (process.env.DATABASE_URL) {
-      const restaurant = await getDb().restaurant.findUnique({
+      const restaurant = await getDb().site.findUnique({
         where: { slug: restaurantSlug },
         select: {
           heroImageUrl: true,
