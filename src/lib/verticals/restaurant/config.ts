@@ -3,6 +3,7 @@ import {
   restaurantAttributesSchema,
   restaurantItemAttributesSchema,
   restaurantSiteDraftSchema,
+  sampleRestaurant,
   type RestaurantAttributes,
   type RestaurantItemAttributes,
   type RestaurantSiteDraft,
@@ -65,6 +66,14 @@ export const restaurantConfig = {
     fidelityClause: "what the restaurant actually serves or looks like",
     gradeClause:
       "Use a natural hospitality colour grade. Avoid plastic textures, exaggerated saturation, fake steam, fake depth of field, and stock-photo polish.",
+  },
+  // Sourced from the sample fixture so the read-path fallbacks stay byte-identical
+  // to the pre-registry behaviour rather than drifting into a second copy.
+  presentation: {
+    fallbackDescription: sampleRestaurant.description,
+    fallbackPalette: sampleRestaurant.palette,
+    buildEyebrow: (attributes, site) =>
+      `${attributes.cuisine || "Independent restaurant"} · ${site.address ?? "Local"}`,
   },
   templates: {
     definitions: restaurantTemplates,

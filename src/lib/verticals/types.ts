@@ -60,6 +60,18 @@ export type VerticalConfig<
     fidelityClause: string;
     gradeClause: string;
   };
+  // Copy the read path substitutes when a stored site is missing optional columns,
+  // plus the vertical's own way of phrasing the hero eyebrow from its attribute bag.
+  presentation: {
+    fallbackDescription: string;
+    fallbackPalette: { background: string; foreground: string; accent: string };
+    // `address` is nullable rather than defaulted so a vertical can distinguish an
+    // absent address from an empty one.
+    buildEyebrow: (
+      attributes: TAttributes,
+      site: { address: string | null },
+    ) => string;
+  };
   templates: {
     definitions: Record<string, TTemplate>;
     resolve: (attributes: TAttributes) => TTemplate;

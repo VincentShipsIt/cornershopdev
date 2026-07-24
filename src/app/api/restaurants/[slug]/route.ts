@@ -1,6 +1,7 @@
-import { restaurantDraftSchema } from "@/lib/restaurant";
+import { Vertical } from "@/generated/prisma/enums";
+import { fromRestaurantDraft, restaurantDraftSchema } from "@/lib/restaurant";
 import { getCurrentSession } from "@/lib/current-session";
-import { getDb } from "@/lib/db";
+import { updateSiteDraft } from "@/lib/site-persistence";
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
@@ -17,81 +18,23 @@ export async function PUT(request: Request, { params }: RouteContext) {
       return Response.json({ ok: true, persisted: false });
     }
 
-    await getDb().site.update({
-      where: { slug },
-      data: {
-        name: draft.name,
-        description: draft.description,
-        address: draft.address,
-        phone: draft.phone,
-        heroImageUrl: draft.heroImageUrl,
-        heroOriginalImageUrl: draft.heroOriginalImageUrl,
-        heroImageProvenance: toDatabaseImageProvenance(
-          draft.heroImageProvenance,
-        ),
-        attributes: {
-          cuisine: draft.cuisine,
-          showMenuImages: draft.showMenuImages,
-        },
-        autoEnhanceImages: draft.autoEnhanceImages,
-        defaultLocale: draft.defaultLocale,
-        translations: draft.translations,
-        catalogSections: {
-          deleteMany: {},
-          create: draft.menuSections.map((section, sectionIndex) => ({
-            name: section.name,
-            description: section.description,
-            position: sectionIndex,
-            items: {
-              create: section.items.map((item, itemIndex) => ({
-                name: item.name,
-                description: item.description,
-                price: item.price,
-                currency: item.currency,
-                attributes: {
-                  dietaryLabels: item.dietaryLabels,
-                },
-                imageUrl: item.imageUrl,
-                originalImageUrl: item.originalImageUrl,
-                imageProvenance: toDatabaseImageProvenance(
-                  item.imageProvenance,
-                ),
-                position: itemIndex,
-              })),
-            },
-          })),
-        },
-        integrations: {
-          deleteMany: {},
-          create: draft.integrations.map((integration) => ({
-            type: integration.type.toUpperCase() as
-              | "BOOKING"
-              | "ORDERING"
-              | "DELIVERY"
-              | "SOCIAL",
-            label: integration.label,
-            provider: integration.provider,
-            url: integration.url,
-          })),
-        },
-      },
-    });
+    // Same column and relation mapping as the import path, so an owner edit can
+    // never write a shape the read path refuses to parse.
+    await updateSiteDraft(
+      slug,
+      fromRestaurantDraft(draft),
+      Vertical.RESTAURANT,
+    );
     return Response.json({ ok: true, persisted: true });
   } catch (error) {
     return Response.json(
       {
         error:
-          error instanceof Error ? error.message : "Restaurant could not be saved",
+          error instanceof Error
+            ? error.message
+            : "Restaurant could not be saved",
       },
       { status: 400 },
     );
   }
-}
-
-function toDatabaseImageProvenance(
-  value: "official" | "owner" | "permissioned-ugc" | null | undefined,
-): "OFFICIAL" | "OWNER" | "PERMISSIONED_UGC" | undefined {
-  if (!value) return undefined;
-  if (value === "permissioned-ugc") return "PERMISSIONED_UGC";
-  return value.toUpperCase() as "OFFICIAL" | "OWNER";
 }
