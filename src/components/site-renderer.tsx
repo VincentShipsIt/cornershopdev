@@ -6,6 +6,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { BookingEmbed } from "@/components/booking-embed";
+import { BookingRequestForm } from "@/components/booking-request-form";
+import { resolveBookingEmbed } from "@/lib/booking-embed";
 import {
   getSiteDictionary,
   getTemplateCopy,
@@ -50,6 +53,16 @@ export function SiteRenderer({
   );
   const template = config.templates.resolve(draft.attributes);
   const capabilities = config.rendererCapabilities(draft.attributes);
+  const bookingEmbed = booking ? resolveBookingEmbed(vertical, booking) : null;
+  // A site with no booking tool at all always gets the form — otherwise its only
+  // "book" affordance would be a phone number. A site that *has* one gets the form
+  // only if its vertical asks for it, because a second, slower way to book next to
+  // a live widget is a worse offer, not a better one.
+  const showRequestForm = !booking || capabilities.showBookingRequestForm;
+  // A booking provider we cannot embed contributes nothing here: the header CTA and
+  // the contact column already link out to it. Rendering an empty section for that
+  // case would change every existing restaurant site for no gain.
+  const showBookingSection = Boolean(bookingEmbed) || showRequestForm;
   const copy = getTemplateCopy(template, locale);
   const dictionary = getSiteDictionary(config, locale);
   const picturedItems = draft.catalogSections
@@ -411,6 +424,57 @@ export function SiteRenderer({
           ))}
         </div>
       </section>
+
+      {showBookingSection ? (
+        <section className="mx-auto grid max-w-7xl gap-10 border-t border-current/10 px-6 py-16 md:px-10 md:py-20 lg:grid-cols-[0.68fr_1.32fr]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
+              {dictionary.bookingHeading}
+            </p>
+            {showRequestForm ? (
+              <>
+                <h2 className="mt-3 max-w-md break-words text-4xl font-bold leading-[0.96] tracking-[-0.045em] md:text-5xl">
+                  {dictionary.bookingRequestHeading}
+                </h2>
+                <p className="mt-4 max-w-sm text-sm leading-6 opacity-75">
+                  {dictionary.bookingRequestIntro}
+                </p>
+              </>
+            ) : null}
+          </div>
+
+          <div className="space-y-8">
+            {bookingEmbed ? (
+              <BookingEmbed
+                embed={bookingEmbed}
+                title={`${dictionary.bookingHeading} · ${draft.name}`}
+                previewNotice={dictionary.bookingEmbedPreviewNotice}
+                embedded={embedded}
+              />
+            ) : null}
+            {showRequestForm ? (
+              <BookingRequestForm
+                slug={draft.slug}
+                embedded={embedded}
+                copy={{
+                  name: dictionary.bookingRequestName,
+                  email: dictionary.bookingRequestEmail,
+                  phone: dictionary.bookingRequestPhone,
+                  when: dictionary.bookingRequestWhen,
+                  partySize: dictionary.bookingRequestPartySize,
+                  notes: dictionary.bookingRequestNotes,
+                  optional: dictionary.bookingRequestOptional,
+                  submit: dictionary.bookingRequestSubmit,
+                  sending: dictionary.bookingRequestSending,
+                  success: dictionary.bookingRequestSuccess,
+                  error: dictionary.bookingRequestError,
+                  previewNotice: dictionary.bookingRequestPreviewNotice,
+                }}
+              />
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <footer className="flex flex-col gap-5 border-t border-current/15 px-6 py-8 text-sm opacity-75 sm:flex-row sm:items-center sm:justify-between md:px-10">
         <span>

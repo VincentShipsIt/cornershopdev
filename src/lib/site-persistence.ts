@@ -54,6 +54,7 @@ export type PersistableSiteDraft = {
     label: string;
     provider: string | null;
     url: string;
+    venueId?: string | null;
   }>;
 };
 
@@ -372,6 +373,7 @@ function integrationCreateData(draft: PersistableSiteDraft) {
     label: integration.label,
     provider: integration.provider,
     url: integration.url,
+    venueId: integration.venueId ?? null,
   }));
 }
 

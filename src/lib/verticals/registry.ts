@@ -39,3 +39,20 @@ export function resolveVerticalConfig(id: VerticalId): ErasedVerticalConfig {
 export function listVerticalIds(): VerticalId[] {
   return Object.keys(registry) as VerticalId[];
 }
+
+/**
+ * Every origin any registered vertical may frame a booking widget from, derived
+ * from the provider tables themselves. The site CSP is built from this, so a
+ * vertical that adds a widget provider extends the allow-list by registering —
+ * there is no second list to keep in sync, and nothing outside a provider table
+ * can ever be framed.
+ */
+export function listEmbedFrameOrigins(): string[] {
+  const origins = new Set<string>();
+  for (const config of Object.values(registry) as ErasedVerticalConfig[]) {
+    for (const provider of config.providers) {
+      if (provider.embed) origins.add(provider.embed.origin);
+    }
+  }
+  return [...origins].sort();
+}

@@ -1,7 +1,34 @@
 import type {
   LinkClassificationHint,
   ProviderDefinition,
+  ProviderEmbedDefinition,
 } from "@/lib/verticals/types";
+
+/**
+ * OpenTable is the only restaurant provider with an official *iframe* widget.
+ * SevenRooms, Resy, TheFork and Zenchef all publish script-tag widgets instead,
+ * so they intentionally carry no `embed` and degrade to a link-out — see
+ * `ProviderEmbedDefinition` for why script embeds are out of scope.
+ *
+ * The reservation canvas is always addressed on the `.com` host with
+ * `domain=com` regardless of which OpenTable locale the owner's link used, so
+ * the CSP allow-list stays a single origin.
+ */
+const openTableEmbed: ProviderEmbedDefinition = {
+  origin: "https://www.opentable.com",
+  // OpenTable restaurant ids ("rid") are plain integers.
+  idPattern: /^[0-9]{1,12}$/,
+  extractVenueId: (url) => {
+    try {
+      return new URL(url).searchParams.get("rid");
+    } catch {
+      return null;
+    }
+  },
+  buildSrc: (venueId) =>
+    `https://www.opentable.com/widget/reservation/canvas?rid=${venueId}&type=standard&theme=standard&domain=com&lang=en-US&overlay=false&iframe=true`,
+  height: 320,
+};
 
 export const restaurantProviders: ProviderDefinition[] = [
   {
@@ -9,6 +36,7 @@ export const restaurantProviders: ProviderDefinition[] = [
     name: "OpenTable",
     type: "booking",
     classificationPattern: /opentable/i,
+    embed: openTableEmbed,
   },
   {
     pattern: /sevenrooms/i,

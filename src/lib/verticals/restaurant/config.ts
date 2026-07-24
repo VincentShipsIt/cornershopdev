@@ -30,6 +30,12 @@ export const restaurantDictionaryExtensions = {
     // Read by the shared renderer for the hero `alt`, so the key is generic even
     // though the restaurant phrasing behind it is not.
     heroImageAlt: "Dining room at",
+    // The booking form itself is engine copy (see `sharedSiteDictionary`); only
+    // the words around it are food-flavoured.
+    bookingHeading: "Reservations",
+    bookingRequestHeading: "Request a table",
+    bookingRequestIntro:
+      "Tell us when you'd like to come and we'll confirm by email or phone.",
   },
   fr: {
     language: "Langue",
@@ -38,6 +44,10 @@ export const restaurantDictionaryExtensions = {
     seasonalNotice:
       "Le menu et les disponibilités peuvent évoluer au fil des saisons.",
     heroImageAlt: "Salle du restaurant",
+    bookingHeading: "Réservations",
+    bookingRequestHeading: "Demander une table",
+    bookingRequestIntro:
+      "Dites-nous quand vous souhaitez venir, nous confirmerons par e-mail ou par téléphone.",
   },
 } satisfies Record<string, Record<string, string>>;
 

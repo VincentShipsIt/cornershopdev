@@ -50,6 +50,13 @@ export const integrationSchema = z.object({
   label: z.string().min(1).max(60),
   provider: z.string().max(60).nullable().default(null),
   url: z.url(),
+  /**
+   * The owner's id inside the provider, used to build an embedded booking
+   * widget. Bounded here only for storage sanity — the value is never trusted
+   * on its own: `resolveBookingEmbed` re-checks it against the provider's own
+   * anchored `idPattern` before any frame is rendered.
+   */
+  venueId: z.string().max(120).nullable().default(null),
 });
 
 export const localeSchema = z

@@ -91,6 +91,7 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
       label: integration.label,
       provider: integration.provider,
       url: integration.url,
+      venueId: integration.venueId,
     })),
   });
 

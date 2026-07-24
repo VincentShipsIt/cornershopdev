@@ -15,11 +15,41 @@ export type IntegrationLinkType =
   | "delivery"
   | "social";
 
+/**
+ * How a provider's own booking widget is embedded on a generated site.
+ *
+ * Deliberately iframe-only. Several providers (SevenRooms, Resy, TheFork,
+ * Booksy) ship script-tag widgets, and honouring those would mean opening
+ * `script-src` to third-party origins on customer-facing pages — which is not
+ * worth doing without a full nonce pipeline, and which would weaken the same
+ * pages the SSRF-conscious importer is protecting. A frame-only embed keeps the
+ * site CSP to a `frame-src` allow-list and leaves Next's inline hydration
+ * scripts alone; script-widget providers degrade to a "Book on X" link-out,
+ * which is exactly what shipped before this existed.
+ */
+export type ProviderEmbedDefinition = {
+  /** Scheme + host only. Contributes to the site CSP `frame-src` allow-list. */
+  origin: string;
+  /**
+   * The venue/widget id must match this in full before any frame is rendered.
+   * Anchor it — a permissive pattern here is the only thing standing between an
+   * owner-supplied string and a third-party URL.
+   */
+  idPattern: RegExp;
+  /** Recovers the venue id from a booking URL the importer already found. */
+  extractVenueId?: (url: string) => string | null;
+  /** Builds the iframe src from an id that has already matched `idPattern`. */
+  buildSrc: (venueId: string) => string;
+  /** Rendered frame height in px; provider widgets do not self-size. */
+  height: number;
+};
+
 export type ProviderDefinition = {
   name: string;
   pattern: RegExp;
   type: IntegrationLinkType;
   classificationPattern?: RegExp;
+  embed?: ProviderEmbedDefinition;
 };
 
 /**
