@@ -39,38 +39,35 @@ export async function POST(request: Request) {
     }
     const body = (await request.json()) as {
       hostname?: string;
-      restaurantSlug?: string;
+      siteSlug?: string;
     };
     const hostname = hostnameSchema.parse(body.hostname);
-    const restaurantSlug = body.restaurantSlug ?? session.restaurantSlug;
-    if (session.restaurantSlug !== restaurantSlug) {
+    const siteSlug = body.siteSlug ?? session.siteSlug;
+    if (session.siteSlug !== siteSlug) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const db = process.env.DATABASE_URL ? getDb() : null;
     let siteId: string | null = null;
     if (db) {
-      const restaurant = await db.site.findUnique({
-        where: { slug: restaurantSlug },
+      const site = await db.site.findUnique({
+        where: { slug: siteSlug },
         select: { id: true },
       });
-      if (!restaurant) {
-        return Response.json({ error: "Restaurant not found" }, { status: 404 });
+      if (!site) {
+        return Response.json({ error: "Site not found" }, { status: 404 });
       }
       const existingDomain = await db.domain.findUnique({
         where: { hostname },
         select: { siteId: true },
       });
-      if (
-        existingDomain &&
-        existingDomain.siteId !== restaurant.id
-      ) {
+      if (existingDomain && existingDomain.siteId !== site.id) {
         return Response.json(
-          { error: "This domain is already connected to another restaurant" },
+          { error: "This domain is already connected to another site" },
           { status: 409 },
         );
       }
-      siteId = restaurant.id;
+      siteId = site.id;
     }
 
     const target = getDomainTarget();
@@ -122,8 +119,8 @@ export async function GET(request: Request) {
     }
     const searchParams = new URL(request.url).searchParams;
     const hostname = hostnameSchema.parse(searchParams.get("hostname"));
-    const restaurantSlug = searchParams.get("restaurantSlug");
-    if (restaurantSlug !== session.restaurantSlug) {
+    const siteSlug = searchParams.get("siteSlug");
+    if (siteSlug !== session.siteSlug) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -132,7 +129,7 @@ export async function GET(request: Request) {
       const domain = await getDb().domain.findFirst({
         where: {
           hostname,
-          site: { slug: session.restaurantSlug },
+          site: { slug: session.siteSlug },
         },
         select: { siteId: true },
       });

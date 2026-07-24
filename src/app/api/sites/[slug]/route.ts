@@ -8,7 +8,7 @@ type RouteContext = { params: Promise<{ slug: string }> };
 export async function PUT(request: Request, { params }: RouteContext) {
   const { slug } = await params;
   const session = await getCurrentSession();
-  if (!session || session.restaurantSlug !== slug) {
+  if (!session || session.siteSlug !== slug) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

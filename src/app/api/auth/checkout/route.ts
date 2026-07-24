@@ -16,8 +16,8 @@ export async function GET(request: Request) {
   }
 
   const email = checkout.customer_details?.email ?? checkout.customer_email;
-  const restaurantSlug = checkout.metadata?.restaurantSlug;
-  if (!email || !restaurantSlug) {
+  const siteSlug = checkout.metadata?.siteSlug;
+  if (!email || !siteSlug) {
     return Response.json(
       { error: "Checkout is missing account details" },
       { status: 400 },
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
         (
           await tx.organization.create({
             data: {
-              name: restaurantSlug,
+              name: siteSlug,
               memberships: {
                 create: { userId: user.id, role: "owner" },
               },
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
         ).id;
 
       await tx.site.updateMany({
-        where: { slug: restaurantSlug },
+        where: { slug: siteSlug },
         data: { organizationId, status: "CLAIMED" },
       });
 
@@ -91,7 +91,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE,
-    createSessionToken({ email, restaurantSlug }),
+    createSessionToken({ email, siteSlug }),
     {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

@@ -63,7 +63,7 @@ export function ClaimPanel({
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, restaurantSlug: slug, email }),
+        body: JSON.stringify({ plan, siteSlug: slug, email }),
       });
       const result = (await response.json()) as {
         url?: string;

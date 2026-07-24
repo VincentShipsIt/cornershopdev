@@ -18,7 +18,7 @@ import {
 } from "@/lib/restaurant-import-persistence";
 import {
   imageStorageIsConfigured,
-  storeRestaurantImage,
+  storeSiteImage,
 } from "@/lib/storage/images";
 
 export type RestaurantImportEvent =
@@ -178,8 +178,8 @@ async function enhanceDraftImages(
   const originalUrl = draft.heroOriginalImageUrl ?? draft.heroImageUrl;
   try {
     const originalImage = await fetchPublicImage(originalUrl);
-    const storedOriginalUrl = await storeRestaurantImage({
-      restaurantSlug: draft.slug,
+    const storedOriginalUrl = await storeSiteImage({
+      siteSlug: draft.slug,
       data: originalImage.data,
       mediaType: originalImage.mediaType,
       purpose: "original-hero",
@@ -188,8 +188,8 @@ async function enhanceDraftImages(
       sourceImageUrl: storedOriginalUrl,
       restaurantName: draft.name,
     });
-    const heroImageUrl = await storeRestaurantImage({
-      restaurantSlug: draft.slug,
+    const heroImageUrl = await storeSiteImage({
+      siteSlug: draft.slug,
       data: image.data,
       mediaType: image.mediaType,
       purpose: "hero",

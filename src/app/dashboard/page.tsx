@@ -20,7 +20,7 @@ export default async function DashboardPage({
   if (!session && query.demo !== "1") redirect("/sign-in");
 
   const draft = session
-    ? await getRestaurantDraft(session.restaurantSlug)
+    ? await getRestaurantDraft(session.siteSlug)
     : sampleRestaurant;
 
   return (

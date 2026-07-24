@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const db = getDb();
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    const slug = session.metadata?.restaurantSlug;
+    const slug = session.metadata?.siteSlug;
     if (slug) {
       await db.site.updateMany({
         where: { slug },

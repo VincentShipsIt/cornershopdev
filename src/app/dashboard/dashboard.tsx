@@ -67,7 +67,7 @@ export function Dashboard({
     setSaved(false);
     try {
       if (!demo) {
-        const response = await fetch(`/api/restaurants/${draft.slug}`, {
+        const response = await fetch(`/api/sites/${draft.slug}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
@@ -89,7 +89,7 @@ export function Dashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           hostname: domain,
-          restaurantSlug: draft.slug,
+          siteSlug: draft.slug,
         }),
       });
       const result = (await response.json()) as DomainSetup & {
@@ -118,7 +118,7 @@ export function Dashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sourceImageUrl,
-          restaurantSlug: draft.slug,
+          siteSlug: draft.slug,
           restaurantName: draft.name,
         }),
       });
@@ -656,7 +656,7 @@ export function Dashboard({
                           className="w-full"
                           onClick={async () => {
                             const response = await fetch(
-                              `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&restaurantSlug=${encodeURIComponent(draft.slug)}`,
+                              `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
                             );
                             const result = (await response.json()) as {
                               verified?: boolean;

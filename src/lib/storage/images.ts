@@ -19,16 +19,18 @@ export function imageStorageIsConfigured(env: Environment = process.env) {
   return Boolean(env.S3_BUCKET && env.S3_PUBLIC_BASE_URL && env.AWS_REGION);
 }
 
-export async function storeRestaurantImage(input: {
-  restaurantSlug: string;
+export async function storeSiteImage(input: {
+  siteSlug: string;
   data: Uint8Array;
   mediaType: string;
-  purpose: "hero" | "menu" | "original-hero";
+  purpose: "hero" | "catalog" | "original-hero";
 }): Promise<string> {
   const { bucket, publicBaseUrl, region } = getImageStorageConfig();
   const extension =
     input.mediaType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
-  const key = `restaurants/${input.restaurantSlug}/${input.purpose}-${randomUUID()}.${extension}`;
+  // Keys are only ever written here and stored whole; changing the prefix leaves
+  // any object written under the old one reachable by its already-stored URL.
+  const key = `sites/${input.siteSlug}/${input.purpose}-${randomUUID()}.${extension}`;
   const s3 = new S3Client({ region });
   await s3.send(
     new PutObjectCommand({
