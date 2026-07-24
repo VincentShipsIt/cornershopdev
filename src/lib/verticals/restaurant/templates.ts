@@ -1,4 +1,5 @@
 import type { RestaurantAttributes } from "@/lib/verticals/restaurant/schema";
+import type { VerticalTemplateCopy } from "@/lib/verticals/types";
 
 export type RestaurantTemplateId =
   | "heritage"
@@ -8,23 +9,21 @@ export type RestaurantTemplateId =
   | "coastal"
   | "warm";
 
+/**
+ * The six food templates stay restaurant-only — their copy is food-tuned. What is
+ * shared with every other vertical is the layout contract
+ * (`VerticalTemplateDefinition`); `showMenuImagesByDefault` is the one field that
+ * exists here and deliberately never reaches the renderer.
+ */
 export type RestaurantTemplate = {
   id: RestaurantTemplateId;
   heroLayout: "split" | "immersive" | "card";
-  menuLayout: "stack" | "columns" | "cards";
+  catalogLayout: "stack" | "columns" | "cards";
   brandClassName: string;
   titleClassName: string;
   sectionClassName: string;
   showMenuImagesByDefault: boolean;
-  copy: Record<
-    "en" | "fr",
-    {
-      menuEyebrow: string;
-      menuHeading: string;
-      featuredHeading: string;
-      featuredSubheading: string;
-    }
-  >;
+  copy: Record<"en" | "fr", VerticalTemplateCopy>;
 };
 
 export const restaurantTemplates: Record<
@@ -34,7 +33,7 @@ export const restaurantTemplates: Record<
   heritage: {
     id: "heritage",
     heroLayout: "split",
-    menuLayout: "stack",
+    catalogLayout: "stack",
     brandClassName: "font-bold tracking-[-0.035em]",
     titleClassName:
       "font-extrabold leading-[0.9] tracking-[-0.055em] text-balance",
@@ -42,14 +41,14 @@ export const restaurantTemplates: Record<
     showMenuImagesByDefault: false,
     copy: {
       en: {
-        menuEyebrow: "The menu",
-        menuHeading: "Cooking guided by the season.",
+        catalogEyebrow: "The menu",
+        catalogHeading: "Cooking guided by the season.",
         featuredHeading: "A few dishes",
         featuredSubheading: "Plates faithful to the season.",
       },
       fr: {
-        menuEyebrow: "La carte",
-        menuHeading: "Une cuisine guidée par la saison.",
+        catalogEyebrow: "La carte",
+        catalogHeading: "Une cuisine guidée par la saison.",
         featuredHeading: "Quelques assiettes",
         featuredSubheading: "Des plats fidèles à la saison.",
       },
@@ -58,7 +57,7 @@ export const restaurantTemplates: Record<
   fresh: {
     id: "fresh",
     heroLayout: "card",
-    menuLayout: "cards",
+    catalogLayout: "cards",
     brandClassName: "font-semibold tracking-[-0.025em]",
     titleClassName:
       "font-semibold leading-[0.96] tracking-[-0.045em] text-balance",
@@ -67,14 +66,14 @@ export const restaurantTemplates: Record<
     showMenuImagesByDefault: true,
     copy: {
       en: {
-        menuEyebrow: "Fresh today",
-        menuHeading: "Bright food, clearly served.",
+        catalogEyebrow: "Fresh today",
+        catalogHeading: "Bright food, clearly served.",
         featuredHeading: "What we are serving",
         featuredSubheading: "Fresh food, shown honestly.",
       },
       fr: {
-        menuEyebrow: "Frais aujourd’hui",
-        menuHeading: "Une cuisine fraîche, servie simplement.",
+        catalogEyebrow: "Frais aujourd’hui",
+        catalogHeading: "Une cuisine fraîche, servie simplement.",
         featuredHeading: "À table aujourd’hui",
         featuredSubheading: "Des produits frais, sans artifice.",
       },
@@ -83,23 +82,23 @@ export const restaurantTemplates: Record<
   bold: {
     id: "bold",
     heroLayout: "immersive",
-    menuLayout: "cards",
+    catalogLayout: "cards",
     brandClassName: "font-black uppercase tracking-[-0.04em]",
     titleClassName:
       "font-black uppercase leading-[0.82] tracking-[-0.065em] text-balance",
     sectionClassName:
-      "border-2 border-current bg-[var(--restaurant-accent)]/5 p-6 shadow-[6px_6px_0_currentColor]",
+      "border-2 border-current bg-[var(--site-accent)]/5 p-6 shadow-[6px_6px_0_currentColor]",
     showMenuImagesByDefault: true,
     copy: {
       en: {
-        menuEyebrow: "The lineup",
-        menuHeading: "Big flavour. No detours.",
+        catalogEyebrow: "The lineup",
+        catalogHeading: "Big flavour. No detours.",
         featuredHeading: "See what is cooking",
         featuredSubheading: "The food does the talking.",
       },
       fr: {
-        menuEyebrow: "La sélection",
-        menuHeading: "Du goût. Sans détour.",
+        catalogEyebrow: "La sélection",
+        catalogHeading: "Du goût. Sans détour.",
         featuredHeading: "En cuisine",
         featuredSubheading: "Les plats parlent d’eux-mêmes.",
       },
@@ -108,7 +107,7 @@ export const restaurantTemplates: Record<
   nocturne: {
     id: "nocturne",
     heroLayout: "split",
-    menuLayout: "columns",
+    catalogLayout: "columns",
     brandClassName: "font-medium uppercase tracking-[0.16em]",
     titleClassName:
       "font-medium leading-[0.92] tracking-[-0.055em] text-balance",
@@ -116,14 +115,14 @@ export const restaurantTemplates: Record<
     showMenuImagesByDefault: false,
     copy: {
       en: {
-        menuEyebrow: "Menu",
-        menuHeading: "Precision, texture and balance.",
+        catalogEyebrow: "Menu",
+        catalogHeading: "Precision, texture and balance.",
         featuredHeading: "From the kitchen",
         featuredSubheading: "One visual language, plate by plate.",
       },
       fr: {
-        menuEyebrow: "Menu",
-        menuHeading: "Précision, texture et équilibre.",
+        catalogEyebrow: "Menu",
+        catalogHeading: "Précision, texture et équilibre.",
         featuredHeading: "Depuis la cuisine",
         featuredSubheading: "Un même langage, assiette après assiette.",
       },
@@ -132,7 +131,7 @@ export const restaurantTemplates: Record<
   coastal: {
     id: "coastal",
     heroLayout: "card",
-    menuLayout: "columns",
+    catalogLayout: "columns",
     brandClassName: "font-semibold tracking-[-0.03em]",
     titleClassName:
       "font-semibold leading-[0.94] tracking-[-0.05em] text-balance",
@@ -140,14 +139,14 @@ export const restaurantTemplates: Record<
     showMenuImagesByDefault: true,
     copy: {
       en: {
-        menuEyebrow: "From the coast",
-        menuHeading: "The catch, simply handled.",
+        catalogEyebrow: "From the coast",
+        catalogHeading: "The catch, simply handled.",
         featuredHeading: "From sea to table",
         featuredSubheading: "Clean flavours in clear view.",
       },
       fr: {
-        menuEyebrow: "Depuis la côte",
-        menuHeading: "La pêche, cuisinée simplement.",
+        catalogEyebrow: "Depuis la côte",
+        catalogHeading: "La pêche, cuisinée simplement.",
         featuredHeading: "De la mer à la table",
         featuredSubheading: "Des saveurs nettes et franches.",
       },
@@ -156,7 +155,7 @@ export const restaurantTemplates: Record<
   warm: {
     id: "warm",
     heroLayout: "immersive",
-    menuLayout: "columns",
+    catalogLayout: "columns",
     brandClassName: "font-bold tracking-[-0.035em]",
     titleClassName:
       "font-bold leading-[0.9] tracking-[-0.055em] text-balance",
@@ -164,14 +163,14 @@ export const restaurantTemplates: Record<
     showMenuImagesByDefault: true,
     copy: {
       en: {
-        menuEyebrow: "The menu",
-        menuHeading: "Made here. Served when ready.",
+        catalogEyebrow: "The menu",
+        catalogHeading: "Made here. Served when ready.",
         featuredHeading: "A look at the table",
         featuredSubheading: "The dishes, as they arrive.",
       },
       fr: {
-        menuEyebrow: "La carte",
-        menuHeading: "Fait maison. Servi au bon moment.",
+        catalogEyebrow: "La carte",
+        catalogHeading: "Fait maison. Servi au bon moment.",
         featuredHeading: "À table",
         featuredSubheading: "Les plats, tels qu’ils arrivent.",
       },

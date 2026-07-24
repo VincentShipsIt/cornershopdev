@@ -22,8 +22,33 @@ export type ProviderDefinition = {
   classificationPattern?: RegExp;
 };
 
+/**
+ * Copy the shared renderer prints around the catalog. Every vertical phrases
+ * these differently — a menu is not a service list — but the slots are the same,
+ * so the renderer reads them positionally and never learns which vertical wrote
+ * them. Keyed by UI locale; resolution falls back locale → language → `en`.
+ */
+export type VerticalTemplateCopy = {
+  catalogEyebrow: string;
+  catalogHeading: string;
+  featuredHeading: string;
+  featuredSubheading: string;
+};
+
+/**
+ * The layout contract between a vertical's template set and the shared renderer:
+ * exactly the primitives the renderer branches on. Anything a vertical needs
+ * beyond them — restaurant's `showMenuImagesByDefault`, for instance — stays on
+ * that vertical's own template type and never reaches the renderer.
+ */
 export type VerticalTemplateDefinition = {
   id: string;
+  heroLayout: "split" | "immersive" | "card";
+  catalogLayout: "stack" | "columns" | "cards";
+  brandClassName: string;
+  titleClassName: string;
+  sectionClassName: string;
+  copy: Record<string, VerticalTemplateCopy>;
 };
 
 export type LinkClassificationHint = {
@@ -71,6 +96,10 @@ export type VerticalConfig<
       attributes: TAttributes,
       site: { address: string | null },
     ) => string;
+    // Short pills printed under a catalog item. Restaurants surface dietary
+    // labels here, beauty surfaces duration or "with any stylist" — the renderer
+    // only ever sees strings, which is what keeps `dietaryLabels` out of it.
+    itemBadges?: (attributes: TItemAttributes) => string[];
   };
   templates: {
     definitions: Record<string, TTemplate>;

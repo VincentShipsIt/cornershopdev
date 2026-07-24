@@ -495,18 +495,9 @@ export function slugify(value: string): string {
     .slice(0, 72);
 }
 
-export function formatPrice(
-  price: number | null,
-  currency = "EUR",
-  locale = "en",
-): string {
-  if (price === null) return "";
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency,
-    minimumFractionDigits: price % 1 === 0 ? 0 : 2,
-  }).format(price);
-}
+// Price formatting is pure Intl and belongs to no vertical; it lives in the
+// shared draft module so the renderer can reach it without importing a vertical.
+export { formatPrice } from "@/lib/site-draft";
 
 export function getRestaurantLocales(draft: RestaurantDraft): string[] {
   return [

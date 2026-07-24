@@ -27,7 +27,9 @@ export const restaurantDictionaryExtensions = {
     reservationsVia: "Reservations via",
     bookingPartner: "our booking partner",
     seasonalNotice: "Menu and availability may change with the season.",
-    diningRoomAlt: "Dining room at",
+    // Read by the shared renderer for the hero `alt`, so the key is generic even
+    // though the restaurant phrasing behind it is not.
+    heroImageAlt: "Dining room at",
   },
   fr: {
     language: "Langue",
@@ -35,7 +37,7 @@ export const restaurantDictionaryExtensions = {
     bookingPartner: "notre partenaire de réservation",
     seasonalNotice:
       "Le menu et les disponibilités peuvent évoluer au fil des saisons.",
-    diningRoomAlt: "Salle du restaurant",
+    heroImageAlt: "Salle du restaurant",
   },
 } satisfies Record<string, Record<string, string>>;
 
@@ -74,6 +76,9 @@ export const restaurantConfig = {
     fallbackPalette: sampleRestaurant.palette,
     buildEyebrow: (attributes, site) =>
       `${attributes.cuisine || "Independent restaurant"} · ${site.address ?? "Local"}`,
+    // Dietary labels are the restaurant's badge set. The renderer only receives the
+    // resulting strings, so `dietaryLabels` never appears outside this vertical.
+    itemBadges: (attributes) => attributes.dietaryLabels,
   },
   templates: {
     definitions: restaurantTemplates,

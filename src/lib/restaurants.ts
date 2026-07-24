@@ -1,17 +1,16 @@
 import { Vertical } from "@/generated/prisma/enums";
-import { leadDrafts } from "@/lib/lead-drafts";
 import {
   sampleRestaurant,
   toRestaurantDraft,
   type RestaurantDraft,
   type RestaurantSiteDraft,
 } from "@/lib/restaurant";
-import { findSiteDraft } from "@/lib/sites";
+import { findSiteView } from "@/lib/sites";
 
 /**
- * Restaurant-shaped view over the generic site read path. Kept so the preview,
- * claim and dashboard pages can stay on the flat `RestaurantDraft` until they move
- * to the vertical-agnostic renderer; everything below the flattening is shared.
+ * Flat restaurant-shaped view over the generic site read path. The renderer and the
+ * preview/claim pages are vertical-agnostic now; this remains for the dashboard and
+ * the marketing surfaces, which still edit the legacy flat `RestaurantDraft`.
  */
 export async function getRestaurantDraft(
   slug: string,
@@ -27,16 +26,10 @@ export async function getRestaurantDraft(
 export async function findRestaurantDraft(
   slug: string,
 ): Promise<RestaurantDraft | null> {
-  const leadDraft = leadDrafts[slug];
-  if (!process.env.DATABASE_URL) {
-    if (leadDraft) return leadDraft;
-    return slug === sampleRestaurant.slug ? sampleRestaurant : null;
-  }
-
-  const site = await findSiteDraft(slug);
+  const site = await findSiteView(slug);
   if (!site) return null;
   // A site in another vertical has no restaurant-shaped projection; callers that
-  // can render it go through `findSiteDraft` directly.
+  // can render it go through `findSiteView` directly.
   if (site.vertical !== Vertical.RESTAURANT) return null;
 
   return toRestaurantDraft(site.draft as RestaurantSiteDraft);

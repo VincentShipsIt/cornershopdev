@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { ClaimPanel } from "@/app/claim/[slug]/claim-panel";
 import { Button } from "@/components/ui/button";
-import { findRestaurantDraft } from "@/lib/restaurants";
+import { findSiteView } from "@/lib/sites";
 
 export const metadata: Metadata = {
   title: "Claim this restaurant",
@@ -18,8 +18,8 @@ export default async function ClaimPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const draft = await findRestaurantDraft(slug);
-  if (!draft) notFound();
+  const site = await findSiteView(slug);
+  if (!site) notFound();
 
   return (
     <main className="min-h-screen">
@@ -33,7 +33,11 @@ export default async function ClaimPage({
         </Button>
         <Brand />
       </header>
-      <ClaimPanel slug={slug} fallbackDraft={draft} />
+      <ClaimPanel
+        slug={slug}
+        vertical={site.vertical}
+        fallbackDraft={site.draft}
+      />
     </main>
   );
 }

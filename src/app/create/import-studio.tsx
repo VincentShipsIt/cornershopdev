@@ -14,19 +14,17 @@ import {
   RotateCcw,
   Smartphone,
 } from "lucide-react";
+import { Vertical } from "@/generated/prisma/enums";
 import { Brand } from "@/components/brand";
 import { InstantRestaurantPreview } from "@/components/instant-restaurant-preview";
-import { RestaurantSite } from "@/components/restaurant-site";
+import { SiteRenderer } from "@/components/site-renderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import {
-  sampleRestaurant,
-  toRestaurantDraft,
-  type RestaurantDraft,
-  type RestaurantSiteDraft,
-} from "@/lib/restaurant";
+import { sampleSiteDraft } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/restaurant-import";
+import type { SiteDraftView } from "@/lib/site-draft";
+import type { VerticalId } from "@/lib/verticals/types";
 
 type Stage = {
   label: string;
@@ -41,16 +39,22 @@ const stages: Stage[] = [
   { label: "Check and save private preview", threshold: 95 },
 ];
 
-// The API now speaks the nested site shape for every vertical. Phase 7 swaps
-// `<RestaurantSite>` for the vertical-driven renderer, which consumes that shape
-// directly — this conversion disappears with it.
+/**
+ * The import API speaks the shared site shape and names the vertical it produced,
+ * which is everything the renderer needs — this component never learns what a
+ * restaurant is beyond the demo fixture below.
+ */
+type ImportedSite = {
+  draft: SiteDraftView;
+  vertical: VerticalId;
+};
+
 type ImportResponse =
-  | {
+  | ({
       mode: "inline";
-      draft: RestaurantSiteDraft;
       importJobId: string;
       urls: ImportUrls;
-    }
+    } & ImportedSite)
   | { mode: "workflow"; runId: string; importJobId: string }
   | { error: string };
 
@@ -62,7 +66,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
   const [message, setMessage] = useState(
     hasInitialSource ? "Opening the restaurant" : "Ready when you are",
   );
-  const [draft, setDraft] = useState<RestaurantDraft | null>(null);
+  const [site, setSite] = useState<ImportedSite | null>(null);
   const [urls, setUrls] = useState<ImportUrls | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(hasInitialSource);
@@ -76,7 +80,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
     startedSource.current = cleanSource;
     setPreviewSource(cleanSource);
     setLoading(true);
-    setDraft(null);
+    setSite(null);
     setUrls(null);
     setError(null);
     setProgress(6);
@@ -96,7 +100,10 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
       }
 
       if (result.mode === "inline") {
-        complete(toRestaurantDraft(result.draft), result.urls);
+        complete(
+          { draft: result.draft, vertical: result.vertical },
+          result.urls,
+        );
         return;
       }
 
@@ -110,12 +117,11 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
               progress: number;
               message: string;
             }
-          | {
+          | ({
               type: "complete";
-              draft: RestaurantSiteDraft;
               importJobId: string;
               urls: ImportUrls;
-            }
+            } & ImportedSite)
           | { type: "failed"; message: string };
         try {
           update = JSON.parse(event.data) as typeof update;
@@ -131,7 +137,10 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
         }
         if (update.type === "complete") {
           events.close();
-          complete(toRestaurantDraft(update.draft), update.urls);
+          complete(
+            { draft: update.draft, vertical: update.vertical },
+            update.urls,
+          );
         }
         if (update.type === "failed") {
           events.close();
@@ -154,10 +163,10 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
     }
   }
 
-  function complete(nextDraft: RestaurantDraft, nextUrls: ImportUrls) {
+  function complete(nextSite: ImportedSite, nextUrls: ImportUrls) {
     setProgress(100);
     setMessage("Private preview ready");
-    setDraft(nextDraft);
+    setSite(nextSite);
     setUrls(nextUrls);
     setLoading(false);
   }
@@ -173,10 +182,13 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
   function useDemo() {
     setSource("Osteria Luna");
     setError(null);
-    complete(sampleRestaurant, {
-      preview: `/preview/${sampleRestaurant.slug}`,
-      claim: `/claim/${sampleRestaurant.slug}`,
-    });
+    complete(
+      { draft: sampleSiteDraft, vertical: Vertical.RESTAURANT },
+      {
+        preview: `/preview/${sampleSiteDraft.slug}`,
+        claim: `/claim/${sampleSiteDraft.slug}`,
+      },
+    );
   }
 
   return (
@@ -264,7 +276,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
             </Button>
           </form>
 
-          {loading || draft ? (
+          {loading || site ? (
             <div className="mt-8">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium">{message}</span>
@@ -331,7 +343,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
             </div>
           ) : null}
 
-          {draft && urls ? (
+          {site && urls ? (
             <div className="mt-8 rounded-2xl border border-primary/20 bg-primary/5 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <span className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground">
@@ -365,7 +377,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
         </aside>
 
         <section className="relative overflow-hidden p-4 sm:p-7 lg:p-10">
-          {!draft && !previewSource ? (
+          {!site && !previewSource ? (
             <div className="grid min-h-[720px] place-items-center rounded-[2rem] border border-dashed border-foreground/15 bg-background/40">
               <div className="max-w-sm px-6 text-center">
                 <span className="mx-auto grid size-12 place-items-center rounded-full border bg-background">
@@ -395,8 +407,12 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
                     : "max-h-[790px] rounded-[1.15rem]"
                 }`}
               >
-                {draft ? (
-                  <RestaurantSite draft={draft} embedded />
+                {site ? (
+                  <SiteRenderer
+                    draft={site.draft}
+                    vertical={site.vertical}
+                    embedded
+                  />
                 ) : (
                   <InstantRestaurantPreview
                     source={previewSource}

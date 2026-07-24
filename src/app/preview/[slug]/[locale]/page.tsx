@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { RestaurantSite } from "@/components/restaurant-site";
-import {
-  getRestaurantLocales,
-  localizeRestaurantDraft,
-} from "@/lib/restaurant";
-import { findRestaurantDraft } from "@/lib/restaurants";
+import { SiteRenderer } from "@/components/site-renderer";
+import { getSiteLocales, localizeSiteDraft } from "@/lib/site-draft";
+import { findSiteView } from "@/lib/sites";
 
 type PageProps = {
   params: Promise<{ slug: string; locale: string }>;
@@ -15,23 +12,23 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug, locale } = await params;
-  const draft = await findRestaurantDraft(slug);
-  if (!draft) notFound();
-  const locales = getRestaurantLocales(draft);
+  const site = await findSiteView(slug);
+  if (!site) notFound();
+  const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();
 
   return {
-    title: `${draft.name} — Private preview`,
+    title: `${site.draft.name} — Private preview`,
     robots: { index: false, follow: false },
     alternates: {
       canonical:
-        locale === draft.defaultLocale
+        locale === site.draft.defaultLocale
           ? `/preview/${slug}`
           : `/preview/${slug}/${locale}`,
       languages: Object.fromEntries(
         locales.map((availableLocale) => [
           availableLocale,
-          availableLocale === draft.defaultLocale
+          availableLocale === site.draft.defaultLocale
             ? `/preview/${slug}`
             : `/preview/${slug}/${availableLocale}`,
         ]),
@@ -42,14 +39,15 @@ export async function generateMetadata({
 
 export default async function LocalizedPreviewPage({ params }: PageProps) {
   const { slug, locale } = await params;
-  const draft = await findRestaurantDraft(slug);
-  if (!draft) notFound();
-  const locales = getRestaurantLocales(draft);
+  const site = await findSiteView(slug);
+  if (!site) notFound();
+  const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();
 
   return (
-    <RestaurantSite
-      draft={localizeRestaurantDraft(draft, locale)}
+    <SiteRenderer
+      draft={localizeSiteDraft(site.draft, locale)}
+      vertical={site.vertical}
       locale={locale}
       localeBasePath={`/preview/${slug}`}
       availableLocales={locales}

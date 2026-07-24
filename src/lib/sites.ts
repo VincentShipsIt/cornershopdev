@@ -1,4 +1,8 @@
+import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { leadSiteDrafts } from "@/lib/lead-drafts";
+import type { SiteDraftView } from "@/lib/site-draft";
+import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 import { getVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
@@ -9,13 +13,23 @@ export type LoadedSite = {
 };
 
 /**
+ * What a page needs to render a site: the draft in its structural form plus the
+ * vertical it belongs to, so the renderer can resolve its own config.
+ */
+export type SiteView = {
+  vertical: VerticalId;
+  draft: SiteDraftView;
+};
+
+/**
  * The vertical-agnostic read path: load a `Site` row and project it back through
  * the owning vertical's own schemas. Nothing here knows what a menu, a cuisine or
  * a dietary label is — those live in the `attributes` bags and are re-validated on
  * the way out, so a bad write surfaces here rather than in the renderer.
  *
  * Returns `null` when the database is not configured or the slug is unknown; the
- * in-code fixture fallbacks are a caller concern, not a storage concern.
+ * in-code fixture fallbacks are layered on by `findSiteView` below rather than by
+ * this storage read.
  */
 export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   if (!process.env.DATABASE_URL) return null;
@@ -81,6 +95,42 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   });
 
   return { vertical: site.vertical, config, draft };
+}
+
+/**
+ * The loader every rendering page uses. It adds the demo-mode fixture fallbacks on
+ * top of the storage read: without `DATABASE_URL` the app still serves the seeded
+ * lead drafts and the sample site, which is what makes `bun run dev` work with no
+ * infrastructure. Those fixtures are restaurant drafts today — when a second
+ * vertical ships fixtures they move behind the registry, not into this branch.
+ */
+export async function findSiteView(slug: string): Promise<SiteView | null> {
+  if (!process.env.DATABASE_URL) {
+    const leadDraft = leadSiteDrafts[slug];
+    if (leadDraft) return { vertical: Vertical.RESTAURANT, draft: leadDraft };
+    return slug === sampleSiteDraft.slug
+      ? { vertical: Vertical.RESTAURANT, draft: sampleSiteDraft }
+      : null;
+  }
+
+  const site = await findSiteDraft(slug);
+  if (!site) return null;
+  // `findSiteDraft` already parsed the draft with the vertical's own schema, and
+  // every vertical draft extends the base shape the view type describes.
+  return { vertical: site.vertical, draft: site.draft as SiteDraftView };
+}
+
+/**
+ * Same as `findSiteView`, but falls back to the sample site under the requested
+ * slug so surfaces that must always render something (the dashboard) have a draft.
+ */
+export async function getSiteView(slug: string): Promise<SiteView> {
+  return (
+    (await findSiteView(slug)) ?? {
+      vertical: Vertical.RESTAURANT,
+      draft: { ...sampleSiteDraft, slug },
+    }
+  );
 }
 
 function fromDatabaseImageProvenance(

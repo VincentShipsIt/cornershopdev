@@ -7,39 +7,52 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import {
-  getRestaurantDictionary,
-  getRestaurantTemplateCopy,
+  getSiteDictionary,
+  getTemplateCopy,
   localizeIntegrationUrl,
-} from "@/lib/restaurant-i18n";
-import { formatPrice, type RestaurantDraft } from "@/lib/restaurant";
-import { resolveRestaurantTemplate } from "@/lib/restaurant-templates";
+} from "@/lib/site-i18n";
+import { formatPrice, type SiteDraftView } from "@/lib/site-draft";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 import { cn } from "@/lib/utils";
 
-type RestaurantSiteProps = {
-  draft: RestaurantDraft;
+/**
+ * The one renderer every vertical shares. It takes the `Vertical` *value* rather
+ * than a resolved config because two of its call sites are client components and
+ * a config carries RegExp and functions that cannot cross that boundary — the
+ * same reason the import workflow threads the enum value. Everything
+ * vertical-specific reaches this file as data: the template's layout primitives,
+ * the dictionary, the capability flags, and the item badge strings.
+ */
+type SiteRendererProps = {
+  draft: SiteDraftView;
+  vertical: VerticalId;
   embedded?: boolean;
   locale?: string;
   localeBasePath?: string;
   availableLocales?: string[];
 };
 
-export function RestaurantSite({
+export function SiteRenderer({
   draft,
+  vertical,
   embedded = false,
   locale = draft.defaultLocale,
   localeBasePath,
   availableLocales = [draft.defaultLocale],
-}: RestaurantSiteProps) {
+}: SiteRendererProps) {
+  const config = resolveVerticalConfig(vertical);
   const booking = draft.integrations.find(
     (integration) => integration.type === "booking",
   );
   const ordering = draft.integrations.find((integration) =>
     ["ordering", "delivery"].includes(integration.type),
   );
-  const template = resolveRestaurantTemplate(draft.cuisine);
-  const copy = getRestaurantTemplateCopy(template, locale);
-  const dictionary = getRestaurantDictionary(locale);
-  const picturedItems = draft.menuSections
+  const template = config.templates.resolve(draft.attributes);
+  const capabilities = config.rendererCapabilities(draft.attributes);
+  const copy = getTemplateCopy(template, locale);
+  const dictionary = getSiteDictionary(config, locale);
+  const picturedItems = draft.catalogSections
     .flatMap((section) => section.items)
     .filter(
       (item): item is typeof item & { imageUrl: string } =>
@@ -63,7 +76,7 @@ export function RestaurantSite({
   return (
     <article
       lang={locale}
-      data-restaurant-template={template.id}
+      data-site-template={template.id}
       className={cn(
         "font-sans",
         embedded
@@ -72,11 +85,11 @@ export function RestaurantSite({
       )}
       style={
         {
-          "--restaurant-bg": draft.palette.background,
-          "--restaurant-fg": draft.palette.foreground,
-          "--restaurant-accent": draft.palette.accent,
-          background: "var(--restaurant-bg)",
-          color: "var(--restaurant-fg)",
+          "--site-bg": draft.palette.background,
+          "--site-fg": draft.palette.foreground,
+          "--site-accent": draft.palette.accent,
+          background: "var(--site-bg)",
+          color: "var(--site-fg)",
         } as React.CSSProperties
       }
     >
@@ -124,7 +137,7 @@ export function RestaurantSite({
                     availableLocale === locale
                       ? immersiveHero
                         ? "bg-white text-black"
-                        : "bg-[var(--restaurant-fg)] text-[var(--restaurant-bg)]"
+                        : "bg-[var(--site-fg)] text-[var(--site-bg)]"
                       : "opacity-75 hover:opacity-100",
                   )}
                 >
@@ -158,7 +171,7 @@ export function RestaurantSite({
                 "col-span-2 row-start-2 inline-flex min-h-11 items-center justify-center px-4 py-2 text-center text-xs font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 sm:col-auto sm:row-auto sm:min-h-0 sm:whitespace-nowrap",
                 template.id === "bold" ? "rounded-none" : "rounded-full",
               )}
-              style={{ background: "var(--restaurant-accent)" }}
+              style={{ background: "var(--site-accent)" }}
             >
               {booking.label}
             </a>
@@ -182,7 +195,7 @@ export function RestaurantSite({
             <div className="max-w-2xl">
               <p
                 className="mb-5 text-xs font-bold uppercase tracking-[0.2em]"
-                style={{ color: "var(--restaurant-accent)" }}
+                style={{ color: "var(--site-accent)" }}
               >
                 {draft.eyebrow}
               </p>
@@ -196,7 +209,7 @@ export function RestaurantSite({
           </div>
           <HeroImage
             draft={draft}
-            locale={locale}
+            heroImageAlt={dictionary.heroImageAlt}
             className="min-h-[420px] lg:min-h-full"
           />
         </section>
@@ -210,7 +223,7 @@ export function RestaurantSite({
           >
             <HeroImage
               draft={draft}
-              locale={locale}
+              heroImageAlt={dictionary.heroImageAlt}
               className="absolute inset-0"
             />
             <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(10,18,15,0.86),rgba(10,18,15,0.02)_70%)]" />
@@ -226,7 +239,7 @@ export function RestaurantSite({
         >
           <HeroImage
             draft={draft}
-            locale={locale}
+            heroImageAlt={dictionary.heroImageAlt}
             className="absolute inset-0"
           />
           <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(10,12,11,0.88),rgba(10,12,11,0.04)_68%)]" />
@@ -234,13 +247,13 @@ export function RestaurantSite({
         </section>
       )}
 
-      {draft.showMenuImages && picturedItems.length > 0 ? (
+      {capabilities.showGallery && picturedItems.length > 0 ? (
         <section className="mx-auto max-w-7xl px-6 py-14 md:px-10 md:py-20">
           <div className="mb-8 flex items-end justify-between gap-6">
             <div>
               <p
                 className="text-xs font-bold uppercase tracking-[0.18em]"
-                style={{ color: "var(--restaurant-accent)" }}
+                style={{ color: "var(--site-accent)" }}
               >
                 {copy.featuredHeading}
               </p>
@@ -298,10 +311,10 @@ export function RestaurantSite({
       <section className="mx-auto grid max-w-7xl gap-12 px-6 py-16 md:px-10 md:py-24 lg:grid-cols-[0.68fr_1.32fr]">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
-            {copy.menuEyebrow}
+            {copy.catalogEyebrow}
           </p>
           <h2 className="mt-3 max-w-md break-words text-4xl font-bold leading-[0.96] tracking-[-0.045em] md:text-6xl">
-            {copy.menuHeading}
+            {copy.catalogHeading}
           </h2>
           <div className="mt-8 flex flex-col gap-3 text-sm opacity-75">
             <span className="flex items-start gap-2">
@@ -338,14 +351,14 @@ export function RestaurantSite({
 
         <div
           className={cn(
-            template.menuLayout === "stack" && "space-y-12",
-            template.menuLayout === "columns" &&
+            template.catalogLayout === "stack" && "space-y-12",
+            template.catalogLayout === "columns" &&
               "grid content-start gap-x-10 gap-y-12 md:grid-cols-2",
-            template.menuLayout === "cards" &&
+            template.catalogLayout === "cards" &&
               "grid content-start gap-5 md:grid-cols-2",
           )}
         >
-          {draft.menuSections.map((section) => (
+          {draft.catalogSections.map((section) => (
             <section
               key={section.name}
               className={template.sectionClassName}
@@ -371,7 +384,11 @@ export function RestaurantSite({
                         <h4 className="min-w-0 break-words font-medium">
                           {item.name}
                         </h4>
-                        {item.dietaryLabels.map((label) => (
+                        {/* The vertical turns its own item attributes into plain
+                            strings, so the renderer never learns what they mean. */}
+                        {(
+                          config.presentation.itemBadges?.(item.attributes) ?? []
+                        ).map((label: string) => (
                           <span
                             key={label}
                             className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
@@ -406,34 +423,29 @@ export function RestaurantSite({
 }
 
 type HeroImageProps = {
-  draft: RestaurantDraft;
+  draft: Pick<SiteDraftView, "heroImageUrl" | "name">;
+  heroImageAlt: string;
   className?: string;
-  locale?: string;
 };
 
-function HeroImage({
-  draft,
-  className,
-  locale = draft.defaultLocale,
-}: HeroImageProps) {
-  const dictionary = getRestaurantDictionary(locale);
+function HeroImage({ draft, heroImageAlt, className }: HeroImageProps) {
   return draft.heroImageUrl ? (
     <div
       role="img"
-      aria-label={`${dictionary.diningRoomAlt} ${draft.name}`}
+      aria-label={`${heroImageAlt} ${draft.name}`}
       className={cn("bg-cover bg-center", className)}
       style={{ backgroundImage: `url("${draft.heroImageUrl}")` }}
     />
   ) : (
     <div
       className={cn("opacity-20", className)}
-      style={{ background: "var(--restaurant-accent)" }}
+      style={{ background: "var(--site-accent)" }}
     />
   );
 }
 
 type HeroCopyProps = {
-  draft: RestaurantDraft;
+  draft: Pick<SiteDraftView, "eyebrow" | "name" | "description">;
   titleClassName: string;
 };
 
