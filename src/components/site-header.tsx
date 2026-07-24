@@ -4,6 +4,7 @@ import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -65,11 +66,16 @@ export function SiteHeader() {
             </SheetHeader>
             <nav className="mt-10 flex flex-col gap-5 text-lg">
               {links.map((link) => (
-                <Link key={link.href} href={link.href}>
+                <SheetClose
+                  key={link.href}
+                  render={<Link href={link.href} />}
+                >
                   {link.label}
-                </Link>
+                </SheetClose>
               ))}
-              <Link href="/dashboard">Sign in</Link>
+              <SheetClose render={<Link href="/dashboard" />}>
+                Sign in
+              </SheetClose>
               <Button
                 render={<Link href="/create" />}
                 nativeButton={false}
