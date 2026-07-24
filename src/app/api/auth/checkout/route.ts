@@ -1,6 +1,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
+import {
+  claimableWhere,
+  RestaurantNotClaimableError,
+} from "@/lib/restaurant-claim";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
 import { getStripe } from "@/lib/stripe";
 
@@ -35,57 +39,73 @@ export async function GET(request: Request) {
 
   if (process.env.DATABASE_URL) {
     const db = getDb();
-    await db.$transaction(async (tx) => {
-      const user = await tx.user.upsert({
-        where: { email },
-        update: {},
-        create: { email },
-      });
-      const membership = await tx.membership.findFirst({
-        where: { userId: user.id },
-      });
-      const organizationId =
-        membership?.organizationId ??
-        (
-          await tx.organization.create({
-            data: {
-              name: restaurantSlug,
-              memberships: {
-                create: { userId: user.id, role: "owner" },
-              },
-            },
-          })
-        ).id;
-
-      await tx.restaurant.updateMany({
-        where: { slug: restaurantSlug },
-        data: { organizationId, status: "CLAIMED" },
-      });
-
-      if (typeof checkout.customer === "string") {
-        await tx.subscription.upsert({
-          where: { stripeCustomerId: checkout.customer },
-          update: {
-            stripeSubscriptionId:
-              typeof checkout.subscription === "string"
-                ? checkout.subscription
-                : null,
-            stripePriceId,
-            status: "ACTIVE",
-          },
-          create: {
-            stripeCustomerId: checkout.customer,
-            stripeSubscriptionId:
-              typeof checkout.subscription === "string"
-                ? checkout.subscription
-                : null,
-            stripePriceId,
-            status: "ACTIVE",
-            organizationId,
-          },
+    try {
+      await db.$transaction(async (tx) => {
+        const user = await tx.user.upsert({
+          where: { email },
+          update: {},
+          create: { email },
         });
+        const membership = await tx.membership.findFirst({
+          where: { userId: user.id },
+        });
+        const organizationId =
+          membership?.organizationId ??
+          (
+            await tx.organization.create({
+              data: {
+                name: restaurantSlug,
+                memberships: {
+                  create: { userId: user.id, role: "owner" },
+                },
+              },
+            })
+          ).id;
+
+        // Matching on slug alone would let any completed checkout reassign
+        // somebody else's restaurant, so eligibility is enforced inside the
+        // WHERE clause where it is atomic and immune to a check-then-write
+        // race. A zero count means the slug is missing or already owned by a
+        // different organization; the transaction is rolled back and no
+        // session cookie is issued for it.
+        const claim = await tx.restaurant.updateMany({
+          where: claimableWhere(restaurantSlug, organizationId),
+          data: { organizationId, status: "CLAIMED" },
+        });
+        if (claim.count === 0) {
+          throw new RestaurantNotClaimableError();
+        }
+
+        if (typeof checkout.customer === "string") {
+          await tx.subscription.upsert({
+            where: { stripeCustomerId: checkout.customer },
+            update: {
+              stripeSubscriptionId:
+                typeof checkout.subscription === "string"
+                  ? checkout.subscription
+                  : null,
+              stripePriceId,
+              status: "ACTIVE",
+            },
+            create: {
+              stripeCustomerId: checkout.customer,
+              stripeSubscriptionId:
+                typeof checkout.subscription === "string"
+                  ? checkout.subscription
+                  : null,
+              stripePriceId,
+              status: "ACTIVE",
+              organizationId,
+            },
+          });
+        }
+      });
+    } catch (error) {
+      if (error instanceof RestaurantNotClaimableError) {
+        return Response.json({ error: error.message }, { status: 409 });
       }
-    });
+      throw error;
+    }
   }
 
   const cookieStore = await cookies();

@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { getDb } from "@/lib/db";
+import { CLAIMABLE_STATUSES } from "@/lib/restaurant-claim";
 import { getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -34,8 +35,12 @@ export async function POST(request: Request) {
     const session = event.data.object;
     const slug = session.metadata?.restaurantSlug;
     if (slug) {
+      // Checkout metadata is attacker-influenced, so a webhook must never flip
+      // a restaurant that is already owned. Restricting the WHERE clause to
+      // claimable statuses makes this a no-op for anything already claimed,
+      // which would otherwise lock the real owner out of re-importing.
       await db.restaurant.updateMany({
-        where: { slug },
+        where: { slug, status: { in: CLAIMABLE_STATUSES } },
         data: { status: "CLAIMED" },
       });
     }
