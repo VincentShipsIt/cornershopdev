@@ -32,7 +32,10 @@ export function platformReplyTo(
   return environment.EMAIL_REPLY_TO || undefined;
 }
 
-type EmailEnvironment = {
-  EMAIL_FROM?: string;
-  EMAIL_REPLY_TO?: string;
-};
+/**
+ * Reads EMAIL_FROM and EMAIL_REPLY_TO. Deliberately an index signature rather
+ * than those two names: `process.env` is a weak type under bun-types, so a
+ * type listing only optional keys it does not declare is not assignable to it.
+ * Same shape `platform-readiness` uses for the same reason.
+ */
+type EmailEnvironment = Record<string, string | undefined>;
