@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { platformHostnames } from "@/lib/hostnames";
 import {
   listEmbedFrameOrigins,
   resolveVerticalByHostname,
@@ -36,18 +37,6 @@ function requestHostname(request: NextRequest) {
     .trim()
     .split(":")[0]
     .toLowerCase();
-}
-
-function platformHostnames() {
-  return new Set(
-    (
-      process.env.PLATFORM_HOSTNAMES ??
-      "cornershop.dev,www.cornershop.dev,api.cornershop.dev,domains.cornershop.dev"
-    )
-      .split(",")
-      .map((hostname) => hostname.trim().toLowerCase())
-      .filter(Boolean),
-  );
 }
 
 export async function proxy(request: NextRequest) {
