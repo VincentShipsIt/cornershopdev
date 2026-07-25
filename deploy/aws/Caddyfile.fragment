@@ -9,6 +9,23 @@ domains.cornershop.dev {
 	respond 404
 }
 
+# api.restofront.com keeps an explicit block for the length of the rename. It
+# cannot fall through to the on-demand catch-all below: that path asks the app
+# first, and the ask endpoint authorizes only factory hostnames and verified
+# customer domains, so any deploy whose PLATFORM_HOSTNAMES has moved on to
+# cornershop.dev answers 403 and Caddy aborts the handshake. Declaring the name
+# also renews its certificate without depending on the app being up at all.
+# Delete once restofront.com traffic has moved to cornershop.dev.
+#
+# domains.restofront.com is deliberately not declared. It has no DNS record, so
+# the block it used to have could never complete a challenge and only spent this
+# instance's Let's Encrypt failure budget on every other tenant's behalf.
+api.restofront.com {
+	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
+	respond @workflowHandlers 404
+	reverse_proxy cornershopdev:3000
+}
+
 https:// {
 	tls {
 		on_demand
