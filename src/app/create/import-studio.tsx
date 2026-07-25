@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { sampleSiteDraft } from "@/lib/restaurant";
-import type { ImportUrls } from "@/lib/restaurant-import";
+import type { ImportUrls } from "@/lib/import-identity";
 import type { SiteDraftView } from "@/lib/site-draft";
 import { listVerticalIds } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";

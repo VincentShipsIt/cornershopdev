@@ -25,19 +25,15 @@ const registry = {
 } satisfies Record<VerticalId, ErasedVerticalConfig>;
 
 /**
- * Returns the union of every registered config. With a single vertical this used
- * to hand back the concrete restaurant type, which let a caller bind to
- * restaurant specifics and still compile; registering beauty collapsed it to the
- * union and turned each of those into a build error. Prefer
- * `resolveVerticalConfig` for anything that only knows a `Vertical` at runtime —
- * this overload exists for call sites that discriminate on the union themselves.
+ * The only way to get a config from a runtime `Vertical` value. It deliberately
+ * returns the erased surface rather than the union of registered configs: while
+ * restaurant was the sole vertical, a union-typed lookup handed back the concrete
+ * restaurant type, so a caller could bind to restaurant specifics and still
+ * compile. Registering beauty collapsed that to a union and turned every such
+ * binding into a build error at once. Erasing here means a call site can only ever
+ * use the shared contract, so vertical #3 costs nothing. Anything that genuinely
+ * needs a vertical's specifics imports that vertical's config module directly.
  */
-export function getVerticalConfig(
-  id: VerticalId,
-): (typeof registry)[VerticalId] {
-  return registry[id];
-}
-
 export function resolveVerticalConfig(id: VerticalId): ErasedVerticalConfig {
   return registry[id];
 }

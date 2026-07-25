@@ -1,6 +1,6 @@
 import { getWritable } from "workflow";
 import { fetchPublicImage, type ExtractedSite } from "@/lib/importer";
-import { importFailureMessage } from "@/lib/restaurant-import";
+import { importFailureMessage } from "@/lib/import-identity";
 import {
   persistSiteImport,
   recordImportFailure,

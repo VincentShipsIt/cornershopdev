@@ -3,7 +3,7 @@ import { start } from "workflow/api";
 import { z } from "zod";
 import { Vertical } from "@/generated/prisma/enums";
 import { limitPublicPreview } from "@/lib/rate-limit";
-import { importFailureMessage } from "@/lib/restaurant-import";
+import { importFailureMessage } from "@/lib/import-identity";
 import {
   createImportJob,
   ImportConflictError,

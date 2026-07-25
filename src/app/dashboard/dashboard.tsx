@@ -119,7 +119,7 @@ export function Dashboard({
         body: JSON.stringify({
           sourceImageUrl,
           siteSlug: draft.slug,
-          restaurantName: draft.name,
+          siteName: draft.name,
         }),
       });
       const result = (await response.json()) as {

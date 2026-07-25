@@ -1,9 +1,12 @@
 import { z } from "zod";
-import { enhanceRestaurantImage } from "@/lib/ai/restaurant-generation";
+import { Vertical } from "@/generated/prisma/enums";
+import { enhanceSiteImage } from "@/lib/ai/site-generation";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
 import { fetchPublicImage } from "@/lib/importer";
 import { storeSiteImage } from "@/lib/storage/images";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,7 +16,7 @@ const requestSchema = z.object({
     .url()
     .refine((value) => value.startsWith("https://"), "Use an HTTPS image URL"),
   siteSlug: z.string().trim().min(2).max(80),
-  restaurantName: z.string().trim().min(2).max(120).optional(),
+  siteName: z.string().trim().min(2).max(120).optional(),
   enhancementNotes: z.string().trim().min(5).max(500).optional(),
 });
 
@@ -23,20 +26,22 @@ export async function POST(request: Request) {
     if (!session) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const {
-      sourceImageUrl,
-      siteSlug,
-      restaurantName,
-      enhancementNotes,
-    } = requestSchema.parse(await request.json());
+    const { sourceImageUrl, siteSlug, siteName, enhancementNotes } =
+      requestSchema.parse(await request.json());
     if (session.siteSlug !== siteSlug) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    // Without a database there is no site row to read the vertical from, so the
+    // demo-mode fallback matches the fixture fallbacks in `sites.ts`: the seeded
+    // sample site is a restaurant.
+    let vertical: VerticalId = Vertical.RESTAURANT;
 
     if (process.env.DATABASE_URL) {
       const site = await getDb().site.findUnique({
         where: { slug: siteSlug },
         select: {
+          vertical: true,
           heroImageUrl: true,
           heroOriginalImageUrl: true,
         },
@@ -44,6 +49,7 @@ export async function POST(request: Request) {
       if (!site) {
         return Response.json({ error: "Site not found" }, { status: 404 });
       }
+      vertical = site.vertical;
       const approvedSources = new Set(
         [site.heroOriginalImageUrl, site.heroImageUrl].filter(
           (value): value is string => Boolean(value),
@@ -64,11 +70,18 @@ export async function POST(request: Request) {
       mediaType: originalImage.mediaType,
       purpose: "original-hero",
     });
-    const image = await enhanceRestaurantImage({
-      sourceImageUrl: originalUrl,
-      restaurantName,
-      enhancementNotes,
-    });
+    // The enhancement guardrails (what the model may not alter) are per-vertical:
+    // a restaurant's are about food and plating, a salon's about skin, hair and
+    // treatment results. Resolving them off the site's own vertical is what keeps
+    // this route from quietly applying the wrong ones.
+    const image = await enhanceSiteImage(
+      {
+        sourceImageUrl: originalUrl,
+        siteName,
+        enhancementNotes,
+      },
+      resolveVerticalConfig(vertical),
+    );
     const url = await storeSiteImage({
       siteSlug,
       data: image.data,
