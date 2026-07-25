@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   CLAIMABLE_STATUSES,
@@ -72,32 +72,40 @@ describe("claimRestaurant", () => {
       { slug: "chez-lea", status: "CLAIMED", organizationId: "org_someone" },
     ]);
 
-    await expect(claimRestaurant(tx, completedCheckout())).rejects.toBeInstanceOf(
-      RestaurantNotClaimableError,
-    );
+    const reported = await expectClaimRejected(tx);
+
+    expect(reported).toMatchObject({
+      slug: "chez-lea",
+      stripeSubscriptionId: "sub_1",
+    });
     expect(state.restaurants[0].organizationId).toBe("org_someone");
     expect(state.subscriptions).toHaveLength(0);
+    // A hijack attempt writes nothing, without relying on the caller having
+    // wrapped this in a transaction that rolls the organization back.
+    expect(state.organizations).toHaveLength(0);
+    expect(state.memberships).toHaveLength(0);
   });
 
   it("refuses a slug that does not exist", async () => {
-    const { tx } = createFakeTx([]);
+    const { state, tx } = createFakeTx([]);
 
-    await expect(claimRestaurant(tx, completedCheckout())).rejects.toBeInstanceOf(
-      RestaurantNotClaimableError,
-    );
+    await expectClaimRejected(tx);
+
+    expect(state.organizations).toHaveLength(0);
   });
 
   it("refuses an owned restaurant whose organization was deleted", async () => {
     // `onDelete: SetNull` leaves a real customer's restaurant at
     // {CLAIMED, organizationId: null}. Treating that as claimable would hand
     // it to whoever checks out next, so it stays off limits.
-    const { tx } = createFakeTx([
+    const { state, tx } = createFakeTx([
       { slug: "chez-lea", status: "CLAIMED", organizationId: null },
     ]);
 
-    await expect(claimRestaurant(tx, completedCheckout())).rejects.toBeInstanceOf(
-      RestaurantNotClaimableError,
-    );
+    await expectClaimRejected(tx);
+
+    expect(state.restaurants[0].organizationId).toBeNull();
+    expect(state.organizations).toHaveLength(0);
   });
 
   it("is idempotent when the other completion path already claimed it", async () => {
@@ -147,6 +155,29 @@ describe("RestaurantNotClaimableError", () => {
     expect(error.message).not.toContain("not found");
   });
 });
+
+/**
+ * Asserts a claim is refused *and* that it left a trace. A rejected claim
+ * means a real payment completed with nothing to show for it, so silence is
+ * itself a bug — the log line is the only signal a human gets, since the
+ * transaction rolls back before an audit row could survive. Spying also keeps
+ * the expected error out of the CI output.
+ */
+async function expectClaimRejected(
+  tx: Prisma.TransactionClient,
+  checkout: CompletedCheckoutInput = completedCheckout(),
+): Promise<Record<string, unknown>> {
+  const logged = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await expect(claimRestaurant(tx, checkout)).rejects.toBeInstanceOf(
+      RestaurantNotClaimableError,
+    );
+    expect(logged).toHaveBeenCalledTimes(1);
+    return logged.mock.calls[0][1] as Record<string, unknown>;
+  } finally {
+    logged.mockRestore();
+  }
+}
 
 function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
   return {
@@ -221,6 +252,8 @@ function createFakeTx(restaurants: RestaurantRow[]) {
       },
     },
     restaurant: {
+      findUnique: async ({ where }: { where: { slug: string } }) =>
+        state.restaurants.find((row) => row.slug === where.slug) ?? null,
       updateMany: async ({ where, data }: UpdateRestaurantsArgs) => {
         const matched = state.restaurants.filter((row) => matches(row, where));
         for (const row of matched) Object.assign(row, data);

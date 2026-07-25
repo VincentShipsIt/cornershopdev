@@ -53,6 +53,26 @@ export function unclaimedWhere(slug: string): Prisma.RestaurantWhereInput {
   return { slug, organizationId: null, status: { in: CLAIMABLE_STATUSES } };
 }
 
+/**
+ * A rejected claim means a real Stripe checkout completed and the buyer got
+ * nothing, so it must never be silent: either somebody is probing slugs with
+ * tampered metadata, or a paying customer is now holding a subscription to a
+ * restaurant they cannot reach. Both need a human, and the transaction is
+ * about to roll back, so an audit row would vanish with it.
+ */
+function rejectClaim(
+  checkout: CompletedCheckout,
+  reason: string,
+): RestaurantNotClaimableError {
+  console.error("[restaurant-claim] rejected a completed checkout", {
+    reason,
+    slug: checkout.restaurantSlug,
+    stripeCustomerId: checkout.stripeCustomerId,
+    stripeSubscriptionId: checkout.stripeSubscriptionId,
+  });
+  return new RestaurantNotClaimableError();
+}
+
 export type CompletedCheckout = {
   email: string;
   restaurantSlug: string;
@@ -87,6 +107,24 @@ export async function claimRestaurant(
   const membership = await tx.membership.findFirst({
     where: { userId: user.id },
   });
+
+  // Reject before creating an organization rather than after. The rollback
+  // would discard an orphaned organization anyway, but only for as long as
+  // every caller remembers the transaction; refusing first means a hijack
+  // attempt writes nothing regardless. The update below stays authoritative —
+  // this read can only reject earlier, never admit something it would not.
+  const existing = await tx.restaurant.findUnique({
+    where: { slug: checkout.restaurantSlug },
+    select: { status: true, organizationId: true },
+  });
+  const alreadyOurs =
+    existing !== null &&
+    membership !== null &&
+    existing.organizationId === membership.organizationId;
+  if (!existing || !(isClaimable(existing) || alreadyOurs)) {
+    throw rejectClaim(checkout, "not claimable");
+  }
+
   const organizationId =
     membership?.organizationId ??
     (
@@ -110,11 +148,12 @@ export async function claimRestaurant(
     // Not claimable as a fresh prospect. That is only acceptable when it is
     // already ours — the other completion path got here first, or the
     // customer reloaded the success page — and then we leave its status be.
-    const alreadyOurs = await tx.restaurant.count({
+    const ours = await tx.restaurant.count({
       where: { slug: checkout.restaurantSlug, organizationId },
     });
-    if (alreadyOurs === 0) {
-      throw new RestaurantNotClaimableError();
+    if (ours === 0) {
+      // Reached only by losing a race that the read above had passed.
+      throw rejectClaim(checkout, "lost claim race");
     }
   }
 
