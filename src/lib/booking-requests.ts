@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { emailSender, getResend } from "@/lib/resend";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 const YEAR_MS = 365 * 24 * 60 * 60_000;
 
@@ -57,6 +59,8 @@ export type BookingRequestSite = {
   name: string;
   slug: string;
   organizationId: string | null;
+  /** Which niche's identity this site's mail goes out under. */
+  vertical: VerticalId;
 };
 
 export type CreatedBookingRequest = {
@@ -161,10 +165,11 @@ export async function notifyOwnerOfBookingRequest(
 
   const { error } = await getResend().emails.send(
     {
-      from: emailSender(),
+      from: emailSender(site.vertical),
       to: recipients,
-      // Deliberately not falling back to the platform address: an owner hitting
-      // reply expects the diner, and reaching us instead would read as one.
+      // Deliberately not falling back to the niche's own address: an owner
+      // hitting reply expects the diner, and reaching us instead would read as
+      // one.
       replyTo: request.email ?? undefined,
       subject: `New booking request for ${site.name}`,
       html: bookingRequestEmailHtml(site, request),
@@ -207,9 +212,14 @@ function bookingRequestEmailHtml(
     )
     .join("");
 
+  // The niche the owner bought from, not the factory that built it. This lands
+  // beside the sender address, so a mismatch between the two is the thing that
+  // makes an otherwise ordinary notification look forged.
+  const brand = resolveVerticalConfig(site.vertical).marketing.brand;
+
   return `<div style="font-family:Arial,sans-serif;background:#f4efe5;padding:40px">
   <div style="max-width:520px;margin:0 auto;background:#fffdf8;border-radius:16px;padding:32px">
-    <p style="margin:0 0 8px;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;color:#a5482d">CORNERSHOPDEV</p>
+    <p style="margin:0 0 8px;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;color:#a5482d">${escapeHtml(brand.name.toUpperCase())}</p>
     <h1 style="margin:0 0 16px;font-size:22px;color:#2f2a24">New booking request</h1>
     <p style="margin:0 0 24px;font-size:15px;color:#5c5147">Someone asked to book with ${escapeHtml(site.name)} through your website.</p>
     <table style="border-collapse:collapse">${body}</table>

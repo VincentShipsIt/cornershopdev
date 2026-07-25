@@ -10,10 +10,7 @@ export type CatalogVocabulary = {
 };
 
 export type IntegrationLinkType =
-  | "booking"
-  | "ordering"
-  | "delivery"
-  | "social";
+  "booking" | "ordering" | "delivery" | "social";
 
 /**
  * How a provider's own booking widget is embedded on a generated site.
@@ -94,12 +91,7 @@ export type LinkClassificationHint = {
  * mapping, so an unmapped name is a build error rather than a blank square.
  */
 export type MarketingIconName =
-  | "catalog"
-  | "imagery"
-  | "booking"
-  | "refresh"
-  | "shield"
-  | "cursor";
+  "catalog" | "imagery" | "booking" | "refresh" | "shield" | "cursor";
 
 export type MarketingPlan = {
   name: string;
@@ -130,6 +122,19 @@ export type VerticalMarketing = {
   /** Bare domain printed as the niche's public identity, or null while unlaunched. */
   domain: string | null;
   brand: { name: string; initials: string };
+  /**
+   * The address this niche's mail goes out as, and where a reply to it lands.
+   * Every customer arrives through a niche storefront, so every customer email
+   * is a niche email: a restaurant that bought Restofront must never receive a
+   * sign-in link from a factory address it has never heard of.
+   *
+   * Null until the niche's sending domain is verified with the mail provider.
+   * That is not a soft default — a niche cannot send as a domain it does not
+   * own, and borrowing a launched niche's address would put Restofront's name
+   * on a salon's mail. So this gates launch alongside `domain`: a niche is
+   * live when it has both, and until then `EMAIL_FROM` covers the stragglers.
+   */
+  email: { from: string; replyTo: string } | null;
   /** Plural noun for the businesses served: "restaurants", "salons and barbers". */
   audience: string;
   /** One line under the niche's name on the factory homepage. */

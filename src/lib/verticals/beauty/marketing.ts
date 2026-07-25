@@ -14,6 +14,9 @@ export const beautyMarketing = {
   hostnames: [],
   domain: null,
   brand: { name: "Salonfront", initials: "SF" },
+  // No domain yet, so no sending domain to verify either. Launching means a DNS
+  // record, a verified sender, and these two strings — in that order.
+  email: null,
   audience: "salons and barbers",
   tagline: "A service list and a booking button, always up to date.",
   heroVisual: "none",
