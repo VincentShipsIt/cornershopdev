@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { getResend } from "@/lib/resend";
+import { emailSender, getResend } from "@/lib/resend";
 
 const YEAR_MS = 365 * 24 * 60 * 60_000;
 
@@ -161,8 +161,10 @@ export async function notifyOwnerOfBookingRequest(
 
   const { error } = await getResend().emails.send(
     {
-      from: process.env.EMAIL_FROM ?? "Cornershopdev <onboarding@resend.dev>",
+      from: emailSender(),
       to: recipients,
+      // Deliberately not falling back to the platform address: an owner hitting
+      // reply expects the diner, and reaching us instead would read as one.
       replyTo: request.email ?? undefined,
       subject: `New booking request for ${site.name}`,
       html: bookingRequestEmailHtml(site, request),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { getResend } from "@/lib/resend";
+import { emailSender, getResend, platformReplyTo } from "@/lib/resend";
 import { createSessionToken } from "@/lib/session";
 
 const schema = z.object({ email: z.email() });
@@ -41,8 +41,9 @@ export async function POST(request: Request) {
     const verifyUrl = `${appUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
     const { error } = await getResend().emails.send(
       {
-        from: process.env.EMAIL_FROM ?? "Cornershopdev <onboarding@resend.dev>",
+        from: emailSender(),
         to: email,
+        replyTo: platformReplyTo(),
         subject: `Open ${site.name} in Cornershopdev`,
         html: `<div style="font-family:Arial,sans-serif;background:#f4efe5;padding:40px">
           <div style="max-width:520px;margin:auto;background:white;border-radius:18px;padding:32px">
