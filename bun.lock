@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "restofront",
+      "name": "cornershopdev",
       "dependencies": {
         "@aws-sdk/client-s3": "^3.1093.0",
         "@base-ui/react": "^1.6.0",

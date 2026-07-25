@@ -1,7 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { listEmbedFrameOrigins } from "@/lib/verticals/registry";
+import {
+  listEmbedFrameOrigins,
+  resolveVerticalByHostname,
+  verticalSlug,
+} from "@/lib/verticals/registry";
 
 /**
  * The only origins a generated site may frame, derived from the provider tables
@@ -38,7 +42,7 @@ function platformHostnames() {
   return new Set(
     (
       process.env.PLATFORM_HOSTNAMES ??
-      "restofront.com,www.restofront.com,api.restofront.com,domains.restofront.com"
+      "cornershop.dev,www.cornershop.dev,api.cornershop.dev,domains.cornershop.dev"
     )
       .split(",")
       .map((hostname) => hostname.trim().toLowerCase())
@@ -58,6 +62,21 @@ export async function proxy(request: NextRequest) {
   const hostname = requestHostname(request);
   if (!hostname || platformHostnames().has(hostname)) {
     return NextResponse.next();
+  }
+
+  // A niche's own marketing domain — restofront.com today, a nails or barber
+  // domain tomorrow. Resolved from the vertical registry rather than from the
+  // domain table: these hostnames belong to the factory, not to a customer, so
+  // they must never be claimable through the custom-domain flow below, and
+  // answering here also spares them a database round trip on every request.
+  const niche = resolveVerticalByHostname(hostname);
+  if (niche) {
+    // The locale segment is dropped deliberately: a niche's marketing copy lives
+    // in its config in one language, unlike a generated site, so `/fr` here
+    // serves the same page rather than 404ing on a URL a visitor may well try.
+    return NextResponse.rewrite(
+      new URL(`/niche/${verticalSlug(niche)}`, request.url),
+    );
   }
 
   const domain = await getDb().domain.findFirst({

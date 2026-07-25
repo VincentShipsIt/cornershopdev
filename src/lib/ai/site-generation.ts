@@ -82,8 +82,8 @@ function getTextModel() {
       compatibility: "strict",
       headers: {
         "HTTP-Referer":
-          process.env.NEXT_PUBLIC_APP_URL ?? "https://restofront.com",
-        "X-Title": "Restofront",
+          process.env.NEXT_PUBLIC_APP_URL ?? "https://cornershop.dev",
+        "X-Title": "Cornershopdev",
       },
     });
     return openrouter.chat(

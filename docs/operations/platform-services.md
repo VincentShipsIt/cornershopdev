@@ -1,6 +1,6 @@
 # Platform services runbook
 
-Restofront needs PostgreSQL, Redis, and Amazon S3 before production can accept
+Cornershopdev needs PostgreSQL, Redis, and Amazon S3 before production can accept
 public imports. Production runs on the shared `api.shipshit.dev` EC2 host in an
 isolated container, while data services and credentials remain isolated.
 
@@ -13,7 +13,7 @@ encrypted SSM parameters on the EC2 host.
 | Service | Production isolation | Runtime variables |
 | --- | --- | --- |
 | PostgreSQL | Dedicated database and login on the existing private RDS instance | `DATABASE_URL` |
-| Workflow | PostgreSQL World with a Restofront job prefix and bounded concurrency | `WORKFLOW_*` |
+| Workflow | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency | `WORKFLOW_*` |
 | Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
 | Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
 
@@ -83,7 +83,7 @@ suspected exposure or an operator access change:
 
 1. Create the replacement credential.
 2. Update the matching SecureString under
-   `/shipshit/production/restofront/`.
+   `/shipshit/production/cornershopdev/`.
 3. Deploy the exact reviewed image and verify readiness.
 4. Revoke the old credential only after production is healthy.
 5. Record the date, owner, affected environment, and verification result without
@@ -96,19 +96,19 @@ production secrets, uploads the immutable image archive to the private
 deployment bucket, and assumes the repository-scoped AWS OIDC role. Merging to
 `main` never deploys automatically. An operator dispatches production only after
 the scoped IAM policy, SSM parameters, host bootstrap, and DNS prerequisites are
-reviewed and ready. The role may upload only Restofront artifacts and send only
+reviewed and ready. The role may upload only Cornershopdev artifacts and send only
 `AWS-RunShellScript` commands to the production instance.
 
 The host deployment script:
 
-1. Loads Restofront parameters from SSM without printing them.
+1. Loads Cornershopdev parameters from SSM without printing them.
 2. Starts or verifies the isolated Redis container.
 3. Loads the exact image artifact and starts a candidate.
 4. Waits for `/api/health/ready`.
 5. Swaps container names, reloads Caddy, and rolls back on failure.
 
-Route53 sends `restofront.com`, `www.restofront.com`, and
-`domains.restofront.com` to the EC2 Elastic IP. Caddy owns TLS termination.
+Route53 sends `cornershop.dev`, `www.cornershop.dev`, and
+`domains.cornershop.dev` to the EC2 Elastic IP. Caddy owns TLS termination.
 Customer domains use on-demand TLS, gated by
 `/api/domains/authorize`; unverified hostnames cannot cause certificate
 issuance.

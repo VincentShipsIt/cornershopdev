@@ -1,11 +1,11 @@
-# BEGIN RESTOFRONT
-api.restofront.com {
+# BEGIN CORNERSHOPDEV
+api.cornershop.dev {
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy restofront:3000
+	reverse_proxy cornershopdev:3000
 }
 
-domains.restofront.com {
+domains.cornershop.dev {
 	respond 404
 }
 
@@ -15,6 +15,6 @@ https:// {
 	}
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy restofront:3000
+	reverse_proxy cornershopdev:3000
 }
-# END RESTOFRONT
+# END CORNERSHOPDEV

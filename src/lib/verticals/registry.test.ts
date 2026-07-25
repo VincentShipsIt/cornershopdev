@@ -8,8 +8,12 @@ import {
 } from "@/lib/restaurant";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
 import {
+  listMarketingVerticals,
   listVerticalIds,
+  resolveVerticalByHostname,
+  resolveVerticalBySlug,
   resolveVerticalConfig,
+  verticalSlug,
 } from "@/lib/verticals/registry";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 
@@ -121,5 +125,80 @@ describe("vertical registry", () => {
 
     expect(draft.attributes).toEqual(beautyConfig.attributeDefaults);
     expect(draft.catalogSections[0]?.name).toBe(beautyConfig.vocabulary.catalog);
+  });
+});
+
+/**
+ * The lookups that make a niche domain a config entry instead of a new route.
+ * `proxy.ts` and the storefront page are both built entirely on these, so a
+ * regression here is a niche serving the wrong site or no site at all.
+ */
+describe("niche routing", () => {
+  it("round-trips every registered vertical through its slug", () => {
+    for (const id of listVerticalIds()) {
+      expect(resolveVerticalBySlug(verticalSlug(id))).toBe(id);
+    }
+  });
+
+  /**
+   * The slug arrives from a URL segment and from the `?vertical=` a storefront
+   * puts on its own CTA, so it is untrusted input on both paths.
+   */
+  it("rejects a slug no vertical declares", () => {
+    expect(resolveVerticalBySlug("not-a-registered-vertical")).toBeNull();
+    expect(resolveVerticalBySlug("")).toBeNull();
+  });
+
+  it("resolves a niche's own domain to that niche", () => {
+    expect(resolveVerticalByHostname("restofront.com")).toBe(
+      Vertical.RESTAURANT,
+    );
+    expect(resolveVerticalByHostname("www.restofront.com")).toBe(
+      Vertical.RESTAURANT,
+    );
+  });
+
+  /**
+   * Hosts arrive cased however the client sent them and carry a port in
+   * development, where a niche is reached at `restofront.localhost:3000`.
+   */
+  it("normalises case and port before matching", () => {
+    expect(resolveVerticalByHostname("RestoFront.com:3000")).toBe(
+      Vertical.RESTAURANT,
+    );
+  });
+
+  /**
+   * A miss here is what lets the request fall through to the customer domain
+   * table in `proxy.ts`. If this ever matched loosely, a customer's verified
+   * custom domain would be answered with a marketing page instead of their site.
+   */
+  it("claims nothing it was not given", () => {
+    expect(resolveVerticalByHostname("cornershop.dev")).toBeNull();
+    expect(resolveVerticalByHostname("pizzeria-luigi.com")).toBeNull();
+    expect(resolveVerticalByHostname("notrestofront.com")).toBeNull();
+    expect(resolveVerticalByHostname("")).toBeNull();
+  });
+
+  it("lets no two verticals register the same hostname", () => {
+    const claimed = listVerticalIds().flatMap(
+      (id) => resolveVerticalConfig(id).marketing.hostnames,
+    );
+    expect(new Set(claimed).size).toBe(claimed.length);
+  });
+
+  /**
+   * The factory homepage renders this list directly, so it has to contain every
+   * registered niche — an unlaunched one is the upcoming card — with the ones
+   * that already have a domain first.
+   */
+  it("lists every niche for the homepage, launched ones first", () => {
+    const ordered = listMarketingVerticals();
+    expect([...ordered].sort()).toEqual([...listVerticalIds()].sort());
+
+    const launched = ordered.map((id) =>
+      Boolean(resolveVerticalConfig(id).marketing.domain),
+    );
+    expect(launched).toEqual([...launched].sort((a, b) => Number(b) - Number(a)));
   });
 });

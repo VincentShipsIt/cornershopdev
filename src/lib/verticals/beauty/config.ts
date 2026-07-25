@@ -13,6 +13,7 @@ import {
   beautyProviders,
   beautyRelevantPathPattern,
 } from "@/lib/verticals/beauty/providers";
+import { beautyMarketing } from "@/lib/verticals/beauty/marketing";
 import { beautyPrompt } from "@/lib/verticals/beauty/prompt";
 import {
   beautyTemplates,
@@ -75,6 +76,7 @@ export const beautyConfig = {
     section: "Category",
     item: "Service",
   },
+  marketing: beautyMarketing,
   attributesSchema: beautyAttributesSchema,
   attributeDefaults: {
     serviceStyle: "modern-studio",

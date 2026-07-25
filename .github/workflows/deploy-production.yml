@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: restofront-production
+  group: cornershopdev-production
   cancel-in-progress: false
 
 permissions:
@@ -19,9 +19,9 @@ jobs:
     environment: Production
     env:
       AWS_REGION: us-west-1
-      ARTIFACT_BUCKET: restofront-production-deploy-948918267147-us-west-1
+      ARTIFACT_BUCKET: cornershopdev-production-deploy-948918267147-us-west-1
       INSTANCE_ID: i-00e74422e719396c3
-      ROLE_ARN: arn:aws:iam::948918267147:role/restofront-github-production-deploy
+      ROLE_ARN: arn:aws:iam::948918267147:role/cornershopdev-github-production-deploy
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,10 +30,10 @@ jobs:
       - uses: docker/setup-buildx-action@v4
 
       - name: Build production image
-        run: docker build --tag "restofront:${GITHUB_SHA}" .
+        run: docker build --tag "cornershopdev:${GITHUB_SHA}" .
 
       - name: Package production image
-        run: docker save "restofront:${GITHUB_SHA}" | gzip -1 > restofront.tar.gz
+        run: docker save "cornershopdev:${GITHUB_SHA}" | gzip -1 > cornershopdev.tar.gz
 
       - uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -43,7 +43,7 @@ jobs:
       - name: Upload immutable image artifact
         run: |
           aws s3 cp \
-            restofront.tar.gz \
+            cornershopdev.tar.gz \
             "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.tar.gz" \
             --sse AES256 \
             --only-show-errors
@@ -52,14 +52,14 @@ jobs:
         id: deploy
         run: |
           artifact_uri="s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.tar.gz"
-          command="sudo /usr/local/bin/deploy-restofront '${artifact_uri}' 'restofront:${GITHUB_SHA}'"
+          command="sudo /usr/local/bin/deploy-cornershopdev '${artifact_uri}' 'cornershopdev:${GITHUB_SHA}'"
           parameters="$(jq -cn --arg command "$command" '{commands: [$command]}')"
           command_id="$(
             aws ssm send-command \
               --region "$AWS_REGION" \
               --document-name AWS-RunShellScript \
               --instance-ids "$INSTANCE_ID" \
-              --comment "Deploy Restofront ${GITHUB_SHA}" \
+              --comment "Deploy Cornershopdev ${GITHUB_SHA}" \
               --parameters "$parameters" \
               --query "Command.CommandId" \
               --output text
@@ -101,4 +101,4 @@ jobs:
             --retry 12 \
             --retry-all-errors \
             --retry-delay 5 \
-            https://api.restofront.com/api/health/live
+            https://api.cornershop.dev/api/health/live

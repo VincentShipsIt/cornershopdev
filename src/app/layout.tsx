@@ -20,18 +20,18 @@ const instrumentSerif = Instrument_Serif({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL ?? "https://restofront.com",
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://cornershop.dev",
   ),
   title: {
-    default: "Restofront — Your restaurant's front door, always current",
-    template: "%s | Restofront",
+    default: "Cornershopdev — Your restaurant's front door, always current",
+    template: "%s | Cornershopdev",
   },
   description:
     "Turn any restaurant website into a polished, mobile-first presence with an always-current menu, without replacing bookings or ordering.",
   openGraph: {
-    title: "Restofront",
+    title: "Cornershopdev",
     description: "Your restaurant's front door, always current.",
-    siteName: "Restofront",
+    siteName: "Cornershopdev",
     type: "website",
   },
   twitter: {

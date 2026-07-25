@@ -24,7 +24,7 @@ import { Progress } from "@/components/ui/progress";
 import { sampleSiteDraft } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/import-identity";
 import type { SiteDraftView } from "@/lib/site-draft";
-import { listVerticalIds } from "@/lib/verticals/registry";
+import { listVerticalIds, resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 type Stage = {
@@ -123,15 +123,26 @@ type ImportResponse =
   | { mode: "workflow"; runId: string; importJobId: string }
   | { error: string };
 
-export function ImportStudio({ initialSource }: { initialSource: string }) {
+/**
+ * `initialVertical` is the niche the lead arrived through — the storefront that
+ * sent them, not a guess. It only seeds the picker: the visitor can still change
+ * it here, and whatever is selected at submit is what the lead is attached to.
+ */
+export function ImportStudio({
+  initialSource,
+  initialVertical,
+}: {
+  initialSource: string;
+  initialVertical: VerticalId;
+}) {
   const hasInitialSource = Boolean(initialSource.trim());
   const [source, setSource] = useState(initialSource);
   const [previewSource, setPreviewSource] = useState(initialSource);
-  const [vertical, setVertical] = useState<VerticalId>(Vertical.RESTAURANT);
+  const [vertical, setVertical] = useState<VerticalId>(initialVertical);
   const [progress, setProgress] = useState(hasInitialSource ? 6 : 0);
   const [message, setMessage] = useState(
     hasInitialSource
-      ? verticalCopy[Vertical.RESTAURANT].opening
+      ? verticalCopy[initialVertical].opening
       : "Ready when you are",
   );
   const [site, setSite] = useState<ImportedSite | null>(null);
@@ -143,6 +154,11 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
 
   const copy = verticalCopy[vertical];
   const stages = buildStages(copy);
+  // The studio wears the selected niche's storefront brand rather than the
+  // factory's: someone who arrived from restofront.com should not find themselves
+  // talking to Cornershopdev halfway through. The back link stays "/" because
+  // host-based routing already resolves it to whichever site they came from.
+  const brand = resolveVerticalConfig(vertical).marketing.brand;
 
   async function runImport(value = source) {
     const cleanSource = value.trim();
@@ -272,14 +288,14 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
       <header className="flex h-16 items-center justify-between border-b bg-background px-4 md:px-6">
         <div className="flex items-center gap-4">
           <Button
-            render={<Link href="/" aria-label="Back to Restofront" />}
+            render={<Link href="/" aria-label={`Back to ${brand.name}`} />}
             nativeButton={false}
             variant="ghost"
             size="icon-sm"
           >
             <ArrowLeft />
           </Button>
-          <Brand />
+          <Brand {...brand} />
         </div>
         <div className="hidden items-center gap-2 sm:flex">
           <span className="mr-2 text-xs text-muted-foreground">

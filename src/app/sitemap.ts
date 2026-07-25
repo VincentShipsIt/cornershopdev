@@ -1,9 +1,18 @@
 import type { MetadataRoute } from "next";
+import { resolveRequestOrigin } from "@/lib/verticals/request-site";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+/**
+ * Every domain the app answers on serves this file, so the origin is read from
+ * the request rather than hardcoded: a crawler on restofront.com must be handed
+ * restofront.com's sitemap, not the factory's.
+ *
+ * Only the marketing root is listed. Generated customer sites live behind their
+ * own domains, and every other route here is noindex.
+ */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     {
-      url: "https://restofront.com",
+      url: await resolveRequestOrigin(),
       lastModified: new Date(),
       changeFrequency: "weekly",
       priority: 1,

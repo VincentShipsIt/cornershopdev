@@ -60,7 +60,7 @@ async function limitByIp(
     const now = Date.now();
     const redis = await getRedisClient();
     const result = await redis.eval(slidingWindowScript, {
-      keys: [`restofront:${options.namespace}:${identifier}`],
+      keys: [`cornershopdev:${options.namespace}:${identifier}`],
       arguments: [
         String(now),
         String(options.windowMs),
