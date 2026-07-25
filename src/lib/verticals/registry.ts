@@ -52,6 +52,27 @@ export function verticalSlug(id: VerticalId): string {
 }
 
 /**
+ * The niche's own folder inside the shared asset bucket. `assets.cornershop.dev`
+ * holds every niche's images, so an object key has to name the niche that wrote
+ * it — otherwise two niches that both generated a site called `luigi` would
+ * write over each other, and no operator looking at the bucket could tell whose
+ * files were whose.
+ *
+ * Derived from the niche's public domain with the separators dropped, so
+ * restofront.com owns `restofrontcom/`: the folder reads as the storefront it
+ * belongs to rather than as an internal enum member. An unlaunched niche has no
+ * domain and falls back to its slug, which is the only stable name it has; when
+ * it later gets a domain, objects already written keep their stored URLs, since
+ * keys are only ever composed at write time.
+ */
+export function verticalAssetNamespace(id: VerticalId): string {
+  const { domain } = resolveVerticalConfig(id).marketing;
+  return domain
+    ? domain.toLowerCase().replace(/[^a-z0-9]+/g, "")
+    : verticalSlug(id);
+}
+
+/**
  * The inverse, for a slug that arrived from a URL or a form field and is
  * therefore untrusted. Returns null rather than throwing so callers decide
  * between a 404 and a silent fall back to the default vertical.
@@ -79,7 +100,8 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
     // yields the union of the concrete configs, and `includes` on a union of array
     // types demands an argument assignable to every element type at once — which
     // is `never` the moment one vertical registers no hostnames.
-    if (resolveVerticalConfig(id).marketing.hostnames.includes(wanted)) return id;
+    if (resolveVerticalConfig(id).marketing.hostnames.includes(wanted))
+      return id;
   }
   return null;
 }

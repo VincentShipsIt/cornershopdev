@@ -190,6 +190,7 @@ async function enhanceDraftImages(
     const originalImage = await fetchPublicImage(originalUrl);
     const storedOriginalUrl = await storeSiteImage({
       siteSlug: draft.slug,
+      vertical,
       data: originalImage.data,
       mediaType: originalImage.mediaType,
       purpose: "original-hero",
@@ -203,6 +204,7 @@ async function enhanceDraftImages(
     );
     const heroImageUrl = await storeSiteImage({
       siteSlug: draft.slug,
+      vertical,
       data: image.data,
       mediaType: image.mediaType,
       purpose: "hero",

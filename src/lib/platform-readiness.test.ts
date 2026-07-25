@@ -11,7 +11,7 @@ const configuredEnvironment = {
   NODE_ENV: "production",
   DATABASE_URL: "postgresql://preview.example.test/cornershopdev",
   REDIS_URL: "redis://redis.example.test:6379",
-  S3_BUCKET: "cornershopdev-images",
+  S3_BUCKET: "assets.cornershop.dev",
   S3_PUBLIC_BASE_URL: "https://assets.cornershopdev.example.test",
   AWS_REGION: "us-west-1",
 };
@@ -111,9 +111,7 @@ describe("checkPlatformReadiness", () => {
       message:
         "Configured but unreachable. Check provider status and credentials.",
     });
-    expect(serialized).not.toContain(
-      configuredEnvironment.REDIS_URL,
-    );
+    expect(serialized).not.toContain(configuredEnvironment.REDIS_URL);
     expect(serialized).not.toContain(configuredEnvironment.S3_BUCKET);
     expect(serialized).not.toContain(configuredEnvironment.DATABASE_URL);
   });
@@ -146,9 +144,12 @@ describe("checkPlatformReadiness", () => {
 
 describe("platform readiness endpoint protection", () => {
   it("fails closed without a configured token", () => {
-    const request = new Request("https://cornershopdev.example/api/health/ready", {
-      headers: { Authorization: "Bearer supplied-token" },
-    });
+    const request = new Request(
+      "https://cornershopdev.example/api/health/ready",
+      {
+        headers: { Authorization: "Bearer supplied-token" },
+      },
+    );
 
     expect(isPlatformReadinessAuthorized(request, "")).toBe(false);
   });
@@ -189,10 +190,7 @@ describe("platform readiness endpoint protection", () => {
       ttlMs: 5_000,
     });
 
-    const [first, second] = await Promise.all([
-      getReadiness(),
-      getReadiness(),
-    ]);
+    const [first, second] = await Promise.all([getReadiness(), getReadiness()]);
     const cached = await getReadiness();
 
     expect(first).toBe(readiness);
