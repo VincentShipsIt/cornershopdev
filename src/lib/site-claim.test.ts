@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import {
   CLAIMABLE_STATUSES,
   claimSite,
+  type CompletedCheckout,
   isClaimable,
   SiteNotClaimableError,
   unclaimedWhere,
@@ -165,7 +166,7 @@ describe("SiteNotClaimableError", () => {
  */
 async function expectClaimRejected(
   tx: Prisma.TransactionClient,
-  checkout: CompletedCheckoutInput = completedCheckout(),
+  checkout: CompletedCheckout = completedCheckout(),
 ): Promise<Record<string, unknown>> {
   const logged = spyOn(console, "error").mockImplementation(() => {});
   try {
@@ -179,7 +180,14 @@ async function expectClaimRejected(
   }
 }
 
-function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
+/**
+ * Typed against the exported `CompletedCheckout` rather than inferred from this
+ * fixture, so a field added to the real checkout payload fails to compile here
+ * instead of leaving the tests asserting against a shape Stripe no longer sends.
+ */
+function completedCheckout(
+  overrides: Partial<CompletedCheckout> = {},
+): CompletedCheckout {
   return {
     email: "owner@chez-lea.test",
     siteSlug: "chez-lea",
@@ -189,8 +197,6 @@ function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
     ...overrides,
   };
 }
-
-type CompletedCheckoutInput = ReturnType<typeof completedCheckout>;
 
 type SiteRow = {
   slug: string;
