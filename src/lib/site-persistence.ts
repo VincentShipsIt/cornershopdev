@@ -10,7 +10,7 @@ import {
   type ImportUrls,
 } from "@/lib/restaurant-import";
 import { slugify } from "@/lib/verticals/restaurant/schema";
-import { getVerticalConfig } from "@/lib/verticals/registry";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 const retryablePrismaCodes = new Set(["P2002", "P2034"]);
@@ -133,7 +133,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
   importJobId: string;
 }): Promise<PersistedSiteImport<TDraft>> {
   const db = requireImportDatabase();
-  const config = getVerticalConfig(input.vertical);
+  const config = resolveVerticalConfig(input.vertical);
   const draft = config.draftSchema.parse(input.draft) as TDraft;
   const sourceKey = normalizeImportSource(draft.sourceUrl ?? input.source);
   const verticalSlug = input.vertical.toLowerCase();
@@ -289,7 +289,7 @@ export async function updateSiteDraft(
   draft: PersistableSiteDraft,
   vertical: VerticalId,
 ): Promise<void> {
-  const config = getVerticalConfig(vertical);
+  const config = resolveVerticalConfig(vertical);
   const parsed = config.draftSchema.parse(draft) as PersistableSiteDraft;
 
   await requireImportDatabase().site.update({
@@ -346,7 +346,7 @@ function editableSiteScalarData(
   draft: PersistableSiteDraft,
   vertical: VerticalId,
 ) {
-  const config = getVerticalConfig(vertical);
+  const config = resolveVerticalConfig(vertical);
   return {
     name: draft.name,
     description: draft.description,
@@ -381,7 +381,7 @@ function catalogSectionCreateData(
   draft: PersistableSiteDraft,
   vertical: VerticalId,
 ) {
-  const config = getVerticalConfig(vertical);
+  const config = resolveVerticalConfig(vertical);
   return draft.catalogSections.map((section, sectionIndex) => ({
     name: section.name,
     description: section.description,

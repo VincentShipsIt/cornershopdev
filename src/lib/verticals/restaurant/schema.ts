@@ -1,15 +1,31 @@
 import { z } from "zod";
+import {
+  assertTranslationParity,
+  baseSiteDraftCoreShape,
+  baseSiteTranslationSchema,
+  catalogItemSchema,
+  catalogSectionSchema,
+  localeSchema,
+  translatedCatalogItemSchema,
+  translatedCatalogSectionSchema,
+} from "@/lib/verticals/schema";
 
-export const imageProvenanceSchema = z.enum([
-  "official",
-  "owner",
-  "permissioned-ugc",
-]);
-
-const restaurantImageUrlSchema = z.union([
-  z.url(),
-  z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
-]);
+/**
+ * The engine primitives live in `@/lib/verticals/schema` so a second vertical can
+ * compose them without depending on this one. They are re-exported here because
+ * this module was their original home and several call sites (plus the
+ * `@/lib/restaurant` shim) still import them from it.
+ */
+export {
+  assertTranslationParity,
+  baseSiteDraftSchema,
+  baseSiteTranslationSchema,
+  catalogItemSchema,
+  catalogSectionSchema,
+  imageProvenanceSchema,
+  integrationSchema,
+  localeSchema,
+} from "@/lib/verticals/schema";
 
 export const restaurantAttributesSchema = z.object({
   cuisine: z.string().max(80).default(""),
@@ -20,68 +36,12 @@ export const restaurantItemAttributesSchema = z.object({
   dietaryLabels: z.array(z.string().max(30)).max(6).default([]),
 });
 
-export const catalogItemSchema = z.object({
-  name: z.string().min(1).max(120),
-  description: z.string().max(320).default(""),
-  price: z.number().nonnegative().nullable().default(null),
-  currency: z.string().length(3).default("EUR"),
-  imageUrl: restaurantImageUrlSchema.nullable().default(null),
-  originalImageUrl: restaurantImageUrlSchema.nullable().optional(),
-  imageProvenance: imageProvenanceSchema.nullable().optional(),
-  attributes: z.record(z.string(), z.unknown()).default({}),
-});
-
-export const catalogSectionSchema = z.object({
-  name: z.string().min(1).max(80),
-  description: z.string().max(240).default(""),
-  items: z.array(catalogItemSchema).max(40),
-});
-
 export const menuItemSchema = catalogItemSchema
   .omit({ attributes: true })
   .extend(restaurantItemAttributesSchema.shape);
 
 export const menuSectionSchema = catalogSectionSchema.extend({
   items: z.array(menuItemSchema).max(40),
-});
-
-export const integrationSchema = z.object({
-  type: z.enum(["booking", "ordering", "delivery", "social"]),
-  label: z.string().min(1).max(60),
-  provider: z.string().max(60).nullable().default(null),
-  url: z.url(),
-  /**
-   * The owner's id inside the provider, used to build an embedded booking
-   * widget. Bounded here only for storage sanity — the value is never trusted
-   * on its own: `resolveBookingEmbed` re-checks it against the provider's own
-   * anchored `idPattern` before any frame is rendered.
-   */
-  venueId: z.string().max(120).nullable().default(null),
-});
-
-export const localeSchema = z
-  .string()
-  .regex(/^[a-z]{2}(?:-[A-Z]{2})?$/, "Use a BCP 47 language code");
-
-const translatedCatalogItemSchema = z.object({
-  name: z.string().min(1).max(120),
-  description: z.string().max(320).default(""),
-  attributes: z.record(z.string(), z.unknown()).default({}),
-});
-
-const translatedCatalogSectionSchema = z.object({
-  name: z.string().min(1).max(80),
-  description: z.string().max(240).default(""),
-  items: z.array(translatedCatalogItemSchema),
-});
-
-export const baseSiteTranslationSchema = z.object({
-  locale: localeSchema,
-  eyebrow: z.string().max(100),
-  description: z.string().min(20).max(500),
-  attributes: z.record(z.string(), z.unknown()).default({}),
-  catalogSections: z.array(translatedCatalogSectionSchema),
-  integrationLabels: z.array(z.string().min(1).max(60)).max(12),
 });
 
 const restaurantSiteTranslationSchema = baseSiteTranslationSchema.extend({
@@ -117,36 +77,6 @@ export const restaurantTranslationSchema = z.object({
   ),
   integrationLabels: z.array(z.string().min(1).max(60)).max(12),
 });
-
-const baseSiteDraftCoreShape = {
-  slug: z.string().min(2).max(80),
-  name: z.string().min(2).max(120),
-  eyebrow: z.string().max(100),
-  description: z.string().min(20).max(500),
-  address: z.string().max(220),
-  phone: z.string().max(40),
-  sourceUrl: z.url().nullable(),
-  heroImageUrl: z.url().nullable(),
-  heroOriginalImageUrl: z.url().nullable().optional(),
-  heroImageProvenance: imageProvenanceSchema.nullable().optional(),
-  palette: z.object({
-    background: z.string(),
-    foreground: z.string(),
-    accent: z.string(),
-  }),
-  autoEnhanceImages: z.boolean().default(true),
-  defaultLocale: localeSchema.default("en"),
-  integrations: z.array(integrationSchema).max(12),
-};
-
-export const baseSiteDraftSchema = z
-  .object({
-    ...baseSiteDraftCoreShape,
-    attributes: z.record(z.string(), z.unknown()).default({}),
-    translations: z.array(baseSiteTranslationSchema).max(8).default([]),
-    catalogSections: z.array(catalogSectionSchema).min(1).max(12),
-  })
-  .superRefine(assertTranslationParity);
 
 export const restaurantSiteDraftSchema = z
   .object({
@@ -197,75 +127,6 @@ export const restaurantDraftSchema = z
       "menu",
     );
   });
-
-type TranslationParityDraft = {
-  defaultLocale: string;
-  catalogSections: Array<{ items: unknown[] }>;
-  integrations: unknown[];
-  translations: Array<{
-    locale: string;
-    catalogSections: Array<{ items: unknown[] }>;
-    integrationLabels: unknown[];
-  }>;
-};
-
-export function assertTranslationParity(
-  draft: TranslationParityDraft,
-  context: z.RefinementCtx,
-  sectionFieldName = "catalogSections",
-  catalogName = "catalog",
-): void {
-  const translatedLocales = new Set<string>();
-  draft.translations.forEach((translation, translationIndex) => {
-    if (translation.locale === draft.defaultLocale) {
-      context.addIssue({
-        code: "custom",
-        path: ["translations"],
-        message: "Translations must not repeat the canonical locale",
-      });
-    }
-    if (translatedLocales.has(translation.locale)) {
-      context.addIssue({
-        code: "custom",
-        path: ["translations"],
-        message: `Duplicate translation locale: ${translation.locale}`,
-      });
-    }
-    translatedLocales.add(translation.locale);
-    if (translation.catalogSections.length !== draft.catalogSections.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["translations", translationIndex, sectionFieldName],
-        message: `Translated ${catalogName} sections must match the canonical ${catalogName}`,
-      });
-      return;
-    }
-    translation.catalogSections.forEach((section, sectionIndex) => {
-      if (
-        section.items.length !== draft.catalogSections[sectionIndex].items.length
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: [
-            "translations",
-            translationIndex,
-            sectionFieldName,
-            sectionIndex,
-            "items",
-          ],
-          message: `Translated ${catalogName} items must match the canonical ${catalogName}`,
-        });
-      }
-    });
-    if (translation.integrationLabels.length !== draft.integrations.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["translations", translationIndex, "integrationLabels"],
-        message: "Translated integration labels must match the canonical links",
-      });
-    }
-  });
-}
 
 export type RestaurantAttributes = z.infer<typeof restaurantAttributesSchema>;
 export type RestaurantItemAttributes = z.infer<

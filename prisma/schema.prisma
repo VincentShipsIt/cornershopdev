@@ -9,6 +9,7 @@ datasource db {
 
 enum Vertical {
   RESTAURANT
+  BEAUTY
 }
 
 enum SiteStatus {

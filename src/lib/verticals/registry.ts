@@ -1,4 +1,5 @@
 import { Vertical } from "@/generated/prisma/enums";
+import { beautyConfig } from "@/lib/verticals/beauty/config";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import type { VerticalConfig, VerticalId } from "@/lib/verticals/types";
 
@@ -20,12 +21,17 @@ export type ErasedVerticalConfig = VerticalConfig<any, any, any, any>;
 
 const registry = {
   [Vertical.RESTAURANT]: restaurantConfig,
+  [Vertical.BEAUTY]: beautyConfig,
 } satisfies Record<VerticalId, ErasedVerticalConfig>;
 
-// NOTE (Phase 9 gate): with RESTAURANT as the only member this returns the concrete
-// restaurant config type, so callers can bind to restaurant specifics and still
-// compile. Adding BEAUTY collapses this to the union and any such leak becomes a
-// build error — that break is the abstraction acceptance test, not a regression.
+/**
+ * Returns the union of every registered config. With a single vertical this used
+ * to hand back the concrete restaurant type, which let a caller bind to
+ * restaurant specifics and still compile; registering beauty collapsed it to the
+ * union and turned each of those into a build error. Prefer
+ * `resolveVerticalConfig` for anything that only knows a `Vertical` at runtime —
+ * this overload exists for call sites that discriminate on the union themselves.
+ */
 export function getVerticalConfig(
   id: VerticalId,
 ): (typeof registry)[VerticalId] {

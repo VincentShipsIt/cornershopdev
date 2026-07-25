@@ -24,6 +24,7 @@ import { Progress } from "@/components/ui/progress";
 import { sampleSiteDraft } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/restaurant-import";
 import type { SiteDraftView } from "@/lib/site-draft";
+import { listVerticalIds } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 type Stage = {
@@ -31,13 +32,77 @@ type Stage = {
   threshold: number;
 };
 
-const stages: Stage[] = [
-  { label: "Read existing website", threshold: 12 },
-  { label: "Recover menu and details", threshold: 42 },
-  { label: "Preserve booking and ordering", threshold: 58 },
-  { label: "Compose mobile-first design", threshold: 65 },
-  { label: "Check and save private preview", threshold: 95 },
-];
+/**
+ * Everything on this screen that has to name the kind of business, kept out of
+ * the JSX and keyed by vertical. `satisfies Record<VerticalId, VerticalCopy>`
+ * makes registering a vertical without writing its copy a build error here, so
+ * the picker can never silently offer an option with restaurant wording.
+ */
+type VerticalCopy = {
+  label: string;
+  eyebrow: string;
+  placeholder: string;
+  opening: string;
+  idlePrompt: string;
+  recovering: string;
+  emptyStatePrompt: string;
+  claimHint: string;
+  catalogStage: string;
+  integrationsStage: string;
+};
+
+const verticalCopy = {
+  [Vertical.RESTAURANT]: {
+    label: "Restaurant",
+    eyebrow: "New restaurant",
+    placeholder: "restaurant.com or restaurant name",
+    opening: "Opening the restaurant",
+    idlePrompt:
+      "Paste a website or restaurant name. The preview stays private until it is claimed and paid.",
+    recovering:
+      "The shape is already here. We are recovering the real menu, imagery and existing links now.",
+    emptyStatePrompt:
+      "Start with a website or restaurant name. No account is needed to see the result.",
+    claimHint:
+      "Review the menu and existing links, then choose a plan to keep this site current.",
+    catalogStage: "Recover menu and details",
+    integrationsStage: "Preserve booking and ordering",
+  },
+  [Vertical.BEAUTY]: {
+    label: "Salon & barber",
+    eyebrow: "New salon",
+    placeholder: "salon.com or salon name",
+    opening: "Opening the salon",
+    idlePrompt:
+      "Paste a website or salon name. The preview stays private until it is claimed and paid.",
+    recovering:
+      "The shape is already here. We are recovering the real service list, imagery and existing links now.",
+    emptyStatePrompt:
+      "Start with a website or salon name. No account is needed to see the result.",
+    claimHint:
+      "Review the services and existing links, then choose a plan to keep this site current.",
+    catalogStage: "Recover services and prices",
+    // No ordering or delivery: a salon has nothing to deliver, which is the same
+    // reason `beauty/providers.ts` ships no hints for those integration types.
+    integrationsStage: "Preserve existing booking links",
+  },
+} satisfies Record<VerticalId, VerticalCopy>;
+
+/**
+ * Read from the registry rather than written out here, so a newly registered
+ * vertical appears in the picker without touching this list.
+ */
+const verticalOptions = listVerticalIds();
+
+function buildStages(copy: VerticalCopy): Stage[] {
+  return [
+    { label: "Read existing website", threshold: 12 },
+    { label: copy.catalogStage, threshold: 42 },
+    { label: copy.integrationsStage, threshold: 58 },
+    { label: "Compose mobile-first design", threshold: 65 },
+    { label: "Check and save private preview", threshold: 95 },
+  ];
+}
 
 /**
  * The import API speaks the shared site shape and names the vertical it produced,
@@ -62,9 +127,12 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
   const hasInitialSource = Boolean(initialSource.trim());
   const [source, setSource] = useState(initialSource);
   const [previewSource, setPreviewSource] = useState(initialSource);
+  const [vertical, setVertical] = useState<VerticalId>(Vertical.RESTAURANT);
   const [progress, setProgress] = useState(hasInitialSource ? 6 : 0);
   const [message, setMessage] = useState(
-    hasInitialSource ? "Opening the restaurant" : "Ready when you are",
+    hasInitialSource
+      ? verticalCopy[Vertical.RESTAURANT].opening
+      : "Ready when you are",
   );
   const [site, setSite] = useState<ImportedSite | null>(null);
   const [urls, setUrls] = useState<ImportUrls | null>(null);
@@ -72,6 +140,9 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
   const [loading, setLoading] = useState(hasInitialSource);
   const [device, setDevice] = useState<"mobile" | "desktop">("mobile");
   const startedSource = useRef<string | null>(null);
+
+  const copy = verticalCopy[vertical];
+  const stages = buildStages(copy);
 
   async function runImport(value = source) {
     const cleanSource = value.trim();
@@ -84,13 +155,13 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
     setUrls(null);
     setError(null);
     setProgress(6);
-    setMessage("Opening the restaurant");
+    setMessage(copy.opening);
 
     try {
       const response = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: cleanSource }),
+        body: JSON.stringify({ source: cleanSource, vertical }),
       });
       const result = (await response.json()) as ImportResponse;
       if (!response.ok || "error" in result) {
@@ -179,8 +250,13 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSource]);
 
+  /**
+   * The only in-code fixture is a restaurant one, so the demo always switches the
+   * picker back to that vertical rather than showing salon copy around a menu.
+   */
   function useDemo() {
     setSource("Osteria Luna");
+    setVertical(Vertical.RESTAURANT);
     setError(null);
     complete(
       { draft: sampleSiteDraft, vertical: Vertical.RESTAURANT },
@@ -231,7 +307,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
       <div className="grid min-h-[calc(100vh-4rem)] lg:grid-cols-[390px_1fr]">
         <aside className="border-b bg-background p-5 lg:border-b-0 lg:border-r lg:p-7">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-            New restaurant
+            {copy.eyebrow}
           </p>
           <h1 className="font-display mt-3 text-4xl leading-none tracking-[-0.04em]">
             {previewSource
@@ -239,9 +315,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
               : "Build the first version."}
           </h1>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            {previewSource
-              ? "The shape is already here. We are recovering the real menu, imagery and existing links now."
-              : "Paste a website or restaurant name. The preview stays private until it is claimed and paid."}
+            {previewSource ? copy.recovering : copy.idlePrompt}
           </p>
 
           <form
@@ -251,12 +325,31 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
               void runImport();
             }}
           >
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Kind of business"
+            >
+              {verticalOptions.map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  size="sm"
+                  variant={option === vertical ? "secondary" : "outline"}
+                  aria-pressed={option === vertical}
+                  disabled={loading}
+                  onClick={() => setVertical(option)}
+                >
+                  {verticalCopy[option].label}
+                </Button>
+              ))}
+            </div>
             <div className="relative">
               <Globe2 className="absolute left-3 top-3 size-4 text-muted-foreground" />
               <Input
                 value={source}
                 onChange={(event) => setSource(event.target.value)}
-                placeholder="restaurant.com or restaurant name"
+                placeholder={copy.placeholder}
                 className="h-10 pl-9"
                 disabled={loading}
               />
@@ -352,8 +445,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
                 Ready to claim
               </div>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                Review the menu and existing links, then choose a plan to keep
-                this site current.
+                {copy.claimHint}
               </p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <Button
@@ -387,8 +479,7 @@ export function ImportStudio({ initialSource }: { initialSource: string }) {
                   Preview appears here
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  Start with a website or restaurant name. No account is needed
-                  to see the result.
+                  {copy.emptyStatePrompt}
                 </p>
               </div>
             </div>

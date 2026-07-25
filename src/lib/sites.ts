@@ -3,12 +3,15 @@ import { getDb } from "@/lib/db";
 import { leadSiteDrafts } from "@/lib/lead-drafts";
 import type { SiteDraftView } from "@/lib/site-draft";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
-import { getVerticalConfig } from "@/lib/verticals/registry";
+import {
+  resolveVerticalConfig,
+  type ErasedVerticalConfig,
+} from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 export type LoadedSite = {
   vertical: VerticalId;
-  config: ReturnType<typeof getVerticalConfig>;
+  config: ErasedVerticalConfig;
   draft: unknown;
 };
 
@@ -48,7 +51,7 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
 
   if (!site) return null;
 
-  const config = getVerticalConfig(site.vertical);
+  const config = resolveVerticalConfig(site.vertical);
   const attributes = config.attributesSchema.parse(site.attributes);
   const latestTheme = site.siteVersions[0]?.theme as
     | { background: string; foreground: string; accent: string }
