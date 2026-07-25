@@ -1,5 +1,9 @@
 import type Stripe from "stripe";
 import { getDb } from "@/lib/db";
+import {
+  claimRestaurant,
+  RestaurantNotClaimableError,
+} from "@/lib/restaurant-claim";
 import { getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -33,11 +37,33 @@ export async function POST(request: Request) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const slug = session.metadata?.restaurantSlug;
-    if (slug) {
-      await db.restaurant.updateMany({
-        where: { slug },
-        data: { status: "CLAIMED" },
-      });
+    const email = session.customer_details?.email ?? session.customer_email;
+    if (slug && email) {
+      // Stripe routinely delivers this before the browser follows success_url,
+      // and may be the only completion signal we ever get if the customer
+      // closes the tab. So the webhook performs the whole claim rather than
+      // flipping a status: a status without an owner would strand the row in
+      // a state the callback can no longer claim, locking the customer out.
+      try {
+        await db.$transaction((tx) =>
+          claimRestaurant(tx, {
+            email,
+            restaurantSlug: slug,
+            stripeCustomerId:
+              typeof session.customer === "string" ? session.customer : null,
+            stripeSubscriptionId:
+              typeof session.subscription === "string"
+                ? session.subscription
+                : null,
+            stripePriceId: session.metadata?.priceId ?? null,
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof RestaurantNotClaimableError)) throw error;
+        // Checkout metadata is attacker-influenced, so a slug pointing at
+        // somebody else's restaurant is expected here. Acknowledge it: no
+        // amount of retrying will make that restaurant claimable.
+      }
     }
   }
 
