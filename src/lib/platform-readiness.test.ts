@@ -9,10 +9,10 @@ import {
 
 const configuredEnvironment = {
   NODE_ENV: "production",
-  DATABASE_URL: "postgresql://preview.example.test/restofront",
+  DATABASE_URL: "postgresql://preview.example.test/cornershopdev",
   REDIS_URL: "redis://redis.example.test:6379",
-  S3_BUCKET: "restofront-images",
-  S3_PUBLIC_BASE_URL: "https://assets.restofront.example.test",
+  S3_BUCKET: "cornershopdev-images",
+  S3_PUBLIC_BASE_URL: "https://assets.cornershopdev.example.test",
   AWS_REGION: "us-west-1",
 };
 
@@ -78,7 +78,7 @@ describe("checkPlatformReadiness", () => {
     const result = await checkPlatformReadiness(
       {
         ...configuredEnvironment,
-        DATABASE_URL: "postgresql://localhost:5432/restofront",
+        DATABASE_URL: "postgresql://localhost:5432/cornershopdev",
       },
       serviceProbes,
     );
@@ -146,7 +146,7 @@ describe("checkPlatformReadiness", () => {
 
 describe("platform readiness endpoint protection", () => {
   it("fails closed without a configured token", () => {
-    const request = new Request("https://restofront.example/api/health/ready", {
+    const request = new Request("https://cornershopdev.example/api/health/ready", {
       headers: { Authorization: "Bearer supplied-token" },
     });
 
@@ -155,13 +155,13 @@ describe("platform readiness endpoint protection", () => {
 
   it("accepts only the configured bearer token", () => {
     const authorized = new Request(
-      "https://restofront.example/api/health/ready",
+      "https://cornershopdev.example/api/health/ready",
       {
         headers: { Authorization: "Bearer expected-token" },
       },
     );
     const unauthorized = new Request(
-      "https://restofront.example/api/health/ready",
+      "https://cornershopdev.example/api/health/ready",
       {
         headers: { Authorization: "Bearer different-token" },
       },

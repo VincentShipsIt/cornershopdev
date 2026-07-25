@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import { withWorkflow } from "workflow/next";
 
-const apiOrigin = process.env.RESTOFRONT_API_ORIGIN?.replace(/\/$/, "");
+const apiOrigin = process.env.CORNERSHOPDEV_API_ORIGIN?.replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
   output: "standalone",

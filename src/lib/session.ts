@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-export const SESSION_COOKIE = "restofront_session";
+export const SESSION_COOKIE = "cornershopdev_session";
 
 const sessionPayloadSchema = z.object({
   email: z.email(),
@@ -17,7 +17,7 @@ function secret(): string {
     if (process.env.NODE_ENV === "production") {
       throw new Error("CLAIM_TOKEN_SECRET must contain at least 32 characters");
     }
-    return "restofront-development-secret-change-me";
+    return "cornershopdev-development-secret-change-me";
   }
   return value;
 }

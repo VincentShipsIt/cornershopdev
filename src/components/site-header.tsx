@@ -11,17 +11,35 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-const links = [
+export type SiteHeaderLink = { href: string; label: string };
+
+const defaultLinks: SiteHeaderLink[] = [
   { href: "#how-it-works", label: "How it works" },
   { href: "#features", label: "What stays yours" },
   { href: "#pricing", label: "Pricing" },
 ];
 
-export function SiteHeader() {
+/**
+ * Shared by the factory homepage and every niche storefront. `createHref` is a
+ * prop so a niche can carry its own vertical into the studio — the lead has to
+ * arrive already attached to the niche that produced it, and this header is the
+ * first link that could lose it.
+ */
+export function SiteHeader({
+  brand,
+  links = defaultLinks,
+  createHref = "/create",
+  ctaLabel = "Build a preview",
+}: {
+  brand: { name: string; initials: string; href?: string };
+  links?: SiteHeaderLink[];
+  createHref?: string;
+  ctaLabel?: string;
+}) {
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/88 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
-        <Brand />
+        <Brand {...brand} />
         <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
           {links.map((link) => (
             <Link
@@ -43,11 +61,11 @@ export function SiteHeader() {
             Sign in
           </Button>
           <Button
-            render={<Link href="/create" />}
+            render={<Link href={createHref} />}
             nativeButton={false}
             size="sm"
           >
-            Build a preview
+            {ctaLabel}
             <ArrowUpRight className="size-3.5" />
           </Button>
         </div>
@@ -61,7 +79,7 @@ export function SiteHeader() {
           <SheetContent className="p-6">
             <SheetHeader>
               <SheetTitle className="text-left">
-                <Brand />
+                <Brand {...brand} />
               </SheetTitle>
             </SheetHeader>
             <nav className="mt-10 flex flex-col gap-5 text-lg">
@@ -77,11 +95,11 @@ export function SiteHeader() {
                 Sign in
               </SheetClose>
               <Button
-                render={<Link href="/create" />}
+                render={<Link href={createHref} />}
                 nativeButton={false}
                 className="mt-4"
               >
-                Build a preview
+                {ctaLabel}
               </Button>
             </nav>
           </SheetContent>

@@ -13,6 +13,7 @@ import {
   restaurantProviders,
   restaurantRelevantPathPattern,
 } from "@/lib/verticals/restaurant/providers";
+import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 import { restaurantPrompt } from "@/lib/verticals/restaurant/prompt";
 import {
   restaurantTemplates,
@@ -58,6 +59,7 @@ export const restaurantConfig = {
     section: "Section",
     item: "Dish",
   },
+  marketing: restaurantMarketing,
   attributesSchema: restaurantAttributesSchema,
   attributeDefaults: {
     cuisine: "",

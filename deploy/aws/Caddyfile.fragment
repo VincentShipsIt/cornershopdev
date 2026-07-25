@@ -1,13 +1,29 @@
-# BEGIN RESTOFRONT
-api.restofront.com {
+# BEGIN CORNERSHOPDEV
+api.cornershop.dev {
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy restofront:3000
+	reverse_proxy cornershopdev:3000
 }
 
-domains.restofront.com {
+domains.cornershop.dev {
 	respond 404
 }
+
+# No niche gets its own platform subdomain. Every ingress the factory operates —
+# api, domains, assets — lives under cornershop.dev, and a niche brings only the
+# storefront domain its customers actually type. So api.restofront.com and
+# domains.restofront.com are both absent by design, not by oversight:
+#
+#   - api.restofront.com was an alternate ingress to this same container. The app
+#     is single-origin, the deploy pipeline health-checks api.cornershop.dev, and
+#     restofront.com itself is served elsewhere, so nothing addressed it but
+#     uptime probes and vulnerability scanners.
+#   - domains.restofront.com never had a DNS record, so the block it used to have
+#     could not complete a challenge and only spent this instance's Let's Encrypt
+#     failure budget, which is shared with every other tenant on the host.
+#
+# A niche storefront still reaches the app through the on-demand block below,
+# which authorizes it via the vertical registry rather than a hardcoded name.
 
 https:// {
 	tls {
@@ -15,6 +31,6 @@ https:// {
 	}
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy restofront:3000
+	reverse_proxy cornershopdev:3000
 }
-# END RESTOFRONT
+# END CORNERSHOPDEV

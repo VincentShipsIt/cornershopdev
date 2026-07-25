@@ -43,6 +43,65 @@ export function listVerticalIds(): VerticalId[] {
 }
 
 /**
+ * The niche's URL segment and the value carried on a lead: the enum member
+ * lowercased, so `RESTAURANT` is `restaurant`. Derived rather than declared —
+ * a config cannot drift from its own slug, and a new vertical gets one for free.
+ */
+export function verticalSlug(id: VerticalId): string {
+  return id.toLowerCase();
+}
+
+/**
+ * The inverse, for a slug that arrived from a URL or a form field and is
+ * therefore untrusted. Returns null rather than throwing so callers decide
+ * between a 404 and a silent fall back to the default vertical.
+ */
+export function resolveVerticalBySlug(slug: string): VerticalId | null {
+  const wanted = slug.trim().toLowerCase();
+  return listVerticalIds().find((id) => verticalSlug(id) === wanted) ?? null;
+}
+
+/**
+ * Which niche, if any, owns a request's hostname. This is what makes a new niche
+ * domain — nails, barbers, dog grooming — a config entry and a DNS record rather
+ * than a new route: `proxy.ts` asks this question and rewrites to the shared
+ * niche page. Derived from the registry for the same reason as
+ * `listEmbedFrameOrigins`: there is no second list of domains to keep in sync,
+ * and a hostname nobody registered can never be served as a niche.
+ *
+ * The port is stripped so `nails.localhost:3000` matches in development.
+ */
+export function resolveVerticalByHostname(hostname: string): VerticalId | null {
+  const wanted = hostname.trim().toLowerCase().split(":")[0];
+  if (!wanted) return null;
+  for (const id of listVerticalIds()) {
+    // Through the erased surface, not `registry[id]`: indexing with a runtime id
+    // yields the union of the concrete configs, and `includes` on a union of array
+    // types demands an argument assignable to every element type at once — which
+    // is `never` the moment one vertical registers no hostnames.
+    if (resolveVerticalConfig(id).marketing.hostnames.includes(wanted)) return id;
+  }
+  return null;
+}
+
+/**
+ * Every registered niche, launched or not, for the factory homepage. Ones with a
+ * live domain come first — the homepage sells what it can already deliver — and
+ * ties break on the niche's own brand name so the order never depends on
+ * registration order.
+ */
+export function listMarketingVerticals(): VerticalId[] {
+  return listVerticalIds().sort((a, b) => {
+    const left = resolveVerticalConfig(a).marketing;
+    const right = resolveVerticalConfig(b).marketing;
+    if (Boolean(left.domain) !== Boolean(right.domain)) {
+      return left.domain ? -1 : 1;
+    }
+    return left.brand.name.localeCompare(right.brand.name);
+  });
+}
+
+/**
  * Every origin any registered vertical may frame a booking widget from, derived
  * from the provider tables themselves. The site CSP is built from this, so a
  * vertical that adds a widget provider extends the allow-list by registering —

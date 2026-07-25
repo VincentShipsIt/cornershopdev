@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { getResend } from "@/lib/resend";
+import { emailSender, getResend } from "@/lib/resend";
 
 const YEAR_MS = 365 * 24 * 60 * 60_000;
 
@@ -161,8 +161,10 @@ export async function notifyOwnerOfBookingRequest(
 
   const { error } = await getResend().emails.send(
     {
-      from: process.env.EMAIL_FROM ?? "Restofront <onboarding@resend.dev>",
+      from: emailSender(),
       to: recipients,
+      // Deliberately not falling back to the platform address: an owner hitting
+      // reply expects the diner, and reaching us instead would read as one.
       replyTo: request.email ?? undefined,
       subject: `New booking request for ${site.name}`,
       html: bookingRequestEmailHtml(site, request),
@@ -207,7 +209,7 @@ function bookingRequestEmailHtml(
 
   return `<div style="font-family:Arial,sans-serif;background:#f4efe5;padding:40px">
   <div style="max-width:520px;margin:0 auto;background:#fffdf8;border-radius:16px;padding:32px">
-    <p style="margin:0 0 8px;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;color:#a5482d">RESTOFRONT</p>
+    <p style="margin:0 0 8px;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;color:#a5482d">CORNERSHOPDEV</p>
     <h1 style="margin:0 0 16px;font-size:22px;color:#2f2a24">New booking request</h1>
     <p style="margin:0 0 24px;font-size:15px;color:#5c5147">Someone asked to book with ${escapeHtml(site.name)} through your website.</p>
     <table style="border-collapse:collapse">${body}</table>

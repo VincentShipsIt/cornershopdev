@@ -4,6 +4,7 @@ import { Dashboard } from "@/app/dashboard/dashboard";
 import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
+import { resolveRequestBrand } from "@/lib/verticals/request-site";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -26,9 +27,10 @@ export default async function DashboardPage({
   return (
     <Dashboard
       initialDraft={draft}
-      email={session?.email ?? "demo@restofront.com"}
+      email={session?.email ?? "demo@cornershop.dev"}
       checkoutComplete={query.checkout === "success"}
       demo={!session}
+      brand={await resolveRequestBrand()}
     />
   );
 }

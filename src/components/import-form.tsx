@@ -7,12 +7,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+/**
+ * The first step of every lead. `vertical` is the niche slug the visitor arrived
+ * through — it rides along to `/create` so a lead from a niche domain opens the
+ * studio already on the right vertical instead of defaulting to restaurants.
+ * Omitted on the factory homepage, where the visitor picks the niche themselves.
+ */
 export function ImportForm({
   className,
   compact = false,
+  vertical,
+  placeholder,
+  label,
+  submitLabel,
+  pendingLabel,
 }: {
   className?: string;
   compact?: boolean;
+  vertical?: string;
+  placeholder: string;
+  label: string;
+  submitLabel: string;
+  pendingLabel: string;
 }) {
   const router = useRouter();
   const [source, setSource] = useState("");
@@ -21,8 +37,10 @@ export function ImportForm({
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!source.trim()) return;
+    const params = new URLSearchParams({ source: source.trim() });
+    if (vertical) params.set("vertical", vertical);
     startTransition(() => {
-      router.push(`/create?source=${encodeURIComponent(source.trim())}`);
+      router.push(`/create?${params.toString()}`);
     });
   }
 
@@ -42,8 +60,8 @@ export function ImportForm({
           value={source}
           onChange={(event) => setSource(event.target.value)}
           className="h-11 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-          placeholder="Restaurant website or name"
-          aria-label="Restaurant website or name"
+          placeholder={placeholder}
+          aria-label={label}
         />
       </div>
       <Button
@@ -55,11 +73,11 @@ export function ImportForm({
         {isPending ? (
           <>
             <LoaderCircle className="size-4 animate-spin" />
-            Opening your restaurant
+            {pendingLabel}
           </>
         ) : (
           <>
-            Show my preview
+            {submitLabel}
             <ArrowRight className="size-4" />
           </>
         )}

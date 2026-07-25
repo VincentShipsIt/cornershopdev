@@ -86,6 +86,97 @@ export type LinkClassificationHint = {
   pattern: RegExp;
 };
 
+/**
+ * The closed set of glyphs a marketing block may ask for. A union rather than a
+ * component reference so vertical configs stay plain data — they are imported by
+ * the crawler, the prompt builder and the API routes, none of which should pull
+ * a React icon into their bundle. `src/app/niche/[vertical]/page.tsx` owns the
+ * mapping, so an unmapped name is a build error rather than a blank square.
+ */
+export type MarketingIconName =
+  | "catalog"
+  | "imagery"
+  | "booking"
+  | "refresh"
+  | "shield"
+  | "cursor";
+
+export type MarketingPlan = {
+  name: string;
+  price: string;
+  cadence: string;
+  copy: string;
+  features: string[];
+  /** Exactly one plan per vertical should set this; it renders inverted. */
+  featured?: boolean;
+  badge?: string;
+};
+
+/**
+ * Everything a niche's own marketing site prints. The whole point is that a new
+ * niche domain — nails, barbers, dog grooming — is a config entry and a DNS
+ * record, never a new route: `proxy.ts` maps `hostnames` to the vertical, and
+ * the shared niche page renders this block and nothing else. Copy lives here
+ * rather than in the page because the page must never learn what a restaurant
+ * is, for the same reason the renderer never does.
+ */
+export type VerticalMarketing = {
+  /**
+   * Hostnames whose `/` serves this niche's marketing site. Empty is meaningful
+   * and supported: the vertical is built and sellable, it simply has no domain
+   * yet, so the factory homepage lists it while `proxy.ts` never matches it.
+   */
+  hostnames: string[];
+  /** Bare domain printed as the niche's public identity, or null while unlaunched. */
+  domain: string | null;
+  brand: { name: string; initials: string };
+  /** Plural noun for the businesses served: "restaurants", "salons and barbers". */
+  audience: string;
+  /** One line under the niche's name on the factory homepage. */
+  tagline: string;
+  /**
+   * Restaurant ships a bespoke before/after mock; a niche without one gets the
+   * plain hero rather than a restaurant visual with its labels swapped.
+   */
+  heroVisual: "transformation" | "none";
+  hero: {
+    badge: string;
+    headline: string;
+    subheadline: string;
+    proofPoints: string[];
+  };
+  /** Wording around the source input, so a salon is never asked for a restaurant. */
+  form: {
+    placeholder: string;
+    label: string;
+    submitLabel: string;
+    pendingLabel: string;
+  };
+  steps: { number: string; title: string; copy: string }[];
+  valueProps: {
+    eyebrow: string;
+    headline: string;
+    copy: string;
+    items: { icon: MarketingIconName; title: string; copy: string }[];
+  };
+  imagery: {
+    imageUrl: string;
+    imageAlt: string;
+    eyebrow: string;
+    headline: string;
+    copy: string;
+    assurances: { icon: MarketingIconName; copy: string }[];
+  };
+  pricing: {
+    eyebrow: string;
+    headline: string;
+    copy: string;
+    plans: MarketingPlan[];
+  };
+  closing: { headline: string; copy: string };
+  footerTagline: string;
+};
+
 export type VerticalConfig<
   TAttributes extends Record<string, unknown> = Record<string, unknown>,
   TItemAttributes extends Record<string, unknown> = Record<string, unknown>,
@@ -94,6 +185,8 @@ export type VerticalConfig<
 > = {
   id: VerticalId;
   vocabulary: CatalogVocabulary;
+  /** The niche's own marketing site. See `VerticalMarketing`. */
+  marketing: VerticalMarketing;
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
   itemAttributesSchema: z.ZodType<TItemAttributes>;
