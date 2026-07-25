@@ -1,9 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { isFactoryHostname, platformHostnames } from "@/lib/hostnames";
 
+// Every call passes the override explicitly. Omitting it reads
+// `process.env.PLATFORM_HOSTNAMES`, which would make these assertions depend on
+// whatever the machine running them happens to export; `""` pins the default set.
 describe("platformHostnames", () => {
-  it("defaults to the factory's own domains", () => {
-    expect([...platformHostnames({})].sort()).toEqual([
+  // Blank rather than absent on purpose: deploy.sh drops empty parameters, so a
+  // half-filled `.env` would otherwise leave the factory answering for no
+  // hostname at all.
+  it("defaults to the factory's own domains when the override is blank", () => {
+    expect([...platformHostnames("")].sort()).toEqual([
       "api.cornershop.dev",
       "cornershop.dev",
       "domains.cornershop.dev",
@@ -12,15 +18,9 @@ describe("platformHostnames", () => {
   });
 
   it("takes an override, trimmed and lowercased", () => {
-    expect([
-      ...platformHostnames({ PLATFORM_HOSTNAMES: " Staging.Example.com , " }),
-    ]).toEqual(["staging.example.com"]);
-  });
-
-  // deploy.sh drops empty parameters, but a half-filled `.env` would otherwise
-  // leave the factory answering for no hostname at all.
-  it("falls back when the override is blank", () => {
-    expect(platformHostnames({ PLATFORM_HOSTNAMES: "" }).size).toBe(4);
+    expect([...platformHostnames(" Staging.Example.com , ")]).toEqual([
+      "staging.example.com",
+    ]);
   });
 });
 
@@ -31,17 +31,17 @@ describe("platformHostnames", () => {
  */
 describe("isFactoryHostname", () => {
   it("claims the factory's own domains", () => {
-    expect(isFactoryHostname("cornershop.dev", {})).toBe(true);
-    expect(isFactoryHostname("api.cornershop.dev", {})).toBe(true);
+    expect(isFactoryHostname("cornershop.dev", "")).toBe(true);
+    expect(isFactoryHostname("api.cornershop.dev", "")).toBe(true);
   });
 
   it("claims a registered niche domain the registry knows", () => {
-    expect(isFactoryHostname("restofront.com", {})).toBe(true);
-    expect(isFactoryHostname("www.restofront.com", {})).toBe(true);
+    expect(isFactoryHostname("restofront.com", "")).toBe(true);
+    expect(isFactoryHostname("www.restofront.com", "")).toBe(true);
   });
 
   it("normalises case and port", () => {
-    expect(isFactoryHostname("RestoFront.com:443", {})).toBe(true);
+    expect(isFactoryHostname("RestoFront.com:443", "")).toBe(true);
   });
 
   /**
@@ -50,9 +50,9 @@ describe("isFactoryHostname", () => {
    * unverified one must not be authorized at all.
    */
   it("claims nothing else", () => {
-    expect(isFactoryHostname("pizzeria-luigi.com", {})).toBe(false);
-    expect(isFactoryHostname("notcornershop.dev", {})).toBe(false);
-    expect(isFactoryHostname("cornershop.dev.evil.com", {})).toBe(false);
-    expect(isFactoryHostname("", {})).toBe(false);
+    expect(isFactoryHostname("pizzeria-luigi.com", "")).toBe(false);
+    expect(isFactoryHostname("notcornershop.dev", "")).toBe(false);
+    expect(isFactoryHostname("cornershop.dev.evil.com", "")).toBe(false);
+    expect(isFactoryHostname("", "")).toBe(false);
   });
 });

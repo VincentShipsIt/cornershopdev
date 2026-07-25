@@ -10,10 +10,10 @@ const DEFAULT_PLATFORM_HOSTNAMES =
   "cornershop.dev,www.cornershop.dev,api.cornershop.dev,domains.cornershop.dev";
 
 export function platformHostnames(
-  env: { PLATFORM_HOSTNAMES?: string } = process.env,
+  configured: string | undefined = process.env.PLATFORM_HOSTNAMES,
 ): Set<string> {
   return new Set(
-    (env.PLATFORM_HOSTNAMES || DEFAULT_PLATFORM_HOSTNAMES)
+    (configured || DEFAULT_PLATFORM_HOSTNAMES)
       .split(",")
       .map((hostname) => hostname.trim().toLowerCase())
       .filter(Boolean),
@@ -34,12 +34,12 @@ export function platformHostnames(
  */
 export function isFactoryHostname(
   hostname: string,
-  env?: { PLATFORM_HOSTNAMES?: string },
+  configured?: string,
 ): boolean {
   const wanted = hostname.trim().toLowerCase().split(":")[0];
   if (!wanted) return false;
   return (
-    platformHostnames(env).has(wanted) ||
+    platformHostnames(configured).has(wanted) ||
     resolveVerticalByHostname(wanted) !== null
   );
 }
