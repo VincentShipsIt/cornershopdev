@@ -75,7 +75,11 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
   const wanted = hostname.trim().toLowerCase().split(":")[0];
   if (!wanted) return null;
   for (const id of listVerticalIds()) {
-    if (registry[id].marketing.hostnames.includes(wanted)) return id;
+    // Through the erased surface, not `registry[id]`: indexing with a runtime id
+    // yields the union of the concrete configs, and `includes` on a union of array
+    // types demands an argument assignable to every element type at once — which
+    // is `never` the moment one vertical registers no hostnames.
+    if (resolveVerticalConfig(id).marketing.hostnames.includes(wanted)) return id;
   }
   return null;
 }
@@ -88,8 +92,8 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
  */
 export function listMarketingVerticals(): VerticalId[] {
   return listVerticalIds().sort((a, b) => {
-    const left = registry[a].marketing;
-    const right = registry[b].marketing;
+    const left = resolveVerticalConfig(a).marketing;
+    const right = resolveVerticalConfig(b).marketing;
     if (Boolean(left.domain) !== Boolean(right.domain)) {
       return left.domain ? -1 : 1;
     }
