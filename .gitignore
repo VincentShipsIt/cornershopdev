@@ -44,3 +44,4 @@ next-env.d.ts
 
 # codex audit/verification artifacts
 .codex/
+/.swc
