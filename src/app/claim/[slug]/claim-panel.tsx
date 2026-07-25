@@ -9,11 +9,12 @@ import {
   LoaderCircle,
   ShieldCheck,
 } from "lucide-react";
-import { RestaurantSite } from "@/components/restaurant-site";
+import { SiteRenderer } from "@/components/site-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { RestaurantDraft } from "@/lib/restaurant";
+import type { SiteDraftView } from "@/lib/site-draft";
+import type { VerticalId } from "@/lib/verticals/types";
 
 const plans = [
   {
@@ -44,10 +45,12 @@ const plans = [
 
 export function ClaimPanel({
   slug,
+  vertical,
   fallbackDraft,
 }: {
   slug: string;
-  fallbackDraft: RestaurantDraft;
+  vertical: VerticalId;
+  fallbackDraft: SiteDraftView;
 }) {
   const draft = fallbackDraft;
   const [plan, setPlan] = useState<"starter" | "growth">("growth");
@@ -63,7 +66,7 @@ export function ClaimPanel({
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, restaurantSlug: slug, email }),
+        body: JSON.stringify({ plan, siteSlug: slug, email }),
       });
       const result = (await response.json()) as {
         url?: string;
@@ -107,7 +110,7 @@ export function ClaimPanel({
           <div className="max-h-[690px] overflow-hidden rounded-[1.75rem] border-[7px] border-[#171914] bg-white p-1 shadow-2xl">
             <div className="origin-top scale-[0.72]">
               <div className="w-[138.89%]">
-                <RestaurantSite draft={draft} embedded />
+                <SiteRenderer draft={draft} vertical={vertical} embedded />
               </div>
             </div>
           </div>

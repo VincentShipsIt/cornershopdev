@@ -1,9 +1,9 @@
 import type Stripe from "stripe";
 import { getDb } from "@/lib/db";
 import {
-  claimRestaurant,
-  RestaurantNotClaimableError,
-} from "@/lib/restaurant-claim";
+  claimSite,
+  SiteNotClaimableError,
+} from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   const db = getDb();
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    const slug = session.metadata?.restaurantSlug;
+    const slug = session.metadata?.siteSlug;
     const email = session.customer_details?.email ?? session.customer_email;
     if (slug && email) {
       // Stripe routinely delivers this before the browser follows success_url,
@@ -46,9 +46,9 @@ export async function POST(request: Request) {
       // a state the callback can no longer claim, locking the customer out.
       try {
         await db.$transaction((tx) =>
-          claimRestaurant(tx, {
+          claimSite(tx, {
             email,
-            restaurantSlug: slug,
+            siteSlug: slug,
             stripeCustomerId:
               typeof session.customer === "string" ? session.customer : null,
             stripeSubscriptionId:
@@ -59,10 +59,10 @@ export async function POST(request: Request) {
           }),
         );
       } catch (error) {
-        if (!(error instanceof RestaurantNotClaimableError)) throw error;
+        if (!(error instanceof SiteNotClaimableError)) throw error;
         // Checkout metadata is attacker-influenced, so a slug pointing at
-        // somebody else's restaurant is expected here. Acknowledge it: no
-        // amount of retrying will make that restaurant claimable.
+        // somebody else's site is expected here. Acknowledge it: no
+        // amount of retrying will make that site claimable.
       }
     }
   }

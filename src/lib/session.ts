@@ -5,7 +5,7 @@ export const SESSION_COOKIE = "restofront_session";
 
 const sessionPayloadSchema = z.object({
   email: z.email(),
-  restaurantSlug: z.string().min(2).max(80),
+  siteSlug: z.string().min(2).max(80),
   expiresAt: z.number().int().positive(),
 });
 

@@ -2,13 +2,13 @@ import { describe, expect, it, spyOn } from "bun:test";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   CLAIMABLE_STATUSES,
-  claimRestaurant,
+  claimSite,
   isClaimable,
-  RestaurantNotClaimableError,
+  SiteNotClaimableError,
   unclaimedWhere,
-} from "@/lib/restaurant-claim";
+} from "@/lib/site-claim";
 
-describe("restaurant claim eligibility", () => {
+describe("site claim eligibility", () => {
   it("accepts an unowned prospect", () => {
     expect(isClaimable({ status: "PROSPECT", organizationId: null })).toBe(true);
     expect(isClaimable({ status: "PREVIEW_READY", organizationId: null })).toBe(
@@ -16,19 +16,19 @@ describe("restaurant claim eligibility", () => {
     );
   });
 
-  it("rejects a restaurant that already belongs to an organization", () => {
+  it("rejects a site that already belongs to an organization", () => {
     expect(isClaimable({ status: "PROSPECT", organizationId: "org_a" })).toBe(
       false,
     );
   });
 
-  it("rejects a restaurant that has moved past the prospect stage", () => {
+  it("rejects a site that has moved past the prospect stage", () => {
     for (const status of ["CLAIMED", "LIVE", "PAUSED"] as const) {
       expect(isClaimable({ status, organizationId: null })).toBe(false);
     }
   });
 
-  it("never treats a live or claimed restaurant as claimable", () => {
+  it("never treats a live or claimed site as claimable", () => {
     expect(CLAIMABLE_STATUSES).not.toContain("CLAIMED");
     expect(CLAIMABLE_STATUSES).not.toContain("LIVE");
     expect(CLAIMABLE_STATUSES).not.toContain("PAUSED");
@@ -45,17 +45,17 @@ describe("unclaimedWhere", () => {
   });
 });
 
-describe("claimRestaurant", () => {
+describe("claimSite", () => {
   it("hands an unowned prospect to the buyer and records the subscription", async () => {
     const { state, tx } = createFakeTx([
       { slug: "chez-lea", status: "PREVIEW_READY", organizationId: null },
     ]);
 
-    await claimRestaurant(tx, completedCheckout());
+    await claimSite(tx, completedCheckout());
 
-    const restaurant = state.restaurants[0];
-    expect(restaurant.status).toBe("CLAIMED");
-    expect(restaurant.organizationId).toBe(state.organizations[0].id);
+    const site = state.sites[0];
+    expect(site.status).toBe("CLAIMED");
+    expect(site.organizationId).toBe(state.organizations[0].id);
     expect(state.subscriptions).toEqual([
       {
         stripeCustomerId: "cus_1",
@@ -67,7 +67,7 @@ describe("claimRestaurant", () => {
     ]);
   });
 
-  it("refuses a restaurant owned by another organization", async () => {
+  it("refuses a site owned by another organization", async () => {
     const { state, tx } = createFakeTx([
       { slug: "chez-lea", status: "CLAIMED", organizationId: "org_someone" },
     ]);
@@ -78,7 +78,7 @@ describe("claimRestaurant", () => {
       slug: "chez-lea",
       stripeSubscriptionId: "sub_1",
     });
-    expect(state.restaurants[0].organizationId).toBe("org_someone");
+    expect(state.sites[0].organizationId).toBe("org_someone");
     expect(state.subscriptions).toHaveLength(0);
     // A hijack attempt writes nothing, without relying on the caller having
     // wrapped this in a transaction that rolls the organization back.
@@ -94,8 +94,8 @@ describe("claimRestaurant", () => {
     expect(state.organizations).toHaveLength(0);
   });
 
-  it("refuses an owned restaurant whose organization was deleted", async () => {
-    // `onDelete: SetNull` leaves a real customer's restaurant at
+  it("refuses an owned site whose organization was deleted", async () => {
+    // `onDelete: SetNull` leaves a real customer's site at
     // {CLAIMED, organizationId: null}. Treating that as claimable would hand
     // it to whoever checks out next, so it stays off limits.
     const { state, tx } = createFakeTx([
@@ -104,7 +104,7 @@ describe("claimRestaurant", () => {
 
     await expectClaimRejected(tx);
 
-    expect(state.restaurants[0].organizationId).toBeNull();
+    expect(state.sites[0].organizationId).toBeNull();
     expect(state.organizations).toHaveLength(0);
   });
 
@@ -113,45 +113,45 @@ describe("claimRestaurant", () => {
       { slug: "chez-lea", status: "PROSPECT", organizationId: null },
     ]);
 
-    await claimRestaurant(tx, completedCheckout());
+    await claimSite(tx, completedCheckout());
     const organizationId = state.organizations[0].id;
     // The site has gone live since the first claim; a replayed webhook or a
     // reloaded success page must not knock it back to CLAIMED.
-    state.restaurants[0].status = "LIVE";
+    state.sites[0].status = "LIVE";
 
-    await claimRestaurant(tx, completedCheckout());
+    await claimSite(tx, completedCheckout());
 
-    expect(state.restaurants[0].status).toBe("LIVE");
-    expect(state.restaurants[0].organizationId).toBe(organizationId);
+    expect(state.sites[0].status).toBe("LIVE");
+    expect(state.sites[0].organizationId).toBe(organizationId);
     expect(state.organizations).toHaveLength(1);
     expect(state.subscriptions).toHaveLength(1);
   });
 
-  it("reuses the buyer's existing organization for a second restaurant", async () => {
+  it("reuses the buyer's existing organization for a second site", async () => {
     const { state, tx } = createFakeTx([
       { slug: "chez-lea", status: "PROSPECT", organizationId: null },
       { slug: "chez-max", status: "PROSPECT", organizationId: null },
     ]);
 
-    await claimRestaurant(tx, completedCheckout());
-    await claimRestaurant(
+    await claimSite(tx, completedCheckout());
+    await claimSite(
       tx,
-      completedCheckout({ restaurantSlug: "chez-max" }),
+      completedCheckout({ siteSlug: "chez-max" }),
     );
 
     expect(state.organizations).toHaveLength(1);
-    expect(state.restaurants.map((row) => row.organizationId)).toEqual([
+    expect(state.sites.map((row) => row.organizationId)).toEqual([
       state.organizations[0].id,
       state.organizations[0].id,
     ]);
   });
 });
 
-describe("RestaurantNotClaimableError", () => {
+describe("SiteNotClaimableError", () => {
   it("does not reveal whether the slug exists", () => {
-    const error = new RestaurantNotClaimableError();
-    expect(error.name).toBe("RestaurantNotClaimableError");
-    expect(error.message).toBe("This restaurant is not available to claim");
+    const error = new SiteNotClaimableError();
+    expect(error.name).toBe("SiteNotClaimableError");
+    expect(error.message).toBe("This site is not available to claim");
     expect(error.message).not.toContain("not found");
   });
 });
@@ -169,8 +169,8 @@ async function expectClaimRejected(
 ): Promise<Record<string, unknown>> {
   const logged = spyOn(console, "error").mockImplementation(() => {});
   try {
-    await expect(claimRestaurant(tx, checkout)).rejects.toBeInstanceOf(
-      RestaurantNotClaimableError,
+    await expect(claimSite(tx, checkout)).rejects.toBeInstanceOf(
+      SiteNotClaimableError,
     );
     expect(logged).toHaveBeenCalledTimes(1);
     return logged.mock.calls[0][1] as Record<string, unknown>;
@@ -182,7 +182,7 @@ async function expectClaimRejected(
 function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
   return {
     email: "owner@chez-lea.test",
-    restaurantSlug: "chez-lea",
+    siteSlug: "chez-lea",
     stripeCustomerId: "cus_1",
     stripeSubscriptionId: "sub_1",
     stripePriceId: "price_1",
@@ -192,7 +192,7 @@ function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
 
 type CompletedCheckoutInput = ReturnType<typeof completedCheckout>;
 
-type RestaurantRow = {
+type SiteRow = {
   slug: string;
   status: string;
   organizationId: string | null;
@@ -212,9 +212,9 @@ type SubscriptionRow = {
  * treated as set membership — so a guard that stops narrowing the update
  * shows up here as a test failure rather than a passing snapshot.
  */
-function createFakeTx(restaurants: RestaurantRow[]) {
+function createFakeTx(sites: SiteRow[]) {
   const state = {
-    restaurants,
+    sites,
     users: [] as Array<{ id: string; email: string }>,
     organizations: [] as Array<{ id: string; name: string }>,
     memberships: [] as Array<{ userId: string; organizationId: string }>,
@@ -251,16 +251,16 @@ function createFakeTx(restaurants: RestaurantRow[]) {
         return organization;
       },
     },
-    restaurant: {
+    site: {
       findUnique: async ({ where }: { where: { slug: string } }) =>
-        state.restaurants.find((row) => row.slug === where.slug) ?? null,
-      updateMany: async ({ where, data }: UpdateRestaurantsArgs) => {
-        const matched = state.restaurants.filter((row) => matches(row, where));
+        state.sites.find((row) => row.slug === where.slug) ?? null,
+      updateMany: async ({ where, data }: UpdateSitesArgs) => {
+        const matched = state.sites.filter((row) => matches(row, where));
         for (const row of matched) Object.assign(row, data);
         return { count: matched.length };
       },
       count: async ({ where }: { where: WhereClause }) =>
-        state.restaurants.filter((row) => matches(row, where)).length,
+        state.sites.filter((row) => matches(row, where)).length,
     },
     subscription: {
       upsert: async ({ where, update, create }: UpsertSubscriptionArgs) => {
@@ -291,9 +291,9 @@ type CreateOrganizationArgs = {
   };
 };
 
-type UpdateRestaurantsArgs = {
+type UpdateSitesArgs = {
   where: WhereClause;
-  data: Partial<RestaurantRow>;
+  data: Partial<SiteRow>;
 };
 
 type UpsertSubscriptionArgs = {
@@ -302,7 +302,7 @@ type UpsertSubscriptionArgs = {
   create: SubscriptionRow;
 };
 
-function matches(row: RestaurantRow, where: WhereClause): boolean {
+function matches(row: SiteRow, where: WhereClause): boolean {
   return Object.entries(where).every(([field, condition]) => {
     const value = (row as Record<string, unknown>)[field];
     if (condition !== null && typeof condition === "object" && "in" in condition) {

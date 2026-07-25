@@ -1,17 +1,17 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { isClaimable } from "@/lib/restaurant-claim";
+import { isClaimable } from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
 
 const requestSchema = z.object({
   plan: z.enum(["starter", "growth"]),
-  restaurantSlug: z.string().trim().min(2).max(80),
+  siteSlug: z.string().trim().min(2).max(80),
   email: z.email().optional(),
 });
 
 export async function POST(request: Request) {
   try {
-    const { plan, restaurantSlug, email } = requestSchema.parse(
+    const { plan, siteSlug, email } = requestSchema.parse(
       await request.json(),
     );
     const priceId =
@@ -27,13 +27,13 @@ export async function POST(request: Request) {
     // courtesy check only — the authoritative, race-free guard runs inside the
     // checkout callback's transaction in `api/auth/checkout`.
     if (process.env.DATABASE_URL) {
-      const restaurant = await getDb().restaurant.findUnique({
-        where: { slug: restaurantSlug },
+      const site = await getDb().site.findUnique({
+        where: { slug: siteSlug },
         select: { status: true, organizationId: true },
       });
-      if (!restaurant || !isClaimable(restaurant)) {
+      if (!site || !isClaimable(site)) {
         return Response.json(
-          { error: "This restaurant is not available to claim" },
+          { error: "This site is not available to claim" },
           { status: 409 },
         );
       }
@@ -47,13 +47,13 @@ export async function POST(request: Request) {
       line_items: [{ price: priceId, quantity: 1 }],
       allow_promotion_codes: true,
       customer_email: email,
-      client_reference_id: restaurantSlug,
-      metadata: { restaurantSlug, plan, priceId },
+      client_reference_id: siteSlug,
+      metadata: { siteSlug, plan, priceId },
       subscription_data: {
-        metadata: { restaurantSlug, plan, priceId },
+        metadata: { siteSlug, plan, priceId },
       },
       success_url: `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/claim/${restaurantSlug}?checkout=canceled`,
+      cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
     });
 
     return Response.json({ url: session.url });

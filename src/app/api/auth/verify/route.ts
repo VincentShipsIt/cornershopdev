@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     SESSION_COOKIE,
     createSessionToken({
       email: session.email,
-      restaurantSlug: session.restaurantSlug,
+      siteSlug: session.siteSlug,
     }),
     {
     httpOnly: true,

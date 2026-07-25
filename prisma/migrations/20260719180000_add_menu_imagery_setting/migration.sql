@@ -1,2 +1,0 @@
-ALTER TABLE "Restaurant"
-ADD COLUMN "showMenuImages" BOOLEAN NOT NULL DEFAULT false;

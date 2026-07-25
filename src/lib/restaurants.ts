@@ -1,11 +1,17 @@
-import { getDb } from "@/lib/db";
-import { leadDrafts } from "@/lib/lead-drafts";
+import { Vertical } from "@/generated/prisma/enums";
 import {
-  restaurantDraftSchema,
   sampleRestaurant,
+  toRestaurantDraft,
   type RestaurantDraft,
+  type RestaurantSiteDraft,
 } from "@/lib/restaurant";
+import { findSiteView } from "@/lib/sites";
 
+/**
+ * Flat restaurant-shaped view over the generic site read path. The renderer and the
+ * preview/claim pages are vertical-agnostic now; this remains for the dashboard and
+ * the marketing surfaces, which still edit the legacy flat `RestaurantDraft`.
+ */
 export async function getRestaurantDraft(
   slug: string,
 ): Promise<RestaurantDraft> {
@@ -20,69 +26,11 @@ export async function getRestaurantDraft(
 export async function findRestaurantDraft(
   slug: string,
 ): Promise<RestaurantDraft | null> {
-  const leadDraft = leadDrafts[slug];
-  if (!process.env.DATABASE_URL) {
-    if (leadDraft) return leadDraft;
-    return slug === sampleRestaurant.slug ? sampleRestaurant : null;
-  }
+  const site = await findSiteView(slug);
+  if (!site) return null;
+  // A site in another vertical has no restaurant-shaped projection; callers that
+  // can render it go through `findSiteView` directly.
+  if (site.vertical !== Vertical.RESTAURANT) return null;
 
-  const restaurant = await getDb().restaurant.findUnique({
-    where: { slug },
-    include: {
-      integrations: { orderBy: { createdAt: "asc" } },
-      menuSections: {
-        orderBy: { position: "asc" },
-        include: { items: { orderBy: { position: "asc" } } },
-      },
-      siteVersions: { orderBy: { version: "desc" }, take: 1 },
-    },
-  });
-
-  if (!restaurant) return null;
-  const latestTheme = restaurant.siteVersions[0]?.theme as
-    | RestaurantDraft["palette"]
-    | undefined;
-
-  return restaurantDraftSchema.parse({
-    slug: restaurant.slug,
-    name: restaurant.name,
-    eyebrow: `${restaurant.cuisine ?? "Independent restaurant"} · ${
-      restaurant.address ?? "Local"
-    }`,
-    description: restaurant.description ?? sampleRestaurant.description,
-    cuisine: restaurant.cuisine ?? "",
-    address: restaurant.address ?? "",
-    phone: restaurant.phone ?? "",
-    sourceUrl: restaurant.sourceUrl,
-    heroImageUrl: restaurant.heroImageUrl,
-    heroOriginalImageUrl: restaurant.heroOriginalImageUrl,
-    heroImageProvenance:
-      restaurant.heroImageProvenance?.toLowerCase().replace("_", "-") ?? null,
-    palette: latestTheme ?? sampleRestaurant.palette,
-    showMenuImages: restaurant.showMenuImages,
-    autoEnhanceImages: restaurant.autoEnhanceImages,
-    defaultLocale: restaurant.defaultLocale,
-    translations: restaurant.translations,
-    menuSections: restaurant.menuSections.map((section) => ({
-      name: section.name,
-      description: section.description ?? "",
-      items: section.items.map((item) => ({
-        name: item.name,
-        description: item.description ?? "",
-        price: item.price === null ? null : Number(item.price),
-        currency: item.currency,
-        dietaryLabels: item.dietaryLabels,
-        imageUrl: item.imageUrl,
-        originalImageUrl: item.originalImageUrl,
-        imageProvenance:
-          item.imageProvenance?.toLowerCase().replace("_", "-") ?? null,
-      })),
-    })),
-    integrations: restaurant.integrations.map((integration) => ({
-      type: integration.type.toLowerCase(),
-      label: integration.label,
-      provider: integration.provider,
-      url: integration.url,
-    })),
-  });
+  return toRestaurantDraft(site.draft as RestaurantSiteDraft);
 }

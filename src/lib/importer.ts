@@ -1,6 +1,13 @@
 import { isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { z } from "zod";
+import type {
+  LinkClassificationHint,
+  ProviderDefinition,
+  VerticalConfig,
+} from "@/lib/verticals/types";
+
+type ImporterVerticalConfig = Pick<VerticalConfig, "providers" | "crawl">;
 
 const MAX_HTML_BYTES = 1_500_000;
 const MAX_IMAGE_BYTES = 12_000_000;
@@ -19,7 +26,7 @@ export type ExtractedLink = {
   provider: string | null;
 };
 
-export type ExtractedRestaurant = {
+export type ExtractedSite = {
   source: string;
   sourceUrl: string | null;
   sourceLocale: string | null;
@@ -31,6 +38,8 @@ export type ExtractedRestaurant = {
   pageText: string;
   links: ExtractedLink[];
 };
+
+export type ExtractedRestaurant = ExtractedSite;
 
 const privateIpv4Patterns = [
   /^0\./,
@@ -292,43 +301,35 @@ function stripMarkup(html: string): string {
   ).slice(0, 32_000);
 }
 
-function detectProvider(url: string): string | null {
-  const providers: Array<[RegExp, string]> = [
-    [/opentable/i, "OpenTable"],
-    [/sevenrooms/i, "SevenRooms"],
-    [/resy/i, "Resy"],
-    [/thefork|lafourchette/i, "TheFork"],
-    [/quandoo/i, "Quandoo"],
-    [/bookatable/i, "Bookatable"],
-    [/toasttab/i, "Toast"],
-    [/square\.site|squareup/i, "Square"],
-    [/ubereats/i, "Uber Eats"],
-    [/deliveroo/i, "Deliveroo"],
-    [/wolt/i, "Wolt"],
-    [/just-eat|justeat/i, "Just Eat"],
-    [/zenchef/i, "Zenchef"],
-    [/instagram/i, "Instagram"],
-    [/facebook/i, "Facebook"],
-  ];
-  return providers.find(([pattern]) => pattern.test(url))?.[1] ?? null;
+function detectProvider(
+  url: string,
+  providers: ProviderDefinition[],
+): string | null {
+  return providers.find(({ pattern }) => pattern.test(url))?.name ?? null;
 }
 
-function classifyLink(label: string, url: string): ExtractedLink["type"] | null {
+function classifyLink(
+  label: string,
+  url: string,
+  providers: ProviderDefinition[],
+  hints: LinkClassificationHint[],
+): ExtractedLink["type"] | null {
   const haystack = `${label} ${url}`.toLowerCase();
-  if (/instagram|facebook|tiktok|linkedin/.test(haystack)) return "social";
-  if (/deliveroo|ubereats|wolt|just.?eat|delivery/.test(haystack)) {
-    return "delivery";
-  }
-  if (/book|reservation|reserve|opentable|sevenrooms|resy|thefork|quandoo/.test(haystack)) {
-    return "booking";
-  }
-  if (/order|takeaway|takeout|collection|toasttab|square/.test(haystack)) {
-    return "ordering";
-  }
-  return null;
+  const hintedType = hints.find(({ pattern }) => pattern.test(haystack))?.type;
+  if (hintedType) return hintedType;
+  return (
+    providers.find(({ classificationPattern }) =>
+      classificationPattern?.test(haystack),
+    )?.type ?? null
+  );
 }
 
-function extractLinks(html: string, baseUrl: URL): ExtractedLink[] {
+function extractLinks(
+  html: string,
+  baseUrl: URL,
+  providers: ProviderDefinition[],
+  hints: LinkClassificationHint[],
+): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   const anchorPattern =
     /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -340,7 +341,7 @@ function extractLinks(html: string, baseUrl: URL): ExtractedLink[] {
       if (!["http:", "https:"].includes(parsedUrl.protocol)) continue;
       const url = parsedUrl.toString();
       const label = decodeHtml(match[2].replace(/<[^>]+>/g, " ")).slice(0, 80);
-      const type = classifyLink(label, url);
+      const type = classifyLink(label, url, providers, hints);
       if (!type) continue;
       if (
         type === "social" &&
@@ -348,7 +349,7 @@ function extractLinks(html: string, baseUrl: URL): ExtractedLink[] {
       ) {
         continue;
       }
-      const provider = detectProvider(url);
+      const provider = detectProvider(url, providers);
       if (links.some((link) => link.url === url)) continue;
       if (
         type === "social" &&
@@ -377,11 +378,13 @@ function extractLinks(html: string, baseUrl: URL): ExtractedLink[] {
   return links;
 }
 
-function extractInternalContentUrls(html: string, baseUrl: URL): URL[] {
+function extractInternalContentUrls(
+  html: string,
+  baseUrl: URL,
+  relevantPathPattern: RegExp,
+): URL[] {
   const urls: URL[] = [];
   const anchorPattern = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>/gi;
-  const relevantPath =
-    /(?:menu|menus|carte|restaurant|cuisine|food|drink|boisson|groupe|semaine|week|lunch|dinner|speise|carta)/i;
   let match: RegExpExecArray | null;
 
   while (
@@ -392,7 +395,10 @@ function extractInternalContentUrls(html: string, baseUrl: URL): URL[] {
       const url = new URL(decodeHtml(match[1]), baseUrl);
       if (!["http:", "https:"].includes(url.protocol)) continue;
       url.hash = "";
-      if (url.origin !== baseUrl.origin || !relevantPath.test(url.pathname)) {
+      if (
+        url.origin !== baseUrl.origin ||
+        !relevantPathPattern.test(url.pathname)
+      ) {
         continue;
       }
       if (url.pathname === baseUrl.pathname) continue;
@@ -416,7 +422,10 @@ function extractContact(pageText: string): { address: string; phone: string } {
   return { address: "", phone };
 }
 
-export async function inspectSource(rawSource: string): Promise<ExtractedRestaurant> {
+export async function inspectSource(
+  rawSource: string,
+  vertical: ImporterVerticalConfig,
+): Promise<ExtractedSite> {
   const source = sourceSchema.parse(rawSource);
   const looksLikeUrl =
     /^(?:https?:\/\/|www\.)/i.test(source) ||
@@ -440,7 +449,11 @@ export async function inspectSource(rawSource: string): Promise<ExtractedRestaur
   const normalized = /^https?:\/\//i.test(source) ? source : `https://${source}`;
   const { html, finalUrl } = await fetchHtml(new URL(normalized));
   const contentPages = await Promise.allSettled(
-    extractInternalContentUrls(html, finalUrl).map(async (url) => {
+    extractInternalContentUrls(
+      html,
+      finalUrl,
+      vertical.crawl.relevantPathPattern,
+    ).map(async (url) => {
       const result = await fetchHtml(url);
       if (result.finalUrl.origin !== finalUrl.origin) return null;
       return {
@@ -464,7 +477,14 @@ export async function inspectSource(rawSource: string): Promise<ExtractedRestaur
   const contact = extractContact(pageText);
   const hero = metaContent(html, "og:image");
   const links = [html, ...discoveredPages.map((page) => page.html)]
-    .flatMap((pageHtml) => extractLinks(pageHtml, finalUrl))
+    .flatMap((pageHtml) =>
+      extractLinks(
+        pageHtml,
+        finalUrl,
+        vertical.providers,
+        vertical.crawl.linkKeywordHints,
+      ),
+    )
     .filter(
       (link, index, allLinks) =>
         allLinks.findIndex((candidate) => candidate.url === link.url) ===

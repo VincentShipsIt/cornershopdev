@@ -1,32 +1,34 @@
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 import { z } from "zod";
-import { generateRestaurantDraft } from "@/lib/ai/restaurant-generation";
-import { inspectSource } from "@/lib/importer";
+import { Vertical } from "@/generated/prisma/enums";
 import { limitPublicPreview } from "@/lib/rate-limit";
-import { importFailureMessage } from "@/lib/restaurant-import";
+import { importFailureMessage } from "@/lib/import-identity";
 import {
   createImportJob,
   ImportConflictError,
   ImportDatabaseUnavailableError,
-  persistRestaurantImport,
+  persistSiteImport,
   recordImportFailure,
   updateImportJob,
-} from "@/lib/restaurant-import-persistence";
-import { restaurantImportWorkflow } from "@/workflows/restaurant-import";
+  type PersistableSiteDraft,
+} from "@/lib/site-persistence";
+import { crawlSiteSource, generateDraftForVertical } from "@/lib/site-pipeline";
+import { siteImportWorkflow } from "@/workflows/site-import";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const requestSchema = z.object({
   source: z.string().trim().min(2).max(500),
+  vertical: z.enum(Vertical).default(Vertical.RESTAURANT),
 });
 
 export async function POST(request: Request) {
   let importJobId: string | null = null;
 
   try {
-    const { source } = requestSchema.parse(await request.json());
+    const { source, vertical } = requestSchema.parse(await request.json());
     const rateLimit = await limitPublicPreview(request);
     if (!rateLimit.success) {
       const unavailable = rateLimit.reason === "unavailable";
@@ -46,13 +48,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const importJob = await createImportJob(source);
+    const importJob = await createImportJob(source, vertical);
     importJobId = importJob.id;
 
     if (process.env.WORKFLOW_ENABLED === "true") {
-      const run = await start(restaurantImportWorkflow, [
+      const run = await start(siteImportWorkflow, [
         source,
         importJob.id,
+        vertical,
       ]);
       await updateImportJob(importJob.id, { workflowRunId: run.runId });
       return NextResponse.json({
@@ -63,17 +66,19 @@ export async function POST(request: Request) {
     }
 
     await updateImportJob(importJob.id, { status: "CRAWLING" });
-    const extracted = await inspectSource(source);
+    const extracted = await crawlSiteSource(source, vertical);
     await updateImportJob(importJob.id, { status: "EXTRACTING" });
     await updateImportJob(importJob.id, { status: "GENERATING" });
-    const draft = await generateRestaurantDraft(extracted);
-    const persisted = await persistRestaurantImport({
+    const draft = await generateDraftForVertical(extracted, vertical);
+    const persisted = await persistSiteImport<PersistableSiteDraft>({
       draft,
+      vertical,
       source,
       importJobId: importJob.id,
     });
     return NextResponse.json({
       mode: "inline",
+      vertical,
       ...persisted,
     });
   } catch (error) {
@@ -81,7 +86,7 @@ export async function POST(request: Request) {
       try {
         await recordImportFailure(importJobId, error);
       } catch (recordError) {
-        console.error("[restaurant-import] failed to record import error", {
+        console.error("[site-import] failed to record import error", {
           importJobId,
           error:
             recordError instanceof Error ? recordError.message : "unknown",

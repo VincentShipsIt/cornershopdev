@@ -3,6 +3,14 @@ import { getRedisClient } from "@/lib/redis";
 
 const limit = 5;
 const windowMs = 60 * 60_000;
+
+export type RateLimitResult = {
+  success: boolean;
+  remaining: number;
+  reset: number;
+  reason?: "limited" | "unavailable";
+};
+
 const slidingWindowScript = `
 redis.call("ZREMRANGEBYSCORE", KEYS[1], 0, ARGV[1] - ARGV[2])
 local count = redis.call("ZCARD", KEYS[1])
@@ -15,12 +23,17 @@ redis.call("PEXPIRE", KEYS[1], ARGV[2])
 return {1, tonumber(ARGV[3]) - count - 1, tonumber(ARGV[1]) + tonumber(ARGV[2])}
 `;
 
-export async function limitPublicPreview(request: Request): Promise<{
-  success: boolean;
-  remaining: number;
-  reset: number;
-  reason?: "limited" | "unavailable";
-}> {
+/**
+ * Sliding-window limit on the caller's IP, in its own Redis key namespace so two
+ * public endpoints cannot exhaust each other's budget. Fails *closed* in
+ * production when Redis is missing or unreachable and open in development —
+ * that asymmetry predates this function and is preserved deliberately: an
+ * unmetered public write path is worse than a temporary outage.
+ */
+async function limitByIp(
+  request: Request,
+  options: { namespace: string; limit: number; windowMs: number },
+): Promise<RateLimitResult> {
   if (!process.env.REDIS_URL) {
     if (process.env.NODE_ENV === "production") {
       return {
@@ -30,7 +43,11 @@ export async function limitPublicPreview(request: Request): Promise<{
         reason: "unavailable",
       };
     }
-    return { success: true, remaining: limit, reset: Date.now() + windowMs };
+    return {
+      success: true,
+      remaining: options.limit,
+      reset: Date.now() + options.windowMs,
+    };
   }
 
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -43,11 +60,11 @@ export async function limitPublicPreview(request: Request): Promise<{
     const now = Date.now();
     const redis = await getRedisClient();
     const result = await redis.eval(slidingWindowScript, {
-      keys: [`restofront:preview:${identifier}`],
+      keys: [`restofront:${options.namespace}:${identifier}`],
       arguments: [
         String(now),
-        String(windowMs),
-        String(limit),
+        String(options.windowMs),
+        String(options.limit),
         `${now}:${randomUUID()}`,
       ],
     });
@@ -76,4 +93,24 @@ export async function limitPublicPreview(request: Request): Promise<{
       reason: "unavailable",
     };
   }
+}
+
+export function limitPublicPreview(request: Request): Promise<RateLimitResult> {
+  return limitByIp(request, { namespace: "preview", limit, windowMs });
+}
+
+/**
+ * Booking requests get a separate, slightly looser bucket: a household
+ * legitimately sends more than one (a correction, a second party) and the write
+ * is far cheaper than an import, but it still ends in an email to the owner, so
+ * it stays metered.
+ */
+export function limitBookingRequest(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "booking-request",
+    limit: 8,
+    windowMs,
+  });
 }

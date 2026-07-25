@@ -5,9 +5,9 @@ import {
   normalizeImportSource,
   slugCollisionCandidate,
   storedImportSource,
-} from "@/lib/restaurant-import";
+} from "@/lib/import-identity";
 
-describe("restaurant import identity", () => {
+describe("import identity", () => {
   it("normalizes equivalent website sources to one key", () => {
     expect(
       normalizeImportSource(
@@ -38,7 +38,7 @@ describe("restaurant import identity", () => {
   });
 });
 
-describe("restaurant import results", () => {
+describe("import results", () => {
   it("returns canonical private preview and claim URLs", () => {
     expect(buildImportUrls("chez-léa")).toEqual({
       preview: "/preview/chez-l%C3%A9a",
