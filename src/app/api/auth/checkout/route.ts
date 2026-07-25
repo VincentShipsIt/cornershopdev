@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
+import { claimSite, SiteNotClaimableError } from "@/lib/site-claim";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
 import { getStripe } from "@/lib/stripe";
 
@@ -33,59 +34,36 @@ export async function GET(request: Request) {
     stripePriceId = typeof price === "string" ? price : (price?.id ?? null);
   }
 
-  if (process.env.DATABASE_URL) {
-    const db = getDb();
-    await db.$transaction(async (tx) => {
-      const user = await tx.user.upsert({
-        where: { email },
-        update: {},
-        create: { email },
-      });
-      const membership = await tx.membership.findFirst({
-        where: { userId: user.id },
-      });
-      const organizationId =
-        membership?.organizationId ??
-        (
-          await tx.organization.create({
-            data: {
-              name: siteSlug,
-              memberships: {
-                create: { userId: user.id, role: "owner" },
-              },
-            },
-          })
-        ).id;
+  // The session cookie issued below is the whole authorization model, so this
+  // route must fail closed: without a database there is no way to verify that
+  // the caller may claim this slug, and minting the cookie anyway would hand
+  // out ownership of an arbitrary site.
+  if (!process.env.DATABASE_URL) {
+    return Response.json(
+      { error: "Accounts are temporarily unavailable" },
+      { status: 503 },
+    );
+  }
 
-      await tx.site.updateMany({
-        where: { slug: siteSlug },
-        data: { organizationId, status: "CLAIMED" },
-      });
-
-      if (typeof checkout.customer === "string") {
-        await tx.subscription.upsert({
-          where: { stripeCustomerId: checkout.customer },
-          update: {
-            stripeSubscriptionId:
-              typeof checkout.subscription === "string"
-                ? checkout.subscription
-                : null,
-            stripePriceId,
-            status: "ACTIVE",
-          },
-          create: {
-            stripeCustomerId: checkout.customer,
-            stripeSubscriptionId:
-              typeof checkout.subscription === "string"
-                ? checkout.subscription
-                : null,
-            stripePriceId,
-            status: "ACTIVE",
-            organizationId,
-          },
-        });
-      }
-    });
+  try {
+    await getDb().$transaction((tx) =>
+      claimSite(tx, {
+        email,
+        siteSlug,
+        stripeCustomerId:
+          typeof checkout.customer === "string" ? checkout.customer : null,
+        stripeSubscriptionId:
+          typeof checkout.subscription === "string"
+            ? checkout.subscription
+            : null,
+        stripePriceId,
+      }),
+    );
+  } catch (error) {
+    if (error instanceof SiteNotClaimableError) {
+      return Response.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
   }
 
   const cookieStore = await cookies();

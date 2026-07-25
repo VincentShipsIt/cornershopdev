@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { getDb } from "@/lib/db";
+import { isClaimable } from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
 
 const requestSchema = z.object({
@@ -19,6 +21,22 @@ export async function POST(request: Request) {
 
     if (!priceId) {
       throw new Error(`Stripe price for the ${plan} plan is not configured`);
+    }
+
+    // Fail before taking money for a claim that cannot succeed. This is a
+    // courtesy check only — the authoritative, race-free guard runs inside the
+    // checkout callback's transaction in `api/auth/checkout`.
+    if (process.env.DATABASE_URL) {
+      const site = await getDb().site.findUnique({
+        where: { slug: siteSlug },
+        select: { status: true, organizationId: true },
+      });
+      if (!site || !isClaimable(site)) {
+        return Response.json(
+          { error: "This site is not available to claim" },
+          { status: 409 },
+        );
+      }
     }
 
     const appUrl =
