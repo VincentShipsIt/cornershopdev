@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Restofront — Your restaurant's front door, always current";
+export const alt = "Cornershopdev — Your restaurant's front door, always current";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -37,7 +37,7 @@ export default function OpenGraphImage() {
         >
           RF
         </div>
-        <div style={{ fontSize: 28, fontWeight: 700 }}>Restofront</div>
+        <div style={{ fontSize: 28, fontWeight: 700 }}>Cornershopdev</div>
       </div>
       <div
         style={{

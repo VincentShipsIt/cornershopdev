@@ -144,7 +144,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
-          "Restofront Importer/1.0 (+https://restofront.com; restaurant preview builder)",
+          "Cornershopdev Importer/1.0 (+https://cornershop.dev; restaurant preview builder)",
       },
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),
@@ -184,7 +184,7 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg",
         "User-Agent":
-          "Restofront Image Importer/1.0 (+https://restofront.com; authentic restaurant photo enhancement)",
+          "Cornershopdev Image Importer/1.0 (+https://cornershop.dev; authentic restaurant photo enhancement)",
       },
       redirect: "manual",
       signal: AbortSignal.timeout(15_000),

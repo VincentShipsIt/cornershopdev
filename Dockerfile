@@ -1,7 +1,7 @@
 FROM oven/bun:1.3.14-alpine AS dependencies
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-ARG DATABASE_URL=postgresql://build:build@127.0.0.1:5432/restofront_build
+ARG DATABASE_URL=postgresql://build:build@127.0.0.1:5432/cornershopdev_build
 ENV DATABASE_URL=$DATABASE_URL
 COPY package.json bun.lock ./
 COPY prisma ./prisma

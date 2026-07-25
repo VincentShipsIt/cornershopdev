@@ -18,7 +18,7 @@ export function getResend(): Resend {
  * empty `from` outright, and a half-filled `.env` should not break sign-in.
  */
 export function emailSender(environment: EmailEnvironment = process.env): string {
-  return environment.EMAIL_FROM || "Restofront <onboarding@resend.dev>";
+  return environment.EMAIL_FROM || "Cornershopdev <onboarding@resend.dev>";
 }
 
 /**

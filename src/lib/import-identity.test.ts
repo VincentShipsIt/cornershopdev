@@ -49,12 +49,12 @@ describe("import results", () => {
   it("redacts credentials from durable failure details", () => {
     const message = importFailureMessage(
       new Error(
-        "postgresql://admin:secret@db.example.test/restofront token=private",
+        "postgresql://admin:secret@db.example.test/cornershopdev token=private",
       ),
     );
 
     expect(message).toBe(
-      "postgresql://[redacted]@db.example.test/restofront token=[redacted]",
+      "postgresql://[redacted]@db.example.test/cornershopdev token=[redacted]",
     );
     expect(message).not.toContain("admin:secret");
     expect(message).not.toContain("private");

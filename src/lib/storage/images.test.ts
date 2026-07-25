@@ -9,22 +9,22 @@ describe("image storage configuration", () => {
     expect(
       getImageStorageConfig({
         AWS_REGION: "us-west-1",
-        S3_BUCKET: "restofront-images",
-        S3_PUBLIC_BASE_URL: "https://assets.restofront.com/",
+        S3_BUCKET: "cornershopdev-images",
+        S3_PUBLIC_BASE_URL: "https://assets.cornershop.dev/",
       }),
     ).toEqual({
       region: "us-west-1",
-      bucket: "restofront-images",
-      publicBaseUrl: "https://assets.restofront.com",
+      bucket: "cornershopdev-images",
+      publicBaseUrl: "https://assets.cornershop.dev",
     });
   });
 
   it("requires every runtime value", () => {
-    expect(imageStorageIsConfigured({ S3_BUCKET: "restofront-images" })).toBe(
+    expect(imageStorageIsConfigured({ S3_BUCKET: "cornershopdev-images" })).toBe(
       false,
     );
     expect(() =>
-      getImageStorageConfig({ S3_BUCKET: "restofront-images" }),
+      getImageStorageConfig({ S3_BUCKET: "cornershopdev-images" }),
     ).toThrow("S3_BUCKET, S3_PUBLIC_BASE_URL, and AWS_REGION");
   });
 });

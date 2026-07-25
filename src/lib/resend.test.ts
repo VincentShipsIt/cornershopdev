@@ -4,24 +4,24 @@ import { emailSender, platformReplyTo } from "@/lib/resend";
 describe("emailSender", () => {
   it("sends as the configured identity", () => {
     expect(
-      emailSender({ EMAIL_FROM: "Vincent <vincent@send.restofront.com>" }),
-    ).toBe("Vincent <vincent@send.restofront.com>");
+      emailSender({ EMAIL_FROM: "Vincent <vincent@send.cornershop.dev>" }),
+    ).toBe("Vincent <vincent@send.cornershop.dev>");
   });
 
   it("falls back to the shared domain when unset or blank", () => {
     // deploy.sh drops empty parameters, but a half-filled local `.env` would
     // otherwise hand Resend an empty `from` and fail every send.
-    expect(emailSender({})).toBe("Restofront <onboarding@resend.dev>");
+    expect(emailSender({})).toBe("Cornershopdev <onboarding@resend.dev>");
     expect(emailSender({ EMAIL_FROM: "" })).toBe(
-      "Restofront <onboarding@resend.dev>",
+      "Cornershopdev <onboarding@resend.dev>",
     );
   });
 });
 
 describe("platformReplyTo", () => {
   it("points replies at a mailbox a human reads", () => {
-    expect(platformReplyTo({ EMAIL_REPLY_TO: "vincent@restofront.com" })).toBe(
-      "vincent@restofront.com",
+    expect(platformReplyTo({ EMAIL_REPLY_TO: "vincent@cornershop.dev" })).toBe(
+      "vincent@cornershop.dev",
     );
   });
 

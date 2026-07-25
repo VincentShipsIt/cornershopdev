@@ -1,6 +1,6 @@
-# Restofront
+# Cornershopdev
 
-Restofront turns an existing restaurant website—or just a restaurant name—into a private, prefilled, mobile-first website preview. The restaurant keeps its existing booking, ordering, and delivery providers. It claims the finished preview, subscribes, then connects its domain.
+Cornershopdev turns an existing restaurant website—or just a restaurant name—into a private, prefilled, mobile-first website preview. The restaurant keeps its existing booking, ordering, and delivery providers. It claims the finished preview, subscribes, then connects its domain.
 
 ## Product flow
 
@@ -17,7 +17,7 @@ Restofront turns an existing restaurant website—or just a restaurant name—in
 
 ## Restaurant templates
 
-Restaurant sites use Geist Sans rather than the Restofront marketing display
+Restaurant sites use Geist Sans rather than the Cornershopdev marketing display
 font. The renderer automatically combines the imported brand palette with a
 cuisine-aware layout:
 
@@ -137,7 +137,7 @@ Configure the private production S3 bucket and its CloudFront public origin:
 - `S3_BUCKET`
 - `S3_PUBLIC_BASE_URL`
 
-Restofront never creates a dish photograph from menu text. Enhancement requires
+Cornershopdev never creates a dish photograph from menu text. Enhancement requires
 an existing HTTPS source image from the restaurant, an owner upload, or customer
 UGC with explicit reuse permission. The immutable original URL and its
 provenance are stored alongside the enhanced S3 derivative.
@@ -169,7 +169,7 @@ generation endpoint.
 Configure the webhook endpoint as:
 
 ```text
-https://api.restofront.com/api/webhooks/stripe
+https://api.cornershop.dev/api/webhooks/stripe
 ```
 
 ### Owner sign-in
@@ -191,10 +191,10 @@ and belongs to a restaurant.
 
 ### Production routing
 
-The frontend remains on Vercel at `restofront.com` and `www.restofront.com`.
-Set `RESTOFRONT_API_ORIGIN=https://api.restofront.com` in the Vercel production
+The frontend remains on Vercel at `cornershop.dev` and `www.cornershop.dev`.
+Set `CORNERSHOPDEV_API_ORIGIN=https://api.cornershop.dev` in the Vercel production
 environment so same-origin `/api/*` requests are proxied to the API without
-changing browser URLs. Route `api.restofront.com` and customer restaurant
+changing browser URLs. Route `api.cornershop.dev` and customer restaurant
 domains through Caddy on the EC2 application host.
 
 ## Security boundaries

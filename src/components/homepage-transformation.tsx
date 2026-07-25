@@ -12,7 +12,13 @@ const menuItems = sampleRestaurant.menuSections
   .flatMap((section) => section.items)
   .slice(0, 3);
 
-export function HomepageTransformation() {
+/**
+ * A before/after mock of a real restaurant site, so it is the restaurant niche's
+ * hero and nothing else — `VerticalMarketing.heroVisual` opts in. The brand name
+ * is a prop because the "after" label names whoever is selling the page, which
+ * is the niche's brand, never the factory's.
+ */
+export function HomepageTransformation({ brandName }: { brandName: string }) {
   return (
     <figure
       aria-labelledby="transformation-caption"
@@ -84,7 +90,7 @@ export function HomepageTransformation() {
       <div className="absolute bottom-1 right-0 z-10 w-[68%] min-w-[250px] max-w-[370px] rotate-[1.5deg] sm:w-[64%]">
         <div className="mb-2 flex items-center gap-2 pr-4">
           <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
-            With Restofront
+            With {brandName}
           </span>
           <span className="h-px flex-1 bg-primary/30" />
         </div>

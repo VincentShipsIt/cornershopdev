@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import type { BrandIdentity } from "@/lib/brand";
 import {
   formatPrice,
   type RestaurantDraft,
@@ -42,16 +43,23 @@ type DomainSetup = {
   records: Array<{ type: string; name: string; value: string }>;
 };
 
+/**
+ * `brand` is resolved on the server from the host the owner signed in through,
+ * so someone managing a site they bought as Restofront keeps seeing Restofront
+ * here rather than the factory that built it.
+ */
 export function Dashboard({
   initialDraft,
   email,
   checkoutComplete,
   demo,
+  brand,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
   checkoutComplete: boolean;
   demo: boolean;
+  brand: BrandIdentity;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -154,7 +162,7 @@ export function Dashboard({
     <main className="min-h-screen bg-[#f3f1eb]">
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-background px-4 md:px-6">
         <div className="flex items-center gap-5">
-          <Brand />
+          <Brand {...brand} />
           <span className="hidden h-5 w-px bg-border sm:block" />
           <button className="hidden items-center gap-2 text-sm font-medium sm:flex">
             {draft.name}
@@ -248,7 +256,7 @@ export function Dashboard({
               <PageHeading
                 eyebrow="Restaurant overview"
                 title={`Good afternoon, ${draft.name}.`}
-                copy="Everything guests see, and everything Restofront is watching."
+                copy="Everything guests see, and everything Cornershopdev is watching."
               />
               <div className="mt-8 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
                 <Card className="overflow-hidden py-0">
@@ -429,7 +437,7 @@ export function Dashboard({
               <PageHeading
                 eyebrow="Image library"
                 title="Authentic photos, professionally finished."
-                copy="Restofront improves light, colour, crop and clarity without inventing dishes or changing what guests will receive."
+                copy="Cornershopdev improves light, colour, crop and clarity without inventing dishes or changing what guests will receive."
                 action={
                   <Button
                     size="sm"
@@ -531,7 +539,7 @@ export function Dashboard({
               <PageHeading
                 eyebrow="Existing systems"
                 title="Keep what already works."
-                copy="Restofront sends guests to the restaurant's current booking, ordering and delivery providers."
+                copy="Cornershopdev sends guests to the restaurant's current booking, ordering and delivery providers."
               />
               <div className="mt-8 grid gap-4">
                 {draft.integrations.map((integration) => (
@@ -609,7 +617,7 @@ export function Dashboard({
                       Add domain
                     </Button>
                     <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                      Restofront authorizes the domain for automatic SSL before
+                      Cornershopdev authorizes the domain for automatic SSL before
                       asking for DNS changes.
                     </p>
                   </CardContent>
@@ -680,7 +688,7 @@ export function Dashboard({
                     ) : (
                       <ol className="space-y-5 text-sm">
                         {[
-                          "Restofront authorizes the domain on the production host.",
+                          "Cornershopdev authorizes the domain on the production host.",
                           "The exact DNS record appears here for copying into your DNS provider.",
                           "Once DNS resolves, SSL is issued and the new site becomes live.",
                         ].map((step, index) => (
