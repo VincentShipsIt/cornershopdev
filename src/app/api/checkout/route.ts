@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   authorizeClaimInvitationForCheckout,
   bindClaimInvitationToCheckout,
+  buildClaimCheckoutIdempotencyKey,
   ClaimFlowError,
   MIN_CLAIM_CHECKOUT_TTL_MS,
   recordClaimRejection,
@@ -110,13 +111,14 @@ export async function POST(request: Request) {
       }
     }
 
+    const checkoutExpiresAt = Math.min(
+      Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+      Math.floor(invitation.expiresAt.getTime() / 1000),
+    );
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
-        expires_at: Math.min(
-          Math.floor(Date.now() / 1000) + 24 * 60 * 60,
-          Math.floor(invitation.expiresAt.getTime() / 1000),
-        ),
+        expires_at: checkoutExpiresAt,
         line_items: [{ price: priceId, quantity: 1 }],
         allow_promotion_codes: true,
         customer_email: invitation.email,
@@ -139,19 +141,41 @@ export async function POST(request: Request) {
         cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
       },
       {
-        // Including the previously observed binding yields one Stripe session
-        // per lifecycle step. Retrying a request is idempotent, while an
-        // expired/cancelled session can be replaced without Stripe returning
-        // the old session for its 24-hour idempotency window.
-        idempotencyKey: `claim-${invitation.id}-${plan}-${previousSessionId ?? "initial"}`,
+        // expires_at is part of the key because it is part of Stripe's
+        // idempotency comparison. Requests in the same second are identical;
+        // later/concurrent sessions are reconciled by the database CAS below.
+        idempotencyKey: buildClaimCheckoutIdempotencyKey({
+          invitationId: invitation.id,
+          plan,
+          previousSessionId,
+          expiresAt: checkoutExpiresAt,
+        }),
       },
     );
     try {
-      await bindClaimInvitationToCheckout({
+      const boundSessionId = await bindClaimInvitationToCheckout({
         invitation,
         stripeCheckoutSessionId: session.id,
         expectedCheckoutSessionId: previousSessionId,
       });
+      if (boundSessionId !== session.id) {
+        if (session.status === "open") {
+          await stripe.checkout.sessions.expire(session.id);
+        }
+        const winner = await stripe.checkout.sessions.retrieve(boundSessionId);
+        if (
+          winner.status === "open" &&
+          winner.metadata?.plan === plan &&
+          winner.url
+        ) {
+          return Response.json({ url: winner.url });
+        }
+        throw new ClaimFlowError(
+          "invitation_used",
+          409,
+          "Another checkout replaced this one. Reopen the ownership email and try again.",
+        );
+      }
     } catch (error) {
       // Never leave an unbound payment path open: Stripe could otherwise
       // collect money for a checkout that claimSite must reject.

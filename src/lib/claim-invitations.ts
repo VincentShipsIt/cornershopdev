@@ -48,6 +48,21 @@ export function hashClaimInvitationToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+export function buildClaimCheckoutIdempotencyKey(input: {
+  invitationId: string;
+  plan: "starter" | "growth";
+  previousSessionId: string | null;
+  expiresAt: number;
+}): string {
+  return [
+    "claim",
+    input.invitationId,
+    input.plan,
+    input.previousSessionId ?? "initial",
+    input.expiresAt,
+  ].join("-");
+}
+
 /**
  * Intentionally conservative. A mailbox proves self-serve ownership only when
  * it is the exact imported business email or lives on the exact source website
@@ -344,9 +359,9 @@ export async function bindClaimInvitationToCheckout(input: {
   stripeCheckoutSessionId: string;
   expectedCheckoutSessionId: string | null;
   now?: Date;
-}): Promise<void> {
+}): Promise<string> {
   const now = input.now ?? new Date();
-  await getDb().$transaction(async (tx) => {
+  return getDb().$transaction(async (tx) => {
     const bound = await tx.claimInvitation.updateMany({
       where: {
         id: input.invitation.id,
@@ -363,6 +378,24 @@ export async function bindClaimInvitationToCheckout(input: {
       data: { checkoutSessionId: input.stripeCheckoutSessionId },
     });
     if (bound.count !== 1) {
+      const current = await tx.claimInvitation.findUnique({
+        where: { id: input.invitation.id },
+        select: {
+          acceptedAt: true,
+          revokedAt: true,
+          expiresAt: true,
+          checkoutSessionId: true,
+        },
+      });
+      if (
+        current &&
+        !current.acceptedAt &&
+        !current.revokedAt &&
+        current.expiresAt > now &&
+        current.checkoutSessionId
+      ) {
+        return current.checkoutSessionId;
+      }
       throw new ClaimFlowError(
         "invitation_used",
         409,
@@ -377,6 +410,7 @@ export async function bindClaimInvitationToCheckout(input: {
         siteId: input.invitation.siteId,
       },
     });
+    return input.stripeCheckoutSessionId;
   });
 }
 

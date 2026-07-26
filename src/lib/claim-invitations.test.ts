@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  buildClaimCheckoutIdempotencyKey,
   hasDomainEmailOwnershipProof,
   hashClaimInvitationToken,
 } from "@/lib/claim-invitations";
@@ -13,6 +14,27 @@ describe("claim invitation secrets", () => {
     expect(digest).not.toContain(token);
     expect(hashClaimInvitationToken(token)).toBe(digest);
     expect(hashClaimInvitationToken(`${token}-other`)).not.toBe(digest);
+  });
+});
+
+describe("claim checkout idempotency", () => {
+  it("binds the exact Stripe expiry to the idempotency key", () => {
+    const input = {
+      invitationId: "invite_1",
+      plan: "growth" as const,
+      previousSessionId: "cs_previous",
+      expiresAt: 1_800_000_000,
+    };
+
+    expect(buildClaimCheckoutIdempotencyKey(input)).toBe(
+      buildClaimCheckoutIdempotencyKey({ ...input }),
+    );
+    expect(
+      buildClaimCheckoutIdempotencyKey({
+        ...input,
+        expiresAt: input.expiresAt + 1,
+      }),
+    ).not.toBe(buildClaimCheckoutIdempotencyKey(input));
   });
 });
 
