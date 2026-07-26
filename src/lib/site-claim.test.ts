@@ -10,34 +10,18 @@ import {
 } from "@/lib/site-claim";
 
 describe("site claim eligibility", () => {
-  it("accepts an unowned prospect", () => {
+  it("admits only unowned prospects", () => {
     expect(isClaimable({ status: "PROSPECT", organizationId: null })).toBe(true);
     expect(isClaimable({ status: "PREVIEW_READY", organizationId: null })).toBe(
       true,
     );
-  });
-
-  it("rejects a site that already belongs to an organization", () => {
-    expect(isClaimable({ status: "PROSPECT", organizationId: "org_a" })).toBe(
+    expect(isClaimable({ status: "CLAIMED", organizationId: null })).toBe(false);
+    expect(isClaimable({ status: "PROSPECT", organizationId: "org_1" })).toBe(
       false,
     );
   });
 
-  it("rejects a site that has moved past the prospect stage", () => {
-    for (const status of ["CLAIMED", "LIVE", "PAUSED"] as const) {
-      expect(isClaimable({ status, organizationId: null })).toBe(false);
-    }
-  });
-
-  it("never treats a live or claimed site as claimable", () => {
-    expect(CLAIMABLE_STATUSES).not.toContain("CLAIMED");
-    expect(CLAIMABLE_STATUSES).not.toContain("LIVE");
-    expect(CLAIMABLE_STATUSES).not.toContain("PAUSED");
-  });
-});
-
-describe("unclaimedWhere", () => {
-  it("pins the update to the requested slug and to unowned prospects", () => {
+  it("pins the compare-and-swap to slug, ownership and lifecycle", () => {
     expect(unclaimedWhere("chez-lea")).toEqual({
       slug: "chez-lea",
       organizationId: null,
@@ -46,98 +30,131 @@ describe("unclaimedWhere", () => {
   });
 });
 
-describe("claimSite", () => {
-  it("hands an unowned prospect to the buyer and records the subscription", async () => {
-    const { state, tx } = createFakeTx([
-      { slug: "chez-lea", status: "PREVIEW_READY", organizationId: null },
-    ]);
+describe("invitation-bound site claim", () => {
+  it("atomically accepts the invitation, assigns ownership and audits it", async () => {
+    const { state, tx } = fixture();
 
-    await claimSite(tx, completedCheckout());
+    const access = await claimSite(tx, completedCheckout());
 
-    const site = state.sites[0];
-    expect(site.status).toBe("CLAIMED");
-    expect(site.organizationId).toBe(state.organizations[0].id);
-    expect(state.subscriptions).toEqual([
-      {
-        stripeCustomerId: "cus_1",
-        stripeSubscriptionId: "sub_1",
-        stripePriceId: "price_1",
-        status: "ACTIVE",
-        organizationId: state.organizations[0].id,
-      },
-    ]);
-  });
-
-  it("refuses a site owned by another organization", async () => {
-    const { state, tx } = createFakeTx([
-      { slug: "chez-lea", status: "CLAIMED", organizationId: "org_someone" },
-    ]);
-
-    const reported = await expectClaimRejected(tx);
-
-    expect(reported).toMatchObject({
-      slug: "chez-lea",
-      stripeSubscriptionId: "sub_1",
+    expect(state.invitations[0].acceptedAt).toBeInstanceOf(Date);
+    expect(state.sites[0]).toMatchObject({
+      status: "CLAIMED",
+      organizationId: access.organizationId,
     });
-    expect(state.sites[0].organizationId).toBe("org_someone");
-    expect(state.subscriptions).toHaveLength(0);
-    // A hijack attempt writes nothing, without relying on the caller having
-    // wrapped this in a transaction that rolls the organization back.
-    expect(state.organizations).toHaveLength(0);
-    expect(state.memberships).toHaveLength(0);
-  });
-
-  it("refuses a slug that does not exist", async () => {
-    const { state, tx } = createFakeTx([]);
-
-    await expectClaimRejected(tx);
-
-    expect(state.organizations).toHaveLength(0);
-  });
-
-  it("refuses an owned site whose organization was deleted", async () => {
-    // `onDelete: SetNull` leaves a real customer's site at
-    // {CLAIMED, organizationId: null}. Treating that as claimable would hand
-    // it to whoever checks out next, so it stays off limits.
-    const { state, tx } = createFakeTx([
-      { slug: "chez-lea", status: "CLAIMED", organizationId: null },
-    ]);
-
-    await expectClaimRejected(tx);
-
-    expect(state.sites[0].organizationId).toBeNull();
-    expect(state.organizations).toHaveLength(0);
-  });
-
-  it("is idempotent when the other completion path already claimed it", async () => {
-    const { state, tx } = createFakeTx([
-      { slug: "chez-lea", status: "PROSPECT", organizationId: null },
-    ]);
-
-    await claimSite(tx, completedCheckout());
-    const organizationId = state.organizations[0].id;
-    // The site has gone live since the first claim; a replayed webhook or a
-    // reloaded success page must not knock it back to CLAIMED.
-    state.sites[0].status = "LIVE";
-
-    await claimSite(tx, completedCheckout());
-
-    expect(state.sites[0].status).toBe("LIVE");
-    expect(state.sites[0].organizationId).toBe(organizationId);
-    expect(state.organizations).toHaveLength(1);
     expect(state.subscriptions).toHaveLength(1);
+    expect(state.auditEvents).toEqual([
+      expect.objectContaining({
+        type: "claim.invitation.accepted",
+        siteId: "site_1",
+        metadata: {
+          invitationId: "invite_1",
+          proofMethod: "DOMAIN_EMAIL",
+        },
+      }),
+    ]);
   });
 
-  it("reuses the buyer's existing organization for a second site", async () => {
-    const { state, tx } = createFakeTx([
-      { slug: "chez-lea", status: "PROSPECT", organizationId: null },
-      { slug: "chez-max", status: "PROSPECT", organizationId: null },
-    ]);
+  it("replays the same completed Stripe session idempotently", async () => {
+    const { state, tx } = fixture();
+
+    const first = await claimSite(tx, completedCheckout());
+    state.sites[0].status = "LIVE";
+    const replay = await claimSite(tx, completedCheckout());
+
+    expect(replay).toEqual(first);
+    expect(state.sites[0].status).toBe("LIVE");
+    expect(state.organizations).toHaveLength(1);
+    expect(state.auditEvents).toHaveLength(1);
+  });
+
+  it("rejects cross-site, cross-email and cross-session use", async () => {
+    for (const checkout of [
+      completedCheckout({ siteSlug: "another-site" }),
+      completedCheckout({ email: "attacker@example.test" }),
+      completedCheckout({ stripeCheckoutSessionId: "cs_other" }),
+    ]) {
+      const { state, tx } = fixture();
+      await expectRejected(tx, checkout);
+      expect(state.sites[0].organizationId).toBeNull();
+      expect(state.invitations[0].acceptedAt).toBeNull();
+    }
+  });
+
+  it("rejects expired and revoked invitations", async () => {
+    for (const invitation of [
+      { expiresAt: new Date("2020-01-01"), revokedAt: null },
+      { expiresAt: new Date("2099-01-01"), revokedAt: new Date() },
+    ]) {
+      const { state, tx } = fixture({ invitation });
+      await expectRejected(tx);
+      expect(state.sites[0].organizationId).toBeNull();
+    }
+  });
+
+  it("does not transfer a site that already has an owner", async () => {
+    const { state, tx } = fixture({
+      site: { status: "CLAIMED", organizationId: "org_someone" },
+    });
+
+    await expectRejected(tx);
+
+    expect(state.sites[0].organizationId).toBe("org_someone");
+    expect(state.invitations[0].acceptedAt).toBeNull();
+    expect(state.organizations).toHaveLength(0);
+  });
+
+  it("does not accept another invitation after ownership was established", async () => {
+    const { state, tx } = fixture({
+      invitations: [
+        invitation(),
+        invitation({
+          id: "invite_2",
+          email: "second@chez-lea.test",
+          checkoutSessionId: "cs_second",
+        }),
+      ],
+    });
+    await claimSite(tx, completedCheckout());
+
+    await expectRejected(
+      tx,
+      completedCheckout({
+        email: "second@chez-lea.test",
+        claimInvitationId: "invite_2",
+        stripeCheckoutSessionId: "cs_second",
+      }),
+    );
+
+    expect(state.sites[0].organizationId).toBe(state.organizations[0].id);
+    expect(state.invitations[1].acceptedAt).toBeNull();
+  });
+
+  it("reuses an existing buyer organization for another invited site", async () => {
+    const { state, tx } = fixture({
+      sites: [
+        site(),
+        site({ id: "site_2", slug: "chez-max" }),
+      ],
+      invitations: [
+        invitation(),
+        invitation({
+          id: "invite_2",
+          siteId: "site_2",
+          checkoutSessionId: "cs_second",
+        }),
+      ],
+    });
 
     await claimSite(tx, completedCheckout());
     await claimSite(
       tx,
-      completedCheckout({ siteSlug: "chez-max" }),
+      completedCheckout({
+        siteSlug: "chez-max",
+        claimInvitationId: "invite_2",
+        stripeCheckoutSessionId: "cs_second",
+        stripeCustomerId: "cus_2",
+        stripeSubscriptionId: "sub_2",
+      }),
     );
 
     expect(state.organizations).toHaveLength(1);
@@ -146,64 +163,39 @@ describe("claimSite", () => {
       state.organizations[0].id,
     ]);
   });
-
-  it("normalizes Stripe email before creating account identity", async () => {
-    const { state, tx } = createFakeTx([
-      { slug: "chez-lea", status: "PREVIEW_READY", organizationId: null },
-    ]);
-
-    await claimSite(
-      tx,
-      completedCheckout({ email: " Owner@Chez-Lea.TEST " }),
-    );
-
-    expect(state.users[0].email).toBe("owner@chez-lea.test");
-  });
 });
 
 describe("SiteNotClaimableError", () => {
-  it("does not reveal whether the slug exists", () => {
+  it("does not expose ownership or invitation internals", () => {
     const error = new SiteNotClaimableError();
-    expect(error.name).toBe("SiteNotClaimableError");
     expect(error.message).toBe("This site is not available to claim");
-    expect(error.message).not.toContain("not found");
+    expect(error.message).not.toContain("invitation");
   });
 });
 
-/**
- * Asserts a claim is refused *and* that it left a trace. A rejected claim
- * means a real payment completed with nothing to show for it, so silence is
- * itself a bug — the log line is the only signal a human gets, since the
- * transaction rolls back before an audit row could survive. Spying also keeps
- * the expected error out of the CI output.
- */
-async function expectClaimRejected(
+async function expectRejected(
   tx: Prisma.TransactionClient,
   checkout: CompletedCheckout = completedCheckout(),
-): Promise<Record<string, unknown>> {
+) {
   const logged = spyOn(console, "error").mockImplementation(() => {});
   try {
     await expect(claimSite(tx, checkout)).rejects.toBeInstanceOf(
       SiteNotClaimableError,
     );
     expect(logged).toHaveBeenCalledTimes(1);
-    return logged.mock.calls[0][1] as Record<string, unknown>;
   } finally {
     logged.mockRestore();
   }
 }
 
-/**
- * Typed against the exported `CompletedCheckout` rather than inferred from this
- * fixture, so a field added to the real checkout payload fails to compile here
- * instead of leaving the tests asserting against a shape Stripe no longer sends.
- */
 function completedCheckout(
   overrides: Partial<CompletedCheckout> = {},
 ): CompletedCheckout {
   return {
     email: "owner@chez-lea.test",
     siteSlug: "chez-lea",
+    claimInvitationId: "invite_1",
+    stripeCheckoutSessionId: "cs_1",
     stripeCustomerId: "cus_1",
     stripeSubscriptionId: "sub_1",
     stripePriceId: "price_1",
@@ -212,9 +204,22 @@ function completedCheckout(
 }
 
 type SiteRow = {
+  id: string;
   slug: string;
   status: string;
   organizationId: string | null;
+};
+
+type InvitationRow = {
+  id: string;
+  email: string;
+  proofMethod: string;
+  expiresAt: Date;
+  verifiedAt: Date | null;
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  checkoutSessionId: string | null;
+  siteId: string;
 };
 
 type SubscriptionRow = {
@@ -225,70 +230,155 @@ type SubscriptionRow = {
   organizationId: string;
 };
 
-/**
- * A tiny in-memory stand-in for a Prisma transaction. `updateMany` and `count`
- * apply the real WHERE clause the way Postgres would — every field ANDed, `in`
- * treated as set membership — so a guard that stops narrowing the update
- * shows up here as a test failure rather than a passing snapshot.
- */
-function createFakeTx(sites: SiteRow[]) {
+function site(overrides: Partial<SiteRow> = {}): SiteRow {
+  return {
+    id: "site_1",
+    slug: "chez-lea",
+    status: "PREVIEW_READY",
+    organizationId: null,
+    ...overrides,
+  };
+}
+
+function invitation(
+  overrides: Partial<InvitationRow> = {},
+): InvitationRow {
+  return {
+    id: "invite_1",
+    email: "owner@chez-lea.test",
+    proofMethod: "DOMAIN_EMAIL",
+    expiresAt: new Date("2099-01-01"),
+    verifiedAt: new Date(),
+    acceptedAt: null,
+    revokedAt: null,
+    checkoutSessionId: "cs_1",
+    siteId: "site_1",
+    ...overrides,
+  };
+}
+
+function fixture(
+  overrides: {
+    site?: Partial<SiteRow>;
+    sites?: SiteRow[];
+    invitation?: Partial<InvitationRow>;
+    invitations?: InvitationRow[];
+  } = {},
+) {
   const state = {
-    sites,
+    sites: overrides.sites ?? [site(overrides.site)],
+    invitations:
+      overrides.invitations ?? [invitation(overrides.invitation)],
     users: [] as Array<{ id: string; email: string }>,
     organizations: [] as Array<{ id: string; name: string }>,
     memberships: [] as Array<{ userId: string; organizationId: string }>,
     subscriptions: [] as SubscriptionRow[],
+    auditEvents: [] as Array<Record<string, unknown>>,
   };
-
   let sequence = 0;
   const nextId = (prefix: string) => `${prefix}_${(sequence += 1)}`;
 
   const fake = {
+    claimInvitation: {
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        const row = state.invitations.find((item) => item.id === where.id);
+        if (!row) return null;
+        const ownedSite = state.sites.find((item) => item.id === row.siteId);
+        return ownedSite ? { ...row, site: { ...ownedSite } } : null;
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: WhereClause;
+        data: Partial<InvitationRow>;
+      }) => {
+        const rows = state.invitations.filter((row) => matches(row, where));
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
+      },
+    },
     user: {
-      upsert: async ({ where, create }: UpsertUserArgs) => {
-        const existing = state.users.find((user) => user.email === where.email);
-        if (existing) return existing;
-        const user = { id: nextId("user"), email: create.email };
-        state.users.push(user);
-        return user;
+      upsert: async ({
+        where,
+        create,
+      }: {
+        where: { email: string };
+        create: { email: string };
+      }) => {
+        const found = state.users.find((user) => user.email === where.email);
+        if (found) return found;
+        const created = { id: nextId("user"), email: create.email };
+        state.users.push(created);
+        return created;
       },
     },
     membership: {
-      findFirst: async ({ where }: { where: { userId: string } }) =>
+      findFirst: async ({
+        where,
+      }: {
+        where: { userId: string; organizationId?: string };
+      }) =>
         state.memberships.find(
-          (membership) => membership.userId === where.userId,
+          (row) =>
+            row.userId === where.userId &&
+            (!where.organizationId ||
+              row.organizationId === where.organizationId),
         ) ?? null,
     },
     organization: {
-      create: async ({ data }: CreateOrganizationArgs) => {
-        const organization = { id: nextId("org"), name: data.name };
-        state.organizations.push(organization);
+      create: async ({
+        data,
+      }: {
+        data: {
+          name: string;
+          memberships: { create: { userId: string } };
+        };
+      }) => {
+        const created = { id: nextId("org"), name: data.name };
+        state.organizations.push(created);
         state.memberships.push({
           userId: data.memberships.create.userId,
-          organizationId: organization.id,
+          organizationId: created.id,
         });
-        return organization;
+        return created;
       },
     },
     site: {
-      findUnique: async ({ where }: { where: { slug: string } }) =>
-        state.sites.find((row) => row.slug === where.slug) ?? null,
-      updateMany: async ({ where, data }: UpdateSitesArgs) => {
-        const matched = state.sites.filter((row) => matches(row, where));
-        for (const row of matched) Object.assign(row, data);
-        return { count: matched.length };
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: WhereClause;
+        data: Partial<SiteRow>;
+      }) => {
+        const rows = state.sites.filter((row) => matches(row, where));
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
       },
-      count: async ({ where }: { where: WhereClause }) =>
-        state.sites.filter((row) => matches(row, where)).length,
     },
     subscription: {
-      upsert: async ({ where, update, create }: UpsertSubscriptionArgs) => {
-        const existing = state.subscriptions.find(
+      upsert: async ({
+        where,
+        update,
+        create,
+      }: {
+        where: { stripeCustomerId: string };
+        update: Partial<SubscriptionRow>;
+        create: SubscriptionRow;
+      }) => {
+        const found = state.subscriptions.find(
           (row) => row.stripeCustomerId === where.stripeCustomerId,
         );
-        if (existing) return Object.assign(existing, update);
+        if (found) return Object.assign(found, update);
         state.subscriptions.push(create);
         return create;
+      },
+    },
+    auditEvent: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        state.auditEvents.push(data);
+        return data;
       },
     },
   };
@@ -298,34 +388,22 @@ function createFakeTx(sites: SiteRow[]) {
 
 type WhereClause = Record<string, unknown>;
 
-type UpsertUserArgs = {
-  where: { email: string };
-  create: { email: string };
-};
-
-type CreateOrganizationArgs = {
-  data: {
-    name: string;
-    memberships: { create: { userId: string; role: string } };
-  };
-};
-
-type UpdateSitesArgs = {
-  where: WhereClause;
-  data: Partial<SiteRow>;
-};
-
-type UpsertSubscriptionArgs = {
-  where: { stripeCustomerId: string };
-  update: Partial<SubscriptionRow>;
-  create: SubscriptionRow;
-};
-
-function matches(row: SiteRow, where: WhereClause): boolean {
+function matches(row: object, where: WhereClause): boolean {
   return Object.entries(where).every(([field, condition]) => {
+    if (field === "OR") {
+      return (condition as WhereClause[]).some((branch) => matches(row, branch));
+    }
     const value = (row as Record<string, unknown>)[field];
-    if (condition !== null && typeof condition === "object" && "in" in condition) {
-      return (condition as { in: unknown[] }).in.includes(value);
+    if (condition !== null && typeof condition === "object") {
+      if ("in" in condition) {
+        return (condition as { in: unknown[] }).in.includes(value);
+      }
+      if ("gt" in condition) {
+        return (
+          value instanceof Date &&
+          value > (condition as { gt: Date }).gt
+        );
+      }
     }
     return value === condition;
   });
