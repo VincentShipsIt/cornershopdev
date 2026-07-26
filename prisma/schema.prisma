@@ -68,6 +68,11 @@ enum AnalyticsEventType {
   LEAD_CREATED
 }
 
+enum ClaimProofMethod {
+  DOMAIN_EMAIL
+  OPERATOR_APPROVAL
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -224,16 +229,20 @@ model Domain {
 }
 
 model ClaimInvitation {
-  id         String    @id @default(cuid())
-  email      String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  acceptedAt DateTime?
-  siteId     String
-  site       Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt  DateTime  @default(now())
+  id                    String           @id @default(cuid())
+  email                 String
+  tokenHash             String           @unique
+  proofMethod           ClaimProofMethod @default(DOMAIN_EMAIL)
+  expiresAt             DateTime
+  verifiedAt            DateTime?
+  acceptedAt            DateTime?
+  revokedAt             DateTime?
+  checkoutSessionId     String?          @unique
+  siteId                String
+  site                  Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt             DateTime         @default(now())
 
-  @@index([siteId, email])
+  @@index([siteId, email, expiresAt])
 }
 
 model Subscription {

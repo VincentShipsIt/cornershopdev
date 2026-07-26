@@ -1,19 +1,49 @@
 import { z } from "zod";
-import { getDb } from "@/lib/db";
-import { isClaimable } from "@/lib/site-claim";
+import {
+  authorizeClaimInvitationForCheckout,
+  bindClaimInvitationToCheckout,
+  ClaimFlowError,
+  recordClaimRejection,
+} from "@/lib/claim-invitations";
+import { limitClaimCheckout } from "@/lib/rate-limit";
+import { isSameOriginMutation } from "@/lib/request-origin";
 import { getStripe } from "@/lib/stripe";
 
 const requestSchema = z.object({
   plan: z.enum(["starter", "growth"]),
   siteSlug: z.string().trim().min(2).max(80),
-  email: z.email().optional(),
+  invitationToken: z
+    .string()
+    .min(32)
+    .max(128)
+    .regex(/^[A-Za-z0-9_-]+$/),
 });
 
 export async function POST(request: Request) {
-  try {
-    const { plan, siteSlug, email } = requestSchema.parse(
-      await request.json(),
+  const rateLimit = await limitClaimCheckout(request);
+  if (!rateLimit.success) {
+    return Response.json(
+      {
+        error:
+          rateLimit.reason === "unavailable"
+            ? "Claim checkout is temporarily unavailable."
+            : "Too many claim attempts. Try again later.",
+      },
+      { status: rateLimit.reason === "unavailable" ? 503 : 429 },
     );
+  }
+  if (!isSameOriginMutation(request)) {
+    return Response.json(
+      { error: "Cross-site checkout requests are not allowed." },
+      { status: 403 },
+    );
+  }
+
+  let siteSlug = "unknown";
+  try {
+    const input = requestSchema.parse(await request.json());
+    const { plan, invitationToken } = input;
+    siteSlug = input.siteSlug;
     const priceId =
       plan === "starter"
         ? process.env.STRIPE_STARTER_PRICE_ID
@@ -23,37 +53,51 @@ export async function POST(request: Request) {
       throw new Error(`Stripe price for the ${plan} plan is not configured`);
     }
 
-    // Fail before taking money for a claim that cannot succeed. This is a
-    // courtesy check only — the authoritative, race-free guard runs inside the
-    // checkout callback's transaction in `api/auth/checkout`.
-    if (process.env.DATABASE_URL) {
-      const site = await getDb().site.findUnique({
-        where: { slug: siteSlug },
-        select: { status: true, organizationId: true },
-      });
-      if (!site || !isClaimable(site)) {
-        return Response.json(
-          { error: "This site is not available to claim" },
-          { status: 409 },
-        );
-      }
+    if (!process.env.DATABASE_URL) {
+      return Response.json(
+        { error: "Claim checkout is temporarily unavailable." },
+        { status: 503 },
+      );
     }
+    const invitation = await authorizeClaimInvitationForCheckout({
+      siteSlug,
+      token: invitationToken,
+    });
 
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
     const stripe = getStripe();
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
-      allow_promotion_codes: true,
-      customer_email: email,
-      client_reference_id: siteSlug,
-      metadata: { siteSlug, plan, priceId },
-      subscription_data: {
-        metadata: { siteSlug, plan, priceId },
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        allow_promotion_codes: true,
+        customer_email: invitation.email,
+        client_reference_id: siteSlug,
+        metadata: {
+          siteSlug,
+          plan,
+          priceId,
+          claimInvitationId: invitation.id,
+        },
+        subscription_data: {
+          metadata: {
+            siteSlug,
+            plan,
+            priceId,
+            claimInvitationId: invitation.id,
+          },
+        },
+        success_url: `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
       },
-      success_url: `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
+      {
+        idempotencyKey: `claim-${invitation.id}-${plan}`,
+      },
+    );
+    await bindClaimInvitationToCheckout({
+      invitation,
+      stripeCheckoutSessionId: session.id,
     });
 
     return Response.json({ url: session.url });
@@ -64,12 +108,24 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (error instanceof ClaimFlowError) {
+      await recordClaimRejection({
+        siteSlug,
+        reason: error.code,
+        actor: "claimant:checkout",
+      });
+      return Response.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
 
     // Everything else is ours, not the caller's: an unset price ID, a Stripe
     // outage, a database that will not answer. Returning `error.message` here
     // named our own environment variables to anyone who could POST malformed
     // input, and reported a server fault as a 400 the client could not fix.
     console.error("[checkout] failed", {
+      siteSlug,
       error: error instanceof Error ? error.message : "unknown",
     });
     return Response.json(

@@ -8,6 +8,7 @@ import {
   Inbox,
   Users,
 } from "lucide-react";
+import { ClaimInvitationForm } from "@/app/admin/claim-invitation-form";
 import { Brand } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,8 +66,9 @@ export default async function AdminPage() {
               Leads, customers and requests.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-              A read-only platform view across every generated site. Customer
-              contact details stay inside the tenant record.
+              A platform view across every generated site. Customer contact
+              details stay inside the tenant record; operators can approve a
+              specific concierge claim email without exposing stored contacts.
             </p>
           </div>
           <Badge variant="secondary">Latest 200 sites</Badge>
@@ -146,7 +148,7 @@ export default async function AdminPage() {
             <CardTitle>All sites</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
-            <table className="w-full min-w-[1250px] text-left text-sm">
+            <table className="w-full min-w-[1500px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-5 py-3 font-medium">Business</th>
@@ -158,6 +160,7 @@ export default async function AdminPage() {
                   <th scope="col" className="px-5 py-3 font-medium">Visits · 30d</th>
                   <th scope="col" className="px-5 py-3 font-medium">Lead conv. · 30d</th>
                   <th scope="col" className="px-5 py-3 font-medium">Created</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Concierge claim</th>
                   <th scope="col" className="px-5 py-3 text-right font-medium">Site</th>
                 </tr>
               </thead>
@@ -271,6 +274,13 @@ function SiteRow({ site }: { site: OperatorSiteRow }) {
       </td>
       <td className="px-5 py-4 text-muted-foreground">
         {formatDate(site.createdAt)}
+      </td>
+      <td className="px-5 py-4">
+        {site.ownerCount === 0 ? (
+          <ClaimInvitationForm siteSlug={site.slug} />
+        ) : (
+          <span className="text-muted-foreground">Owned</span>
+        )}
       </td>
       <td className="px-5 py-4 text-right">
         <Button

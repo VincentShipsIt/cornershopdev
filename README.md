@@ -11,9 +11,10 @@ Cornershopdev turns an existing restaurant website—or just a restaurant name�
 5. Detect the source language, preserve it as canonical, and generate a complete English translation during the same structured AI pass.
 6. Preserve first-party photography and optionally enhance exposure, colour, crop, noise, and clarity without changing the food or venue.
 7. Save a private preview through a durable PostgreSQL-backed Workflow.
-8. Claim the restaurant through Stripe Checkout; the completed checkout creates the prefilled owner account.
-9. Authorize the restaurant domain for on-demand TLS and show the exact DNS records.
-10. Monitor and maintain the menu, imagery, and external links from the dashboard.
+8. Verify ownership through a one-time business-domain email invitation or a concierge-approved owner email.
+9. Claim the restaurant through invitation-bound Stripe Checkout; the completed checkout creates the prefilled owner account.
+10. Authorize the restaurant domain for on-demand TLS and show the exact DNS records.
+11. Monitor and maintain the menu, imagery, and external links from the dashboard.
 
 ## Customer workspace and operator console
 
@@ -249,6 +250,15 @@ this same container, where the rewrite fires again — an infinite loop.
 - AI output is validated with Zod before it enters the product.
 - Existing booking and ordering links are extracted from source material and override model-generated links.
 - Stripe webhooks verify the raw body signature.
+- Restaurant claims require a hashed, expiring invitation bound to one site,
+  intended email, and Stripe Checkout session. Raw invitation tokens are kept
+  in URL fragments so embedded preview assets cannot receive them as referrers.
+- Self-serve claims require the exact imported business email or an address on
+  the exact source hostname. Ambiguous ownership requires a dual-gated
+  superadmin approval from the operator console.
+- Claim invitation requests and checkout attempts use isolated Redis rate-limit
+  buckets and fail closed in production. Creation, verification, checkout,
+  acceptance, and rejection events are recorded without tokens or contact data.
 - Dashboard sessions are HMAC-signed, HTTP-only, same-site cookies.
 - Restaurant mutations require a session matching the restaurant slug.
 - Image enhancement and domain management require that same restaurant-scoped session.

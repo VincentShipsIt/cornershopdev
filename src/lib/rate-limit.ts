@@ -129,3 +129,33 @@ export function limitAnalyticsEvent(
     windowMs: 60_000,
   });
 }
+
+export function limitClaimInvitationRequest(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "claim-invitation",
+    limit: 5,
+    windowMs,
+  });
+}
+
+export function limitClaimCheckout(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "claim-checkout",
+    limit: 10,
+    windowMs,
+  });
+}
+
+export function limitOperatorClaimInvitation(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-claim-invitation",
+    limit: 30,
+    windowMs,
+  });
+}
