@@ -1,0 +1,36 @@
+import { describe, expect, it } from "bun:test";
+
+const restofrontAssets = [
+  { name: "logo-square.png", size: 1024 },
+  { name: "mark.png", size: 512 },
+  { name: "apple-touch-icon.png", size: 180 },
+  { name: "favicon-32.png", size: 32 },
+] as const;
+
+async function readPngDimensions(name: string) {
+  const path = new URL(`../../public/brand/restofront/${name}`, import.meta.url);
+  const bytes = await Bun.file(path).arrayBuffer();
+  const view = new DataView(bytes);
+
+  // PNG signature followed by the IHDR chunk, whose width and height are the
+  // first two unsigned 32-bit integers in network byte order.
+  expect(Array.from(new Uint8Array(bytes, 0, 8))).toEqual([
+    137, 80, 78, 71, 13, 10, 26, 10,
+  ]);
+
+  return {
+    width: view.getUint32(16),
+    height: view.getUint32(20),
+  };
+}
+
+describe("Restofront brand assets", () => {
+  it("keeps every production PNG square at its declared export size", async () => {
+    for (const asset of restofrontAssets) {
+      await expect(readPngDimensions(asset.name)).resolves.toEqual({
+        width: asset.size,
+        height: asset.size,
+      });
+    }
+  });
+});

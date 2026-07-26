@@ -3,7 +3,8 @@
 Generated with the built-in OpenAI image generator on 2026-07-26. These are
 directional review boards. Restofront 05 is the selected direction; its chosen
 favicon artwork has been prepared as production raster assets under
-`public/brand/restofront/`.
+`public/brand/restofront/`. The flat 1024 × 1024 master is
+`logo-square.png`; its exact burgundy is recorded in the root `DESIGN.md`.
 
 ## Cornershopdev
 

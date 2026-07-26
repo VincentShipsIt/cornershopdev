@@ -6,12 +6,14 @@ Reference: the selected Fork R favicon from the Restofront 05 concept board.
 
 ## Production assets
 
+- `public/brand/restofront/logo-square.png` — 1024 × 1024 master
 - `public/brand/restofront/mark.png` — 512 × 512
 - `public/brand/restofront/favicon-32.png` — 32 × 32
 - `public/brand/restofront/apple-touch-icon.png` — 180 × 180
 
-The selected artwork was centre-cropped to a square and resized without
-redrawing or changing its burgundy, cream, fork, R, or rounded-square treatment.
+The selected artwork was redrawn into a true square master, flattened to the
+`#7F2020` burgundy and `#F7F1E7` cream recorded in `DESIGN.md`, then resized
+without changing its fork, R, or rounded-square treatment.
 
 ## Rendered checks
 
@@ -25,7 +27,10 @@ redrawing or changing its burgundy, cream, fork, R, or rounded-square treatment.
 
 ## Verification
 
-- 86 tests passed.
+- All four production PNG exports pass an automated square-dimension check.
+- Google's official `@google/design.md` linter reports zero errors and zero
+  warnings for the root `DESIGN.md`.
+- 87 tests passed.
 - ESLint completed with no errors; the only warning is the pre-existing
   generated workflow route warning.
 - Next's webpack build compiled the application and completed TypeScript, then
