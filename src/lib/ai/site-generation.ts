@@ -85,12 +85,23 @@ function getOpenRouter() {
   });
 }
 
+/**
+ * Every request carries a customer's own website content, so routing is
+ * restricted to providers that neither retain nor train on the prompt.
+ * `require_parameters` keeps that restriction honest: a provider that cannot
+ * honour the routing preferences is skipped rather than silently substituted.
+ */
+const PRIVATE_ROUTING = {
+  require_parameters: true,
+  data_collection: "deny",
+} as const;
+
 function getTextModel() {
   return getOpenRouter().chat(
     process.env.OPENROUTER_TEXT_MODEL ?? "openrouter/auto",
     {
       extraBody: {
-        provider: { require_parameters: true },
+        provider: PRIVATE_ROUTING,
         plugins: [{ id: "response-healing" }],
       },
       usage: { include: true },
@@ -102,13 +113,21 @@ function getTextModel() {
  * Image-output models are ordinary chat models on OpenRouter: the generated
  * image comes back in `choices[].message.images[]`, which the provider maps
  * onto AI SDK file parts. `modalities` is what opts the response into that.
+ *
+ * `require_parameters` matters more here than for text: a provider that drops
+ * `modalities` answers with prose, and `enhanceSiteImage` then throws on a
+ * missing file part. Skipping such a provider turns a confusing failure into
+ * the caller's existing "enhancement unavailable" path.
  */
 function getImageModel() {
   return getOpenRouter().chat(
     process.env.OPENROUTER_IMAGE_MODEL ??
       "google/gemini-3.1-flash-image",
     {
-      extraBody: { modalities: ["image", "text"] },
+      extraBody: {
+        modalities: ["image", "text"],
+        provider: PRIVATE_ROUTING,
+      },
       usage: { include: true },
     },
   );
