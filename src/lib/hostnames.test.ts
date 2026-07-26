@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { isFactoryHostname, platformHostnames } from "@/lib/hostnames";
+import {
+  isFactoryHostname,
+  platformHostnames,
+  requestHostname,
+} from "@/lib/hostnames";
 
 // Every call passes the override explicitly. Omitting it reads
 // `process.env.PLATFORM_HOSTNAMES`, which would make these assertions depend on
@@ -21,6 +25,26 @@ describe("platformHostnames", () => {
     expect([...platformHostnames(" Staging.Example.com , ")]).toEqual([
       "staging.example.com",
     ]);
+  });
+});
+
+describe("requestHostname", () => {
+  it("prefers the first forwarded hostname and normalizes it", () => {
+    expect(
+      requestHostname(
+        new Headers({
+          host: "internal:3000",
+          "x-forwarded-host": " BISTRO.EXAMPLE:443, proxy.internal ",
+        }),
+      ),
+    ).toBe("bistro.example");
+  });
+
+  it("falls back to host and rejects an absent value", () => {
+    expect(requestHostname(new Headers({ host: "Cafe.Example:443" }))).toBe(
+      "cafe.example",
+    );
+    expect(requestHostname(new Headers())).toBe("");
   });
 });
 

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { SiteRenderer } from "@/components/site-renderer";
 import { getSiteLocales, localizeSiteDraft } from "@/lib/site-draft";
+import { isLiveSiteSurface } from "@/lib/site-surface";
 import { findSiteView } from "@/lib/sites";
 
 type PageProps = {
@@ -43,14 +45,16 @@ export default async function LocalizedPreviewPage({ params }: PageProps) {
   if (!site) notFound();
   const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();
+  const liveSurface = isLiveSiteSurface(await headers(), slug);
 
   return (
     <SiteRenderer
       draft={localizeSiteDraft(site.draft, locale)}
       vertical={site.vertical}
       locale={locale}
-      localeBasePath={`/preview/${slug}`}
+      localeBasePath={liveSurface ? "/" : `/preview/${slug}`}
       availableLocales={locales}
+      analyticsEnabled={liveSurface}
     />
   );
 }

@@ -8,12 +8,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { BookingEmbed } from "@/components/booking-embed";
 import { BookingRequestForm } from "@/components/booking-request-form";
+import { SiteAnalytics } from "@/components/site-analytics";
 import { resolveBookingEmbed } from "@/lib/booking-embed";
 import {
   getSiteDictionary,
   getTemplateCopy,
   localizeIntegrationUrl,
 } from "@/lib/site-i18n";
+import { localeHref } from "@/lib/site-surface";
 import { formatPrice, type SiteDraftView } from "@/lib/site-draft";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
@@ -34,6 +36,7 @@ type SiteRendererProps = {
   locale?: string;
   localeBasePath?: string;
   availableLocales?: string[];
+  analyticsEnabled?: boolean;
 };
 
 export function SiteRenderer({
@@ -43,6 +46,7 @@ export function SiteRenderer({
   locale = draft.defaultLocale,
   localeBasePath,
   availableLocales = [draft.defaultLocale],
+  analyticsEnabled = false,
 }: SiteRendererProps) {
   const config = resolveVerticalConfig(vertical);
   const booking = draft.integrations.find(
@@ -106,6 +110,7 @@ export function SiteRenderer({
         } as React.CSSProperties
       }
     >
+      {analyticsEnabled ? <SiteAnalytics siteSlug={draft.slug} /> : null}
       <header
         className={cn(
           "z-20 grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 p-4 sm:flex sm:justify-between sm:gap-4 sm:p-5 md:p-8",
@@ -137,9 +142,11 @@ export function SiteRenderer({
                 <Link
                   key={availableLocale}
                   href={
-                    availableLocale === draft.defaultLocale
-                      ? localeBasePath
-                      : `${localeBasePath}/${availableLocale}`
+                    localeHref(
+                      localeBasePath,
+                      availableLocale,
+                      draft.defaultLocale,
+                    )
                   }
                   hrefLang={availableLocale}
                   aria-current={
@@ -162,6 +169,7 @@ export function SiteRenderer({
           {ordering ? (
             <a
               href={localizeIntegrationUrl(ordering.url, locale)}
+              data-analytics-cta
               target="_blank"
               rel="noreferrer"
               className={cn(
@@ -178,6 +186,7 @@ export function SiteRenderer({
           {booking ? (
             <a
               href={localizeIntegrationUrl(booking.url, locale)}
+              data-analytics-cta
               target="_blank"
               rel="noreferrer"
               className={cn(
@@ -337,6 +346,7 @@ export function SiteRenderer({
             {booking ? (
               <a
                 href={localizeIntegrationUrl(booking.url, locale)}
+                data-analytics-cta
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 font-semibold opacity-100"
@@ -350,6 +360,7 @@ export function SiteRenderer({
             {ordering ? (
               <a
                 href={localizeIntegrationUrl(ordering.url, locale)}
+                data-analytics-cta
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 font-semibold opacity-100"
