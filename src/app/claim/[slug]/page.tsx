@@ -15,10 +15,17 @@ export const metadata: Metadata = {
 
 export default async function ClaimPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{
+    checkout?: string;
+    session_id?: string;
+    claim_id?: string;
+  }>;
 }) {
   const { slug } = await params;
+  const query = await searchParams;
   const site = await findSiteView(slug);
   if (!site) notFound();
 
@@ -42,6 +49,16 @@ export default async function ClaimPage({
         slug={slug}
         vertical={site.vertical}
         fallbackDraft={site.draft}
+        checkoutReturn={
+          query.checkout === "processing" &&
+          query.session_id &&
+          query.claim_id
+            ? {
+                sessionId: query.session_id,
+                claimInvitationId: query.claim_id,
+              }
+            : null
+        }
       />
     </main>
   );

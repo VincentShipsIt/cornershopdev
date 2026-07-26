@@ -47,9 +47,13 @@ export type CompletedCheckout = {
   siteSlug: string;
   claimInvitationId: string;
   stripeCheckoutSessionId: string;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
+  stripeCustomerId: string;
+  stripeSubscriptionId: string;
   stripePriceId: string | null;
+  subscriptionStatus: "INCOMPLETE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  stripeEventCreatedAt: Date;
 };
 
 export type ClaimedSiteAccess = {
@@ -58,12 +62,9 @@ export type ClaimedSiteAccess = {
 };
 
 /**
- * Accepts one invitation and assigns its site in the same transaction.
- *
- * The raw token is deliberately absent: checkout creation already proved it
- * and bound the invitation to one Stripe session ID. Completion must match the
- * invitation, session, site and normalized intended email. The same completed
- * Stripe session may replay idempotently; no other session can reuse it.
+ * Accepts one invitation, assigns its site, and records the site-specific
+ * subscription in one transaction. The raw invitation token is absent:
+ * Checkout creation already verified it and bound one Stripe Session.
  */
 export async function claimSite(
   tx: Prisma.TransactionClient,
@@ -101,17 +102,13 @@ export async function claimSite(
   ) {
     throw rejectClaim(checkout, "invitation binding mismatch");
   }
-
   if (invitation.acceptedAt) {
     return resolveAcceptedClaim(tx, checkout, email);
   }
-  if (invitation.expiresAt <= now || !isClaimable(invitation.site)) {
-    throw rejectClaim(checkout, "invitation expired or site not claimable");
+  if (!isClaimable(invitation.site)) {
+    throw rejectClaim(checkout, "site not claimable");
   }
 
-  // First completion wins the invitation row. A concurrent delivery of the
-  // same Stripe event waits on this update, then resolves through the accepted
-  // replay path after the winner commits.
   const accepted = await tx.claimInvitation.updateMany({
     where: {
       id: invitation.id,
@@ -120,7 +117,6 @@ export async function claimSite(
       checkoutSessionId: checkout.stripeCheckoutSessionId,
       acceptedAt: null,
       revokedAt: null,
-      expiresAt: { gt: now },
     },
     data: { acceptedAt: now },
   });
@@ -155,7 +151,7 @@ export async function claimSite(
     throw rejectClaim(checkout, "lost ownership race");
   }
 
-  await upsertSubscription(tx, checkout, organizationId);
+  await upsertSubscription(tx, checkout, organizationId, invitation.siteId);
   await tx.auditEvent.create({
     data: {
       type: "claim.invitation.accepted",
@@ -167,7 +163,6 @@ export async function claimSite(
       siteId: invitation.siteId,
     },
   });
-
   return { userId: user.id, organizationId };
 }
 
@@ -181,6 +176,7 @@ async function resolveAcceptedClaim(
     select: {
       acceptedAt: true,
       checkoutSessionId: true,
+      siteId: true,
       site: {
         select: {
           slug: true,
@@ -215,6 +211,7 @@ async function resolveAcceptedClaim(
     tx,
     checkout,
     accepted.site.organizationId,
+    accepted.siteId,
   );
   return {
     userId: user.id,
@@ -226,20 +223,40 @@ async function upsertSubscription(
   tx: Prisma.TransactionClient,
   checkout: CompletedCheckout,
   organizationId: string,
+  siteId: string,
 ): Promise<void> {
-  if (!checkout.stripeCustomerId) return;
+  const existing = await tx.subscription.findUnique({
+    where: { siteId },
+    select: { lastStripeEventAt: true },
+  });
+  if (
+    existing?.lastStripeEventAt &&
+    existing.lastStripeEventAt > checkout.stripeEventCreatedAt
+  ) {
+    return;
+  }
+
   await tx.subscription.upsert({
-    where: { stripeCustomerId: checkout.stripeCustomerId },
+    where: { siteId },
     update: {
+      stripeCustomerId: checkout.stripeCustomerId,
       stripeSubscriptionId: checkout.stripeSubscriptionId,
       stripePriceId: checkout.stripePriceId,
-      status: "ACTIVE",
+      status: checkout.subscriptionStatus,
+      currentPeriodEnd: checkout.currentPeriodEnd,
+      cancelAtPeriodEnd: checkout.cancelAtPeriodEnd,
+      lastStripeEventAt: checkout.stripeEventCreatedAt,
+      siteId,
     },
     create: {
       stripeCustomerId: checkout.stripeCustomerId,
       stripeSubscriptionId: checkout.stripeSubscriptionId,
       stripePriceId: checkout.stripePriceId,
-      status: "ACTIVE",
+      status: checkout.subscriptionStatus,
+      currentPeriodEnd: checkout.currentPeriodEnd,
+      cancelAtPeriodEnd: checkout.cancelAtPeriodEnd,
+      lastStripeEventAt: checkout.stripeEventCreatedAt,
+      siteId,
       organizationId,
     },
   });

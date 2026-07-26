@@ -1,53 +1,30 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { recordClaimRejection } from "@/lib/claim-invitations";
+import { z } from "zod";
+import { normalizeAccountEmail } from "@/lib/account-email";
+import {
+  CHECKOUT_RETURN_COOKIE,
+  verifyHashedToken,
+} from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
-import { claimSite, SiteNotClaimableError } from "@/lib/site-claim";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
-import { getStripe } from "@/lib/stripe";
+
+const querySchema = z.object({
+  sessionId: z.string().startsWith("cs_").max(256),
+  claimInvitationId: z.string().min(1).max(128),
+  poll: z.boolean(),
+});
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const sessionId = url.searchParams.get("session_id");
-  if (!sessionId) return Response.json({ error: "Missing session" }, { status: 400 });
-
-  const stripe = getStripe();
-  const checkout = await stripe.checkout.sessions.retrieve(sessionId);
-  if (checkout.status !== "complete") {
-    return Response.json({ error: "Checkout is not complete" }, { status: 400 });
+  const parsed = querySchema.safeParse({
+    sessionId: url.searchParams.get("session_id"),
+    claimInvitationId: url.searchParams.get("claim_id"),
+    poll: url.searchParams.get("poll") === "1",
+  });
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid checkout return" }, { status: 400 });
   }
-
-  const email = checkout.customer_details?.email ?? checkout.customer_email;
-  const siteSlug = checkout.metadata?.siteSlug;
-  const claimInvitationId = checkout.metadata?.claimInvitationId;
-  if (!email || !siteSlug || !claimInvitationId) {
-    if (siteSlug) {
-      await recordClaimRejection({
-        siteSlug,
-        reason: "checkout_metadata_missing",
-        actor: "system:stripe-callback",
-        invitationId: claimInvitationId,
-      });
-    }
-    return Response.json(
-      { error: "Checkout is missing account details" },
-      { status: 400 },
-    );
-  }
-
-  let stripePriceId = checkout.metadata?.priceId ?? null;
-  if (!stripePriceId) {
-    const lineItems = await stripe.checkout.sessions.listLineItems(sessionId, {
-      limit: 1,
-    });
-    const price = lineItems.data[0]?.price;
-    stripePriceId = typeof price === "string" ? price : (price?.id ?? null);
-  }
-
-  // The session cookie issued below is the whole authorization model, so this
-  // route must fail closed: without a database there is no way to verify that
-  // the caller may claim this slug, and minting the cookie anyway would hand
-  // out ownership of an arbitrary site.
   if (!process.env.DATABASE_URL) {
     return Response.json(
       { error: "Accounts are temporarily unavailable" },
@@ -55,40 +32,89 @@ export async function GET(request: Request) {
     );
   }
 
-  let claimedAccess: Awaited<ReturnType<typeof claimSite>>;
-  try {
-    claimedAccess = await getDb().$transaction((tx) =>
-      claimSite(tx, {
-        email,
-        siteSlug,
-        claimInvitationId,
-        stripeCheckoutSessionId: checkout.id,
-        stripeCustomerId:
-          typeof checkout.customer === "string" ? checkout.customer : null,
-        stripeSubscriptionId:
-          typeof checkout.subscription === "string"
-            ? checkout.subscription
-            : null,
-        stripePriceId,
-      }),
-    );
-  } catch (error) {
-    if (error instanceof SiteNotClaimableError) {
-      await recordClaimRejection({
-        siteSlug,
-        reason: "checkout_completion_rejected",
-        actor: "system:stripe-callback",
-        invitationId: claimInvitationId,
-      });
-      return Response.json({ error: error.message }, { status: 409 });
-    }
-    throw error;
+  const { sessionId, claimInvitationId, poll } = parsed.data;
+  const cookieStore = await cookies();
+  const returnToken = cookieStore.get(CHECKOUT_RETURN_COOKIE)?.value;
+  const invitation = await getDb().claimInvitation.findUnique({
+    where: { id: claimInvitationId },
+    select: {
+      email: true,
+      acceptedAt: true,
+      checkoutSessionId: true,
+      checkoutReturnTokenHash: true,
+      checkoutReturnExpiresAt: true,
+      site: {
+        select: {
+          id: true,
+          slug: true,
+          subscription: { select: { id: true } },
+          organization: {
+            select: {
+              memberships: {
+                select: {
+                  userId: true,
+                  user: { select: { email: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (
+    !returnToken ||
+    !invitation?.checkoutReturnTokenHash ||
+    !invitation.checkoutReturnExpiresAt ||
+    invitation.checkoutReturnExpiresAt <= new Date() ||
+    invitation.checkoutSessionId !== sessionId ||
+    !verifyHashedToken(returnToken, invitation.checkoutReturnTokenHash)
+  ) {
+    return Response.json({ error: "Invalid checkout return" }, { status: 403 });
   }
 
-  const cookieStore = await cookies();
+  const membership = invitation.site.organization?.memberships.find(
+    (row) =>
+      normalizeAccountEmail(row.user.email) ===
+      normalizeAccountEmail(invitation.email),
+  );
+  const provisioned =
+    invitation.acceptedAt &&
+    invitation.site.subscription &&
+    membership;
+
+  if (!provisioned) {
+    if (poll) {
+      return Response.json(
+        { ready: false },
+        { status: 202, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    redirect(
+      `/claim/${encodeURIComponent(invitation.site.slug)}` +
+        `?checkout=processing&session_id=${encodeURIComponent(sessionId)}` +
+        `&claim_id=${encodeURIComponent(claimInvitationId)}`,
+    );
+  }
+
+  await getDb().claimInvitation.updateMany({
+    where: {
+      id: claimInvitationId,
+      checkoutSessionId: sessionId,
+      checkoutReturnTokenHash: invitation.checkoutReturnTokenHash,
+    },
+    data: {
+      checkoutReturnTokenHash: null,
+      checkoutReturnExpiresAt: null,
+    },
+  });
+  cookieStore.delete(CHECKOUT_RETURN_COOKIE);
   cookieStore.set(
     SESSION_COOKIE,
-    createSessionToken({ userId: claimedAccess.userId, siteSlug }),
+    createSessionToken({
+      userId: membership.userId,
+      siteSlug: invitation.site.slug,
+    }),
     {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -98,5 +124,11 @@ export async function GET(request: Request) {
     },
   );
 
+  if (poll) {
+    return Response.json(
+      { ready: true, url: "/dashboard?checkout=success" },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   redirect("/dashboard?checkout=success");
 }

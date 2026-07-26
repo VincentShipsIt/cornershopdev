@@ -166,7 +166,6 @@ export async function issueClaimInvitation(input: {
               "Use the business email shown on the source website, or ask for concierge approval.",
             );
           }
-
           const checkoutInProgress = await tx.claimInvitation.findFirst({
             where: {
               siteId: site.id,
@@ -187,9 +186,7 @@ export async function issueClaimInvitation(input: {
 
           // Revoke every earlier unaccepted path, not only invitations for the
           // same email. Combined with the partial unique index, exactly one
-          // bearer token can authorize this site at a time. A checkout-bound
-          // invitation is never silently revoked: the checkout route owns its
-          // Stripe session lifecycle.
+          // bearer token can authorize this site at a time.
           await tx.claimInvitation.updateMany({
             where: {
               siteId: site.id,
@@ -197,8 +194,8 @@ export async function issueClaimInvitation(input: {
               revokedAt: null,
               OR: [
                 { checkoutSessionId: null },
-                // Checkout sessions are explicitly capped at the invitation
-                // expiry, so an expired binding is safe to retire.
+                // Stripe Checkout is explicitly capped at this invitation's
+                // expiry, so an expired binding cannot still collect payment.
                 { expiresAt: { lte: now } },
               ],
             },
@@ -257,6 +254,8 @@ export type CheckoutClaimInvitation = {
   siteSlug: string;
   checkoutSessionId: string | null;
   expiresAt: Date;
+  stripePriceId: string | null;
+  checkoutAttempt: number;
 };
 
 /**
@@ -283,6 +282,8 @@ export async function authorizeClaimInvitationForCheckout(input: {
         acceptedAt: true,
         revokedAt: true,
         checkoutSessionId: true,
+        stripePriceId: true,
+        checkoutAttempt: true,
         siteId: true,
         site: {
           select: {
@@ -344,22 +345,28 @@ export async function authorizeClaimInvitationForCheckout(input: {
       siteSlug: invitation.site.slug,
       checkoutSessionId: invitation.checkoutSessionId,
       expiresAt: invitation.expiresAt,
+      stripePriceId: invitation.stripePriceId,
+      checkoutAttempt: invitation.checkoutAttempt,
     };
   });
 }
 
 /**
- * Stores the Stripe session ID after the network call. Rebinding is a
- * compare-and-swap: only the session observed before the Stripe call can be
- * replaced, while a concurrent request that created the same idempotent Stripe
- * session remains safe.
+ * Compare-and-swaps a Checkout attempt and its short-lived browser-return
+ * credential. A stale request cannot overwrite a newer attempt.
  */
 export async function bindClaimInvitationToCheckout(input: {
   invitation: CheckoutClaimInvitation;
   stripeCheckoutSessionId: string;
-  expectedCheckoutSessionId: string | null;
+  stripePriceId: string;
+  checkoutAttempt: number;
+  checkoutReturnTokenHash: string;
+  checkoutReturnExpiresAt: Date;
   now?: Date;
-}): Promise<string> {
+}): Promise<{
+  checkoutSessionId: string;
+  didBind: boolean;
+}> {
   const now = input.now ?? new Date();
   return getDb().$transaction(async (tx) => {
     const bound = await tx.claimInvitation.updateMany({
@@ -370,12 +377,16 @@ export async function bindClaimInvitationToCheckout(input: {
         acceptedAt: null,
         revokedAt: null,
         expiresAt: { gt: now },
-        OR: [
-          { checkoutSessionId: input.expectedCheckoutSessionId },
-          { checkoutSessionId: input.stripeCheckoutSessionId },
-        ],
+        checkoutSessionId: input.invitation.checkoutSessionId,
+        checkoutAttempt: input.invitation.checkoutAttempt,
       },
-      data: { checkoutSessionId: input.stripeCheckoutSessionId },
+      data: {
+        checkoutSessionId: input.stripeCheckoutSessionId,
+        stripePriceId: input.stripePriceId,
+        checkoutAttempt: input.checkoutAttempt,
+        checkoutReturnTokenHash: input.checkoutReturnTokenHash,
+        checkoutReturnExpiresAt: input.checkoutReturnExpiresAt,
+      },
     });
     if (bound.count !== 1) {
       const current = await tx.claimInvitation.findUnique({
@@ -394,7 +405,10 @@ export async function bindClaimInvitationToCheckout(input: {
         current.expiresAt > now &&
         current.checkoutSessionId
       ) {
-        return current.checkoutSessionId;
+        return {
+          checkoutSessionId: current.checkoutSessionId,
+          didBind: false,
+        };
       }
       throw new ClaimFlowError(
         "invitation_used",
@@ -402,15 +416,23 @@ export async function bindClaimInvitationToCheckout(input: {
         "Another checkout replaced this one. Reopen the ownership email and try again.",
       );
     }
-    await tx.auditEvent.create({
-      data: {
-        type: "claim.checkout.started",
-        actor: "claimant:invitation",
-        metadata: { invitationId: input.invitation.id },
-        siteId: input.invitation.siteId,
-      },
-    });
-    return input.stripeCheckoutSessionId;
+    if (input.checkoutAttempt > input.invitation.checkoutAttempt) {
+      await tx.auditEvent.create({
+        data: {
+          type: "claim.checkout.started",
+          actor: "claimant:invitation",
+          metadata: {
+            invitationId: input.invitation.id,
+            attempt: input.checkoutAttempt,
+          },
+          siteId: input.invitation.siteId,
+        },
+      });
+    }
+    return {
+      checkoutSessionId: input.stripeCheckoutSessionId,
+      didBind: true,
+    };
   });
 }
 

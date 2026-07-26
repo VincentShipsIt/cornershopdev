@@ -16,9 +16,11 @@ encrypted SSM parameters on the EC2 host.
 | Workflow | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency | `WORKFLOW_*` |
 | Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
 | Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
+| Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
 
 After configuring production, redeploy it and request `/api/health/ready`. The
-route returns `200` only when all three runtime services are reachable.
+route returns `200` only when the runtime services and billing configuration are
+ready.
 When configuration is missing, it returns `503` with the missing variable names
 and remediation guidance. Provider failures return a generic unreachable
 response without variable names or provider details. The route never returns

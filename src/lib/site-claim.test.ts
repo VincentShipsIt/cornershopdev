@@ -41,7 +41,19 @@ describe("invitation-bound site claim", () => {
       status: "CLAIMED",
       organizationId: access.organizationId,
     });
-    expect(state.subscriptions).toHaveLength(1);
+    expect(state.subscriptions).toEqual([
+      {
+        stripeCustomerId: "cus_1",
+        stripeSubscriptionId: "sub_1",
+        stripePriceId: "price_1",
+        status: "ACTIVE",
+        currentPeriodEnd: new Date("2026-08-26T00:00:00.000Z"),
+        cancelAtPeriodEnd: false,
+        lastStripeEventAt: new Date("2026-07-26T00:00:00.000Z"),
+        siteId: "site_1",
+        organizationId: access.organizationId,
+      },
+    ]);
     expect(state.auditEvents).toEqual([
       expect.objectContaining({
         type: "claim.invitation.accepted",
@@ -80,15 +92,20 @@ describe("invitation-bound site claim", () => {
     }
   });
 
-  it("rejects expired and revoked invitations", async () => {
-    for (const invitation of [
-      { expiresAt: new Date("2020-01-01"), revokedAt: null },
-      { expiresAt: new Date("2099-01-01"), revokedAt: new Date() },
-    ]) {
-      const { state, tx } = fixture({ invitation });
-      await expectRejected(tx);
-      expect(state.sites[0].organizationId).toBeNull();
-    }
+  it("completes a Checkout that was bound before the invitation expired", async () => {
+    const { state, tx } = fixture({
+      invitation: { expiresAt: new Date("2020-01-01") },
+    });
+    await claimSite(tx, completedCheckout());
+    expect(state.sites[0].status).toBe("CLAIMED");
+  });
+
+  it("rejects a revoked invitation", async () => {
+    const { state, tx } = fixture({
+      invitation: { revokedAt: new Date() },
+    });
+    await expectRejected(tx);
+    expect(state.sites[0].organizationId).toBeNull();
   });
 
   it("does not transfer a site that already has an owner", async () => {
@@ -152,7 +169,7 @@ describe("invitation-bound site claim", () => {
         siteSlug: "chez-max",
         claimInvitationId: "invite_2",
         stripeCheckoutSessionId: "cs_second",
-        stripeCustomerId: "cus_2",
+        stripeCustomerId: "cus_1",
         stripeSubscriptionId: "sub_2",
       }),
     );
@@ -162,6 +179,44 @@ describe("invitation-bound site claim", () => {
       state.organizations[0].id,
       state.organizations[0].id,
     ]);
+    expect(state.subscriptions.map((row) => row.siteId)).toEqual([
+      "site_1",
+      "site_2",
+    ]);
+    expect(state.subscriptions.map((row) => row.stripeCustomerId)).toEqual([
+      "cus_1",
+      "cus_1",
+    ]);
+  });
+
+  it("normalizes Stripe email before creating account identity", async () => {
+    const { state, tx } = fixture();
+
+    await claimSite(
+      tx,
+      completedCheckout({ email: " Owner@Chez-Lea.TEST " }),
+    );
+
+    expect(state.users[0].email).toBe("owner@chez-lea.test");
+  });
+
+  it("does not let an older checkout event overwrite newer billing state", async () => {
+    const { state, tx } = fixture();
+    await claimSite(
+      tx,
+      completedCheckout({
+        subscriptionStatus: "PAST_DUE",
+        stripeEventCreatedAt: new Date("2026-07-26T00:00:10.000Z"),
+      }),
+    );
+    await claimSite(
+      tx,
+      completedCheckout({
+        subscriptionStatus: "ACTIVE",
+        stripeEventCreatedAt: new Date("2026-07-26T00:00:05.000Z"),
+      }),
+    );
+    expect(state.subscriptions[0].status).toBe("PAST_DUE");
   });
 });
 
@@ -199,6 +254,10 @@ function completedCheckout(
     stripeCustomerId: "cus_1",
     stripeSubscriptionId: "sub_1",
     stripePriceId: "price_1",
+    subscriptionStatus: "ACTIVE",
+    currentPeriodEnd: new Date("2026-08-26T00:00:00.000Z"),
+    cancelAtPeriodEnd: false,
+    stripeEventCreatedAt: new Date("2026-07-26T00:00:00.000Z"),
     ...overrides,
   };
 }
@@ -227,6 +286,10 @@ type SubscriptionRow = {
   stripeSubscriptionId: string | null;
   stripePriceId: string | null;
   status: string;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  lastStripeEventAt: Date | null;
+  siteId: string;
   organizationId: string;
 };
 
@@ -358,17 +421,25 @@ function fixture(
       },
     },
     subscription: {
+      findUnique: async ({
+        where,
+      }: {
+        where: { siteId: string };
+      }) =>
+        state.subscriptions.find(
+          (row) => row.siteId === where.siteId,
+        ) ?? null,
       upsert: async ({
         where,
         update,
         create,
       }: {
-        where: { stripeCustomerId: string };
+        where: { siteId: string };
         update: Partial<SubscriptionRow>;
         create: SubscriptionRow;
       }) => {
         const found = state.subscriptions.find(
-          (row) => row.stripeCustomerId === where.stripeCustomerId,
+          (row) => row.siteId === where.siteId,
         );
         if (found) return Object.assign(found, update);
         state.subscriptions.push(create);

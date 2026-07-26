@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { getClaimTokenSecret } from "@/lib/claim-security";
 
 export const SESSION_COOKIE = "cornershopdev_session";
 
@@ -11,19 +12,10 @@ const sessionPayloadSchema = z.object({
 
 export type SessionPayload = z.infer<typeof sessionPayloadSchema>;
 
-function secret(): string {
-  const value = process.env.CLAIM_TOKEN_SECRET;
-  if (!value || value.length < 32) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("CLAIM_TOKEN_SECRET must contain at least 32 characters");
-    }
-    return "cornershopdev-development-secret-change-me";
-  }
-  return value;
-}
-
 function signature(value: string): string {
-  return createHmac("sha256", secret()).update(value).digest("base64url");
+  return createHmac("sha256", getClaimTokenSecret())
+    .update(value)
+    .digest("base64url");
 }
 
 export function createSessionToken(

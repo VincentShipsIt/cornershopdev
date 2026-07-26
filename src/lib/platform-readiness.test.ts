@@ -14,6 +14,12 @@ const configuredEnvironment = {
   S3_BUCKET: "assets.cornershop.dev",
   S3_PUBLIC_BASE_URL: "https://assets.cornershopdev.example.test",
   AWS_REGION: "us-west-1",
+  STRIPE_SECRET_KEY: "sk_test_configured",
+  STRIPE_WEBHOOK_SECRET: "whsec_configured",
+  STRIPE_STARTER_PRICE_ID: "price_starter",
+  STRIPE_GROWTH_PRICE_ID: "price_growth",
+  RESEND_API_KEY: "re_test_configured",
+  CLAIM_TOKEN_SECRET: "a-secure-test-secret-that-is-long-enough",
 };
 
 function probes(): ReadinessProbes {
@@ -21,6 +27,7 @@ function probes(): ReadinessProbes {
     database: mock(async () => {}),
     rateLimit: mock(async () => {}),
     storage: mock(async () => {}),
+    billing: mock(async () => {}),
   };
 }
 
@@ -51,10 +58,17 @@ describe("checkPlatformReadiness", () => {
         message:
           "Set S3_BUCKET, S3_PUBLIC_BASE_URL, and AWS_REGION for this deployment environment.",
       },
+      {
+        service: "billing",
+        status: "misconfigured",
+        message:
+          "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
+      },
     ]);
     expect(serviceProbes.database).not.toHaveBeenCalled();
     expect(serviceProbes.rateLimit).not.toHaveBeenCalled();
     expect(serviceProbes.storage).not.toHaveBeenCalled();
+    expect(serviceProbes.billing).not.toHaveBeenCalled();
   });
 
   it("reports configured and reachable services as ready", async () => {
@@ -71,6 +85,23 @@ describe("checkPlatformReadiness", () => {
     expect(serviceProbes.database).toHaveBeenCalledTimes(1);
     expect(serviceProbes.rateLimit).toHaveBeenCalledTimes(1);
     expect(serviceProbes.storage).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires invitation email delivery for billing readiness", async () => {
+    const serviceProbes = probes();
+    const result = await checkPlatformReadiness(
+      { ...configuredEnvironment, RESEND_API_KEY: undefined },
+      serviceProbes,
+    );
+
+    expect(result.status).toBe("not_ready");
+    expect(result.services.at(-1)).toEqual({
+      service: "billing",
+      status: "misconfigured",
+      message:
+        "Set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, and a 32-character CLAIM_TOKEN_SECRET.",
+    });
+    expect(serviceProbes.billing).not.toHaveBeenCalled();
   });
 
   it("fails deployed environments that point at a local database", async () => {
