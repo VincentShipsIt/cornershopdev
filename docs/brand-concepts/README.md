@@ -76,70 +76,38 @@ wordmark, and favicon tile. Use terracotta, olive-black, and pale sand. Avoid
 generic plate-and-cutlery icons, chef hats, pizza slices, ornate crests,
 gradients, slogans, and extra text.
 
-## Restofront simplified chair studies
+## Restofront classy burgundy studies
 
-These studies reduce the table-front direction to favicon-grade geometry. The
-original board remains above as the source direction rather than a final mark.
+These studies return to the strongest territory from the first board: deep
+burgundy, warm cream, espresso, an editorial serif, and an unmistakable
+restaurant cue. Rejected chair reductions and Cornershopdev-style experiments
+are intentionally excluded.
 
-### 04 — R chair
+### 04 — Table monogram
 
-![R chair concept](./restofront-04-r-chair.png)
+![Table monogram concept](./restofront-04-table-monogram.png)
 
-Prompt: Reduce the original R, chair, and table identity to an R-first monogram
-made from at most four bold strokes. Let one angled stroke imply a chair back and
-one horizontal stroke imply a table edge. Remove the arch, columns, lamp, floor,
-chair legs, and ornamental detail. Show a standalone mark, exact wordmark, and
-favicon tile in oxblood and espresso.
-
-### 05 — Chair doorway
-
-![Chair doorway concept](./restofront-05-chair-doorway.png)
-
-Prompt: Create a single continuous dining-chair silhouette whose back and seat
-also form an open doorway or lowercase R. Keep the mark reductive, soft-cornered,
-and readable at 16px. Remove all building and room detail. Show a standalone
-mark, exact wordmark, and favicon tile in oxblood, cream, and espresso.
-
-### 06 — Table for two
-
-![Table for two concept](./restofront-06-table-for-two.png)
-
-Prompt: Create an asymmetrical top-down table-for-two symbol from exactly three
-bold shapes: one small table and two C-shaped chairs placed diagonally toward it.
-Avoid mirrored pillars, H shapes, pause symbols, and restaurant clichés. Show a
-standalone mark, exact wordmark, and favicon tile in oxblood and espresso.
-
-## Restofront sister-brand studies
-
-These studies abandon restaurant illustration and apply the Cornershopdev
-concept's construction language directly: charcoal shell, cream negative space,
-one burnt-orange front plane, angular geometry, and a rounded-square favicon.
-
-### 07 — Front plane
-
-![Front plane concept](./restofront-07-front-plane.png)
-
-Prompt: Build a Restofront sister mark from a charcoal outer corner shell, a
-cream negative-space R that also reads as an open doorway, and one burnt-orange
-front plane with a single square window. Match Cornershopdev's flat angular
-construction and corner base without copying its C or factory roof. Show a
-standalone mark, exact wordmark, and rounded-square favicon.
-
-### 08 — Menu corner
-
-![Menu corner concept](./restofront-08-menu-corner.png)
-
-Prompt: Build a single charcoal folded-menu silhouette on a small angular corner
-base. Cut a cream R through the dark shape and use one burnt-orange folded front
-edge for flat geometric depth. Keep exactly three primary silhouettes with no
-menu lines, food, utensils, or illustrative details. Show a standalone mark,
+Prompt: Build a bold burgundy R as the primary silhouette. Inside its lower
+bowl, use cream negative space for one round table and two minimal chair backs.
+Use no more than four interior shapes, no chair legs, and no architecture. The
+mark should read as R first and intimate dining second. Show a standalone mark,
 exact wordmark, and rounded-square favicon.
 
-### 09 — Dining corner
+### 05 — Fork R
 
-![Dining corner concept](./restofront-09-dining-corner.png)
+![Fork R concept](./restofront-05-fork-r.png)
 
-Prompt: Use one charcoal L-shaped corner shell and one burnt-orange horizontal
-front plane. Let the cream negative space form a bold R first and a tabletop in
-perspective second. Use at most three main shapes with no chairs, food, or room
-details. Show a standalone mark, exact wordmark, and rounded-square favicon.
+Prompt: Cut one cream four-tine fork cleanly through the vertical stem of a bold
+burgundy R. Keep the R unmistakable and let the fork handle transition into its
+diagonal leg without adding any other utensil or restaurant object. Show a
+standalone mark, exact wordmark, and rounded-square favicon.
+
+### 06 — Fork counter
+
+![Fork counter concept](./restofront-06-fork-counter.png)
+
+Prompt: Draw one continuous burgundy R above a short espresso counter line. End
+the upper-left vertical in four understated fork tines and let the lower
+diagonal meet the counter like a table support. Use thick, restrained geometry
+with no enclosing shape except on the favicon. Show a standalone mark, exact
+wordmark, and rounded-square favicon.
