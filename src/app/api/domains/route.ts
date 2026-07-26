@@ -7,7 +7,7 @@ import {
 } from "@/lib/authorization";
 import {
   billingAccessFailureResponse,
-  getOrganizationBillingAccess,
+  getSiteBillingAccess,
 } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
@@ -55,9 +55,7 @@ export async function POST(request: Request) {
       .parse(body.siteSlug ?? session?.siteSlug);
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
-    const billing = await getOrganizationBillingAccess(
-      access.site.organizationId,
-    );
+    const billing = await getSiteBillingAccess(access.site.id);
     if (!billing.ok) return billingAccessFailureResponse(billing);
 
     const db = getDb();

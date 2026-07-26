@@ -2,15 +2,16 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
-import { verifyHashedToken } from "@/lib/claim-security";
+import {
+  CHECKOUT_RETURN_COOKIE,
+  verifyHashedToken,
+} from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
-import { getStripe } from "@/lib/stripe";
 
 const querySchema = z.object({
   sessionId: z.string().startsWith("cs_").max(256),
   claimInvitationId: z.string().min(1).max(128),
-  state: z.string().min(32).max(256),
   poll: z.boolean(),
 });
 
@@ -19,13 +20,11 @@ export async function GET(request: Request) {
   const parsed = querySchema.safeParse({
     sessionId: url.searchParams.get("session_id"),
     claimInvitationId: url.searchParams.get("claim_id"),
-    state: url.searchParams.get("state"),
     poll: url.searchParams.get("poll") === "1",
   });
   if (!parsed.success) {
     return Response.json({ error: "Invalid checkout return" }, { status: 400 });
   }
-  const { sessionId, claimInvitationId, state, poll } = parsed.data;
   if (!process.env.DATABASE_URL) {
     return Response.json(
       { error: "Accounts are temporarily unavailable" },
@@ -33,68 +32,29 @@ export async function GET(request: Request) {
     );
   }
 
-  const returnAuthorization = await getDb().claimInvitation.findUnique({
-    where: { id: claimInvitationId },
-    select: {
-      stripeCheckoutSessionId: true,
-      checkoutReturnTokenHash: true,
-      checkoutReturnExpiresAt: true,
-    },
-  });
-  if (
-    !returnAuthorization?.checkoutReturnTokenHash ||
-    !returnAuthorization.checkoutReturnExpiresAt ||
-    returnAuthorization.checkoutReturnExpiresAt <= new Date() ||
-    returnAuthorization.stripeCheckoutSessionId !== sessionId ||
-    !verifyHashedToken(state, returnAuthorization.checkoutReturnTokenHash)
-  ) {
-    return Response.json({ error: "Invalid checkout return" }, { status: 403 });
-  }
-
-  const stripe = getStripe();
-  const checkout = await stripe.checkout.sessions.retrieve(sessionId);
-  if (
-    checkout.status !== "complete" ||
-    checkout.mode !== "subscription" ||
-    checkout.payment_status === "unpaid" ||
-    checkout.client_reference_id !== claimInvitationId ||
-    checkout.metadata?.claimInvitationId !== claimInvitationId
-  ) {
-    return Response.json({ error: "Checkout is not complete" }, { status: 400 });
-  }
-
-  const customerId =
-    typeof checkout.customer === "string" ? checkout.customer : null;
-  const checkoutEmail =
-    checkout.customer_details?.email ?? checkout.customer_email;
+  const { sessionId, claimInvitationId, poll } = parsed.data;
+  const cookieStore = await cookies();
+  const returnToken = cookieStore.get(CHECKOUT_RETURN_COOKIE)?.value;
   const invitation = await getDb().claimInvitation.findUnique({
     where: { id: claimInvitationId },
     select: {
       email: true,
       acceptedAt: true,
-      stripeCheckoutSessionId: true,
+      checkoutSessionId: true,
+      checkoutReturnTokenHash: true,
+      checkoutReturnExpiresAt: true,
       site: {
         select: {
+          id: true,
           slug: true,
+          subscription: { select: { id: true } },
           organization: {
             select: {
-              subscriptions: {
-                where: customerId
-                  ? { stripeCustomerId: customerId }
-                  : { stripeCustomerId: "__missing__" },
-                take: 1,
-                select: { id: true },
-              },
               memberships: {
-                where: checkoutEmail
-                  ? {
-                      user: {
-                        email: normalizeAccountEmail(checkoutEmail),
-                      },
-                    }
-                  : { id: "__missing__" },
-                take: 1,
-                select: { userId: true },
+                select: {
+                  userId: true,
+                  user: { select: { email: true } },
+                },
               },
             },
           },
@@ -102,14 +62,25 @@ export async function GET(request: Request) {
       },
     },
   });
-  const membership = invitation?.site.organization?.memberships[0];
+  if (
+    !returnToken ||
+    !invitation?.checkoutReturnTokenHash ||
+    !invitation.checkoutReturnExpiresAt ||
+    invitation.checkoutReturnExpiresAt <= new Date() ||
+    invitation.checkoutSessionId !== sessionId ||
+    !verifyHashedToken(returnToken, invitation.checkoutReturnTokenHash)
+  ) {
+    return Response.json({ error: "Invalid checkout return" }, { status: 403 });
+  }
+
+  const membership = invitation.site.organization?.memberships.find(
+    (row) =>
+      normalizeAccountEmail(row.user.email) ===
+      normalizeAccountEmail(invitation.email),
+  );
   const provisioned =
-    invitation?.acceptedAt &&
-    invitation.stripeCheckoutSessionId === sessionId &&
-    checkoutEmail &&
-    normalizeAccountEmail(invitation.email) ===
-      normalizeAccountEmail(checkoutEmail) &&
-    invitation.site.organization?.subscriptions.length === 1 &&
+    invitation.acceptedAt &&
+    invitation.site.subscription &&
     membership;
 
   if (!provisioned) {
@@ -120,14 +91,24 @@ export async function GET(request: Request) {
       );
     }
     redirect(
-      `/claim/${encodeURIComponent(checkout.metadata?.siteSlug ?? "site")}` +
+      `/claim/${encodeURIComponent(invitation.site.slug)}` +
         `?checkout=processing&session_id=${encodeURIComponent(sessionId)}` +
-        `&claim_id=${encodeURIComponent(claimInvitationId)}` +
-        `&state=${encodeURIComponent(state)}`,
+        `&claim_id=${encodeURIComponent(claimInvitationId)}`,
     );
   }
 
-  const cookieStore = await cookies();
+  await getDb().claimInvitation.updateMany({
+    where: {
+      id: claimInvitationId,
+      checkoutSessionId: sessionId,
+      checkoutReturnTokenHash: invitation.checkoutReturnTokenHash,
+    },
+    data: {
+      checkoutReturnTokenHash: null,
+      checkoutReturnExpiresAt: null,
+    },
+  });
+  cookieStore.delete(CHECKOUT_RETURN_COOKIE);
   cookieStore.set(
     SESSION_COOKIE,
     createSessionToken({

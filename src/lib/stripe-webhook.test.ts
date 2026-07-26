@@ -151,7 +151,7 @@ describe("Stripe webhook event idempotency", () => {
         organizationId: state.organizations[0].id,
       });
       expect(state.invitation.acceptedAt).toBeInstanceOf(Date);
-      expect(state.audits).toHaveLength(1);
+      expect(state.audits).toHaveLength(2);
 
       // A transport retry and a second valid completion event are both safe.
       expect(
@@ -172,7 +172,7 @@ describe("Stripe webhook event idempotency", () => {
       expect(state.organizations).toHaveLength(1);
       expect(state.memberships).toHaveLength(1);
       expect(state.subscriptions).toHaveLength(1);
-      expect(state.audits).toHaveLength(1);
+      expect(state.audits).toHaveLength(2);
 
       currentSubscription = subscriptionFixture({ status: "past_due" });
       expect(
@@ -215,6 +215,88 @@ describe("Stripe webhook event idempotency", () => {
       restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
     }
   });
+
+  it("rolls back partial claim writes and persists a durable rejection", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase({ loseClaimRace: true });
+    const stripe = {
+      checkout: {
+        sessions: {
+          retrieve: async () => checkoutFixture(subscriptionFixture()),
+        },
+      },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_rejected", 500),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.organizations).toHaveLength(0);
+      expect(state.memberships).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.invitation.acceptedAt).toBeNull();
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          eventId: "evt_rejected",
+          status: "REJECTED",
+          failureReason: "This site is not available to claim",
+        }),
+      ]);
+      expect(state.audits).toHaveLength(1);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
+  it("provisions an in-flight Checkout on an explicitly grandfathered price", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    const previousLegacy = process.env.STRIPE_LEGACY_PRICE_IDS;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth_current";
+    process.env.STRIPE_LEGACY_PRICE_IDS = "price_growth_retired";
+    const { db, state } = createWebhookDatabase();
+    state.invitation.stripePriceId = "price_growth_retired";
+    const subscription = subscriptionFixture();
+    subscription.items.data[0].price.id = "price_growth_retired";
+    const stripe = {
+      checkout: {
+        sessions: {
+          retrieve: async () => checkoutFixture(subscription),
+        },
+      },
+    } as unknown as Stripe;
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_legacy_price", 600),
+          stripe,
+          db,
+        ),
+      ).toBe("processed");
+      expect(state.subscriptions[0]).toMatchObject({
+        stripePriceId: "price_growth_retired",
+        status: "ACTIVE",
+        siteId: "site_1",
+      });
+    } finally {
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+      restoreEnvironment("STRIPE_LEGACY_PRICE_IDS", previousLegacy);
+    }
+  });
 });
 
 type SiteRow = {
@@ -232,18 +314,29 @@ type SubscriptionRow = {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   lastStripeEventAt: Date | null;
+  siteId: string;
   organizationId: string;
 };
 
-function createWebhookDatabase() {
+function createWebhookDatabase(
+  options: { loseClaimRace?: boolean } = {},
+) {
   const state = {
-    events: [] as string[],
+    events: [] as Array<{
+      eventId: string;
+      status?: string;
+      failureReason?: string;
+    }>,
     invitation: {
       id: "invite_1",
       email: "owner@chez-lea.test",
+      proofMethod: "DOMAIN_EMAIL",
+      expiresAt: new Date("2099-01-01"),
       acceptedAt: null as Date | null,
-      stripeCheckoutSessionId: "cs_test_1",
+      revokedAt: null as Date | null,
+      checkoutSessionId: "cs_test_1",
       stripePriceId: "price_growth",
+      siteId: "site_1",
     },
     sites: [
       {
@@ -264,17 +357,25 @@ function createWebhookDatabase() {
 
   const tx = {
     stripeWebhookEvent: {
-      create: async ({ data }: { data: { eventId: string } }) => {
-        if (state.events.includes(data.eventId)) {
+      create: async ({
+        data,
+      }: {
+        data: {
+          eventId: string;
+          status?: string;
+          failureReason?: string;
+        };
+      }) => {
+        if (state.events.some((row) => row.eventId === data.eventId)) {
           throw Object.assign(new Error("duplicate"), { code: "P2002" });
         }
-        state.events.push(data.eventId);
+        state.events.push(data);
       },
     },
     claimInvitation: {
       findUnique: async () => ({
         ...state.invitation,
-        site: { id: state.sites[0].id, slug: state.sites[0].slug },
+        site: { ...state.sites[0] },
       }),
       updateMany: async ({
         where,
@@ -344,6 +445,9 @@ function createWebhookDatabase() {
         };
         data: Partial<SiteRow>;
       }) => {
+        if (options.loseClaimRace && data.status === "CLAIMED") {
+          return { count: 0 };
+        }
         const matches = state.sites.filter(
           (row) =>
             row.slug === where.slug &&
@@ -429,13 +533,21 @@ function createWebhookDatabase() {
   const db = {
     stripeWebhookEvent: {
       findUnique: async ({ where }: { where: { eventId: string } }) =>
-        state.events.includes(where.eventId)
+        state.events.some((row) => row.eventId === where.eventId)
           ? { eventId: where.eventId }
           : null,
     },
     $transaction: async (
       operation: (transaction: unknown) => Promise<unknown>,
-    ) => operation(tx),
+    ) => {
+      const snapshot = structuredClone(state);
+      try {
+        return await operation(tx);
+      } catch (error) {
+        Object.assign(state, snapshot);
+        throw error;
+      }
+    },
   } as unknown as Pick<
     PrismaClient,
     "stripeWebhookEvent" | "$transaction"

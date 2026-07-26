@@ -47,24 +47,42 @@ export function ClaimPanel({
   slug,
   vertical,
   fallbackDraft,
-  claimToken,
   checkoutReturn,
 }: {
   slug: string;
   vertical: VerticalId;
   fallbackDraft: SiteDraftView;
-  claimToken: string;
   checkoutReturn: {
     sessionId: string;
     claimInvitationId: string;
-    state: string;
   } | null;
 }) {
   const draft = fallbackDraft;
   const [plan, setPlan] = useState<"starter" | "growth">("growth");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(Boolean(checkoutReturn));
+  const [invitationSent, setInvitationSent] = useState(false);
+  const [invitationToken, setInvitationToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("claim_token");
+    let revealToken: number | undefined;
+    if (token && /^[A-Za-z0-9_-]{32,128}$/.test(token)) {
+      revealToken = window.setTimeout(() => setInvitationToken(token), 0);
+    }
+    if (window.location.hash) {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    }
+    return () => {
+      if (revealToken !== undefined) window.clearTimeout(revealToken);
+    };
+  }, []);
 
   useEffect(() => {
     if (!checkoutReturn) return;
@@ -76,7 +94,6 @@ export function ClaimPanel({
       const params = new URLSearchParams({
         session_id: checkoutReturn!.sessionId,
         claim_id: checkoutReturn!.claimInvitationId,
-        state: checkoutReturn!.state,
         poll: "1",
       });
       try {
@@ -125,8 +142,38 @@ export function ClaimPanel({
     };
   }, [checkoutReturn]);
 
+  async function requestInvitation() {
+    if (!email) return;
+    setLoading(true);
+    setInvitationSent(false);
+    setError(null);
+    try {
+      const response = await fetch("/api/claim-invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteSlug: slug, email }),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error ?? "Ownership verification could not be sent");
+      }
+      setInvitationSent(true);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Ownership verification could not be sent",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function checkout() {
-    if (!email || !claimToken) return;
+    if (!invitationToken) return;
     setLoading(true);
     setError(null);
     try {
@@ -136,8 +183,7 @@ export function ClaimPanel({
         body: JSON.stringify({
           plan,
           siteSlug: slug,
-          email,
-          claimToken,
+          invitationToken,
         }),
       });
       const result = (await response.json()) as {
@@ -192,7 +238,10 @@ export function ClaimPanel({
       <aside className="flex items-center px-5 py-12 sm:px-10 lg:px-14">
         <div className="mx-auto w-full max-w-xl">
           <Badge variant="secondary" className="rounded-full">
-            <ShieldCheck /> Nothing publishes before payment
+            <ShieldCheck />
+            {invitationToken
+              ? "One-time ownership link attached"
+              : "Ownership proof required before payment"}
           </Badge>
           <h2 className="font-display text-balance mt-5 text-5xl leading-[0.92] tracking-[-0.045em]">
             Keep this site current.
@@ -201,11 +250,6 @@ export function ClaimPanel({
             Claiming creates the owner account and unlocks editing. The current
             website and domain stay untouched until the final DNS step.
           </p>
-          {!claimToken && !checkoutReturn ? (
-            <p className="mt-4 rounded-xl border border-amber-400/40 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950">
-              A secure, unexpired claim invitation is required before checkout.
-            </p>
-          ) : null}
           {checkoutReturn ? (
             <p className="mt-4 rounded-xl border bg-muted/45 px-4 py-3 text-xs leading-5">
               Payment received. Finalizing the owner account from Stripe&apos;s
@@ -258,17 +302,42 @@ export function ClaimPanel({
             ))}
           </div>
 
-          <label className="mt-7 block text-xs font-medium" htmlFor="email">
-            Owner email
-          </label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="owner@restaurant.com"
-            className="mt-2 h-11"
-          />
+          {invitationToken ? (
+            <div className="mt-7 rounded-xl border border-primary/30 bg-primary/5 p-4">
+              <p className="text-sm font-medium">Ownership link ready</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Checkout will verify that this one-time link belongs to this
+                site and the email approved for it.
+              </p>
+            </div>
+          ) : (
+            <>
+              <label className="mt-7 block text-xs font-medium" htmlFor="email">
+                Business owner email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setInvitationSent(false);
+                }}
+                placeholder="owner@restaurant.com"
+                className="mt-2 h-11"
+              />
+              <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                Use the email shown on the source website or an address on that
+                exact domain. Concierge-approved owners can use the address the
+                operator approved.
+              </p>
+            </>
+          )}
+          {invitationSent ? (
+            <p className="mt-3 rounded-lg bg-primary/8 px-3 py-2 text-xs text-primary">
+              Check that inbox for the 48-hour one-time ownership link.
+            </p>
+          ) : null}
           {error ? (
             <p className="mt-3 rounded-lg bg-destructive/8 px-3 py-2 text-xs text-destructive">
               {error}
@@ -277,22 +346,32 @@ export function ClaimPanel({
           <Button
             size="lg"
             className="mt-4 h-12 w-full"
-            disabled={!email || !claimToken || loading}
-            onClick={() => void checkout()}
+            disabled={(!invitationToken && !email) || loading}
+            onClick={() =>
+              void (invitationToken ? checkout() : requestInvitation())
+            }
           >
             {loading ? (
               <>
-                <LoaderCircle className="animate-spin" /> Opening secure checkout
+                <LoaderCircle className="animate-spin" />
+                {invitationToken
+                  ? "Opening secure checkout"
+                  : "Sending ownership link"}
+              </>
+            ) : invitationToken ? (
+              <>
+                Claim and continue <ArrowRight />
               </>
             ) : (
               <>
-                Claim and continue <ArrowRight />
+                Verify ownership by email <ArrowRight />
               </>
             )}
           </Button>
           <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">
-            Secure subscription checkout by Stripe. Cancel any time. Domain
-            connection happens after the account is created.
+            {invitationToken
+              ? "Secure subscription checkout by Stripe. The invitation is accepted only after checkout completes."
+              : "No checkout or owner account can start until the approved email opens its one-time link."}
           </p>
         </div>
       </aside>

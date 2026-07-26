@@ -28,11 +28,11 @@ new Checkout Sessions use only the new price. Remove the legacy ID only after
 all affected subscriptions have migrated or ended.
 
 Checkout also requires an unexpired, unused `ClaimInvitation` whose SHA-256
-token hash, intended email, and site all match. Issue #13 owns invitation
-issuance, operator approval, self-serve ownership proof, rate limiting, and the
-claim-attempt audit surface. Until that work ships, an authorized operator must
-create invitations through a separately reviewed process; the public claim URL
-alone cannot start Checkout.
+token hash, intended email, and site all match. The secure-claim dependency
+provides exact domain-email proof, operator approval, isolated rate limits, and
+URL-fragment delivery so the raw invitation never enters an HTTP request.
+Checkout return authorization uses a separate 30-minute HttpOnly cookie whose
+digest and bound Session ID are stored on the invitation.
 
 ## Events
 
@@ -53,6 +53,11 @@ Stripe Subscription and also reject an event older than the last persisted
 Stripe event timestamp. Active and trialing grant paid access; incomplete,
 incomplete-expired, past-due, unpaid, paused, canceled, missing, and
 unconfigured-price subscriptions do not.
+
+Each subscription is bound to one site as well as its owning organization.
+Customer Portal and publication checks use that site binding, so a multi-site
+owner cannot open the wrong Stripe customer or let one site's status govern
+another.
 
 ## Local and test-mode verification
 
@@ -81,8 +86,9 @@ unconfigured-price subscriptions do not.
 6. Exercise failure and recovery with Stripe test clocks or Dashboard test
    subscriptions: move the subscription through `past_due`, restore payment,
    schedule cancellation, cancel it, and resume a paused test subscription.
-   Confirm `/dashboard` shows the billing action and the custom-domain surface
-   returns unavailable whenever access is not active.
+   Confirm `/dashboard` shows the billing action, new domain publication is
+   blocked whenever access is not active, and an already-live site remains
+   reachable.
 
 The automated suite verifies signature-independent processing rules without
 external credentials:
@@ -90,7 +96,7 @@ external credentials:
 ```bash
 bun test \
   src/lib/billing-plans.test.ts \
-  src/lib/claim-authorization.test.ts \
+  src/lib/claim-invitations.test.ts \
   src/lib/claim-security.test.ts \
   src/lib/stripe-subscription.test.ts \
   src/lib/stripe-webhook.test.ts \
@@ -141,7 +147,18 @@ code verification.
   missing database returns `503`; it is never acknowledged as persisted.
 - Invalid signatures return `400`.
 - A signed but invalid or mismatched claim is recorded, logged without the
-  invitation token or a secret, acknowledged, and not retried forever.
+  invitation token or a secret, acknowledged, and not retried forever. Its
+  `StripeWebhookEvent.status` is `REJECTED`, `failureReason` contains the
+  bounded server validation reason, and a site-scoped
+  `stripe.webhook.rejected` audit row is added when the invitation is known.
+- Query rejected events during incident review with:
+
+  ```sql
+  SELECT "eventId", "type", "failureReason", "processedAt"
+  FROM "StripeWebhookEvent"
+  WHERE "status" = 'REJECTED'
+  ORDER BY "processedAt" DESC;
+  ```
 - Infrastructure and Stripe API failures return `500`, leaving no committed
   event-ledger row so a retry can process the event.
 - Review failed deliveries in Stripe Workbench. Fix the database, configuration,

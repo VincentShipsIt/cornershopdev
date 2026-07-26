@@ -28,9 +28,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const subscription = await getDb().subscription.findFirst({
-      where: { organizationId: access.site.organizationId },
-      orderBy: { updatedAt: "desc" },
+    const subscription = await getDb().subscription.findUnique({
+      where: { siteId: access.site.id },
       select: { stripeCustomerId: true },
     });
     if (!subscription) {

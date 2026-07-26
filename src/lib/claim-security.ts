@@ -5,6 +5,7 @@ import {
 } from "node:crypto";
 
 const developmentSecret = "cornershopdev-development-secret-change-me";
+export const CHECKOUT_RETURN_COOKIE = "cornershop_checkout_return";
 
 export function getClaimTokenSecret(
   env: Record<string, string | undefined> = process.env,

@@ -68,6 +68,11 @@ enum AnalyticsEventType {
   LEAD_CREATED
 }
 
+enum ClaimProofMethod {
+  DOMAIN_EMAIL
+  OPERATOR_APPROVAL
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -130,6 +135,7 @@ model Site {
   domains              Domain[]
   siteVersions         SiteVersion[]
   claimInvitations     ClaimInvitation[]
+  subscription         Subscription?
   auditEvents          AuditEvent[]
   bookingRequests      BookingRequest[]
   analyticsEvents      AnalyticsEvent[]
@@ -224,21 +230,24 @@ model Domain {
 }
 
 model ClaimInvitation {
-  id                      String    @id @default(cuid())
+  id                      String           @id @default(cuid())
   email                   String
-  tokenHash               String    @unique
+  tokenHash               String           @unique
+  proofMethod             ClaimProofMethod @default(DOMAIN_EMAIL)
   expiresAt               DateTime
+  verifiedAt              DateTime?
   acceptedAt              DateTime?
-  stripeCheckoutSessionId String?   @unique
+  revokedAt               DateTime?
+  checkoutSessionId       String?          @unique
   stripePriceId           String?
-  checkoutAttempt         Int       @default(0)
+  checkoutAttempt         Int              @default(0)
   checkoutReturnTokenHash String?
   checkoutReturnExpiresAt DateTime?
   siteId                  String
-  site                    Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt               DateTime  @default(now())
+  site                    Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt               DateTime         @default(now())
 
-  @@index([siteId, email])
+  @@index([siteId, email, expiresAt])
 }
 
 model Subscription {
@@ -250,6 +259,8 @@ model Subscription {
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
   lastStripeEventAt    DateTime?
+  siteId               String?            @unique
+  site                 Site?              @relation(fields: [siteId], references: [id], onDelete: SetNull)
   organizationId       String
   organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt            DateTime           @default(now())
@@ -260,6 +271,8 @@ model StripeWebhookEvent {
   eventId         String   @id
   type            String
   stripeCreatedAt DateTime
+  status          String   @default("PROCESSED")
+  failureReason   String?
   processedAt     DateTime @default(now())
 }
 

@@ -2,8 +2,10 @@ import type Stripe from "stripe";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import {
+  BILLING_PLAN_IDS,
   billingPlanForPrice,
   configuredBillingPlans,
+  configuredBillingPriceIds,
 } from "@/lib/billing-plans";
 import { claimSite, SiteNotClaimableError } from "@/lib/site-claim";
 import {
@@ -35,6 +37,10 @@ type StripeWebhookDatabase = Pick<
   "$transaction" | "stripeWebhookEvent"
 >;
 
+type PreparedStripeEvent =
+  | Awaited<ReturnType<typeof retrieveCheckout>>
+  | Awaited<ReturnType<typeof retrieveSubscription>>;
+
 export async function processStripeWebhookEvent(
   event: Stripe.Event,
   stripe: Stripe,
@@ -53,17 +59,14 @@ export async function processStripeWebhookEvent(
   });
   if (duplicate) return "duplicate";
 
-  let prepared:
-    | Awaited<ReturnType<typeof retrieveCheckout>>
-    | Awaited<ReturnType<typeof retrieveSubscription>>
-    | { kind: "rejected"; reason: string };
+  let prepared: PreparedStripeEvent;
   try {
     prepared = checkoutEventTypes.has(event.type)
       ? await retrieveCheckout(event, stripe)
       : await retrieveSubscription(event, stripe);
   } catch (error) {
     if (!(error instanceof StripeWebhookValidationError)) throw error;
-    prepared = { kind: "rejected", reason: error.message };
+    return persistRejectedEvent(db, event, error.message, eventInvitationId(event));
   }
 
   try {
@@ -76,37 +79,30 @@ export async function processStripeWebhookEvent(
         },
       });
 
-      if (prepared.kind === "rejected") {
-        console.error("[stripe-webhook] rejected event", {
-          eventId: event.id,
-          reason: prepared.reason,
-        });
-        return "rejected";
-      }
-
       if (prepared.kind === "checkout") {
-        try {
-          await provisionCheckout(tx, event, prepared.session, prepared.snapshot);
-          return "processed";
-        } catch (error) {
-          if (
-            error instanceof StripeWebhookValidationError ||
-            error instanceof SiteNotClaimableError
-          ) {
-            console.error("[stripe-webhook] rejected checkout", {
-              eventId: event.id,
-              reason: error.message,
-            });
-            return "rejected";
-          }
-          throw error;
-        }
+        await provisionCheckout(tx, event, prepared.session, prepared.snapshot);
+      } else {
+        await synchronizeSubscription(tx, event, prepared.snapshot);
       }
-
-      await synchronizeSubscription(tx, event, prepared.snapshot);
-      return "processed";
+      return "processed" as const;
     });
   } catch (error) {
+    if (
+      error instanceof StripeWebhookValidationError ||
+      error instanceof SiteNotClaimableError
+    ) {
+      // The processing transaction has rolled back, including any owner/org
+      // writes. Persist the permanent rejection separately so it is queryable
+      // without asking Stripe to retry an event that cannot become valid.
+      return persistRejectedEvent(
+        db,
+        event,
+        error.message,
+        prepared.kind === "checkout"
+          ? prepared.session.metadata?.claimInvitationId
+          : undefined,
+      );
+    }
     if (hasPrismaCode(error, "P2002")) {
       const committed = await db.stripeWebhookEvent.findUnique({
         where: { eventId: event.id },
@@ -118,6 +114,55 @@ export async function processStripeWebhookEvent(
   }
 }
 
+async function persistRejectedEvent(
+  db: StripeWebhookDatabase,
+  event: Stripe.Event,
+  reason: string,
+  invitationId: string | undefined,
+): Promise<StripeWebhookResult> {
+  try {
+    await db.$transaction(async (tx) => {
+      await tx.stripeWebhookEvent.create({
+        data: {
+          eventId: event.id,
+          type: event.type,
+          stripeCreatedAt: stripeTimestamp(event.created),
+          status: "REJECTED",
+          failureReason: reason,
+        },
+      });
+      if (!invitationId) return;
+      const invitation = await tx.claimInvitation.findUnique({
+        where: { id: invitationId },
+        select: { siteId: true },
+      });
+      if (!invitation) return;
+      await tx.auditEvent.create({
+        data: {
+          type: "stripe.webhook.rejected",
+          actor: "system:stripe",
+          siteId: invitation.siteId,
+          metadata: {
+            stripeEventId: event.id,
+            stripeEventType: event.type,
+            reason,
+            invitationId,
+          },
+        },
+      });
+    });
+  } catch (error) {
+    if (hasPrismaCode(error, "P2002")) return "duplicate";
+    throw error;
+  }
+  console.error("[stripe-webhook] rejected event", {
+    eventId: event.id,
+    eventType: event.type,
+    reason,
+  });
+  return "rejected";
+}
+
 async function retrieveCheckout(event: Stripe.Event, stripe: Stripe) {
   const eventSession = event.data.object as Stripe.Checkout.Session;
   const session = await stripe.checkout.sessions.retrieve(eventSession.id, {
@@ -126,10 +171,7 @@ async function retrieveCheckout(event: Stripe.Event, stripe: Stripe) {
   if (session.livemode !== event.livemode) {
     throw new StripeWebhookValidationError("Checkout mode mismatch");
   }
-  if (
-    !session.subscription ||
-    typeof session.subscription === "string"
-  ) {
+  if (!session.subscription || typeof session.subscription === "string") {
     throw new StripeWebhookValidationError(
       "Checkout subscription was not expanded",
     );
@@ -145,12 +187,8 @@ async function retrieveSubscription(event: Stripe.Event, stripe: Stripe) {
   const eventSubscription = event.data.object as Stripe.Subscription;
   let subscription: Stripe.Subscription;
   try {
-    // Stripe doesn't guarantee event delivery order. Reading the current
-    // resource makes a late update converge on Stripe's latest state.
     subscription = await stripe.subscriptions.retrieve(eventSubscription.id);
   } catch (error) {
-    // A deleted subscription is terminal and can become unavailable to a later
-    // retrieve. Its signed event payload remains authoritative.
     if (event.type !== "customer.subscription.deleted") throw error;
     subscription = eventSubscription;
   }
@@ -184,19 +222,14 @@ async function provisionCheckout(
       id: true,
       email: true,
       acceptedAt: true,
-      stripeCheckoutSessionId: true,
+      checkoutSessionId: true,
       stripePriceId: true,
-      site: {
-        select: {
-          id: true,
-          slug: true,
-        },
-      },
+      site: { select: { id: true, slug: true } },
     },
   });
   if (
     !invitation ||
-    invitation.stripeCheckoutSessionId !== session.id ||
+    invitation.checkoutSessionId !== session.id ||
     invitation.stripePriceId !== snapshot.stripePriceId ||
     session.metadata?.siteSlug !== invitation.site.slug
   ) {
@@ -205,11 +238,16 @@ async function provisionCheckout(
     );
   }
 
+  const priceId = snapshot.stripePriceId;
+  const metadataPlan = session.metadata?.plan;
   const plans = configuredBillingPlans();
-  const plan = snapshot.stripePriceId
-    ? billingPlanForPrice(snapshot.stripePriceId, plans)
-    : null;
-  if (!plan || session.metadata?.plan !== plan.id) {
+  const currentPlan = priceId ? billingPlanForPrice(priceId, plans) : null;
+  if (
+    !priceId ||
+    !configuredBillingPriceIds().has(priceId) ||
+    !BILLING_PLAN_IDS.some((planId) => planId === metadataPlan) ||
+    (currentPlan && currentPlan.id !== metadataPlan)
+  ) {
     throw new StripeWebhookValidationError("Checkout price is not configured");
   }
 
@@ -226,18 +264,13 @@ async function provisionCheckout(
   const access = await claimSite(tx, {
     email,
     siteSlug: invitation.site.slug,
+    claimInvitationId: invitation.id,
+    stripeCheckoutSessionId: session.id,
     ...snapshot,
     subscriptionStatus: snapshot.status,
     stripeEventCreatedAt: stripeTimestamp(event.created),
   });
-  const accepted = await tx.claimInvitation.updateMany({
-    where: {
-      id: invitation.id,
-      acceptedAt: null,
-    },
-    data: { acceptedAt: new Date() },
-  });
-  if (accepted.count === 1) {
+  if (!invitation.acceptedAt) {
     await tx.auditEvent.create({
       data: {
         type: "stripe.checkout.provisioned",
@@ -247,7 +280,7 @@ async function provisionCheckout(
           stripeEventId: event.id,
           stripeSubscriptionId: snapshot.stripeSubscriptionId,
           organizationId: access.organizationId,
-          plan: plan.id,
+          plan: metadataPlan,
         },
       },
     });
@@ -277,6 +310,11 @@ async function synchronizeSubscription(
       lastStripeEventAt: eventCreatedAt,
     },
   });
+}
+
+function eventInvitationId(event: Stripe.Event): string | undefined {
+  const object = event.data.object as { metadata?: Stripe.Metadata | null };
+  return object.metadata?.claimInvitationId;
 }
 
 function stripeTimestamp(value: number): Date {

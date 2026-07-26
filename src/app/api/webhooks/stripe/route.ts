@@ -27,8 +27,6 @@ export async function POST(request: Request) {
   }
 
   if (!process.env.DATABASE_URL) {
-    // A 2xx response would tell Stripe to stop retrying an event that was
-    // never durably recorded.
     return Response.json(
       { error: "Webhook persistence is unavailable" },
       { status: 503 },

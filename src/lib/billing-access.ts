@@ -53,8 +53,8 @@ export function evaluateBillingAccess(
   return { ok: true, subscription };
 }
 
-export async function getOrganizationBillingAccess(
-  organizationId: string,
+export async function getSiteBillingAccess(
+  siteId: string,
 ): Promise<BillingAccess> {
   let configuredPriceIds: Set<string>;
   try {
@@ -69,9 +69,8 @@ export async function getOrganizationBillingAccess(
     };
   }
 
-  const subscription = await getDb().subscription.findFirst({
-    where: { organizationId },
-    orderBy: { updatedAt: "desc" },
+  const subscription = await getDb().subscription.findUnique({
+    where: { siteId },
     select: {
       status: true,
       stripePriceId: true,

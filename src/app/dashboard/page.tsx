@@ -5,7 +5,7 @@ import { getSiteAnalyticsSummary } from "@/lib/analytics";
 import { buildEmptyAnalyticsSummary } from "@/lib/analytics-contract";
 import { getSiteAccess } from "@/lib/authorization";
 import { getBookingRequestInbox } from "@/lib/booking-request-inbox";
-import { getOrganizationBillingAccess } from "@/lib/billing-access";
+import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
@@ -35,7 +35,7 @@ export default async function DashboardPage({
         getRestaurantDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
-        getOrganizationBillingAccess(access.site.organizationId),
+        getSiteBillingAccess(access.site.id),
       ])
     : [
         sampleRestaurant,
