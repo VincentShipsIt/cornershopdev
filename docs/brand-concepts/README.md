@@ -108,3 +108,38 @@ Prompt: Create an asymmetrical top-down table-for-two symbol from exactly three
 bold shapes: one small table and two C-shaped chairs placed diagonally toward it.
 Avoid mirrored pillars, H shapes, pause symbols, and restaurant clichés. Show a
 standalone mark, exact wordmark, and favicon tile in oxblood and espresso.
+
+## Restofront sister-brand studies
+
+These studies abandon restaurant illustration and apply the Cornershopdev
+concept's construction language directly: charcoal shell, cream negative space,
+one burnt-orange front plane, angular geometry, and a rounded-square favicon.
+
+### 07 — Front plane
+
+![Front plane concept](./restofront-07-front-plane.png)
+
+Prompt: Build a Restofront sister mark from a charcoal outer corner shell, a
+cream negative-space R that also reads as an open doorway, and one burnt-orange
+front plane with a single square window. Match Cornershopdev's flat angular
+construction and corner base without copying its C or factory roof. Show a
+standalone mark, exact wordmark, and rounded-square favicon.
+
+### 08 — Menu corner
+
+![Menu corner concept](./restofront-08-menu-corner.png)
+
+Prompt: Build a single charcoal folded-menu silhouette on a small angular corner
+base. Cut a cream R through the dark shape and use one burnt-orange folded front
+edge for flat geometric depth. Keep exactly three primary silhouettes with no
+menu lines, food, utensils, or illustrative details. Show a standalone mark,
+exact wordmark, and rounded-square favicon.
+
+### 09 — Dining corner
+
+![Dining corner concept](./restofront-09-dining-corner.png)
+
+Prompt: Use one charcoal L-shaped corner shell and one burnt-orange horizontal
+front plane. Let the cream negative space form a bold R first and a tabletop in
+perspective second. Use at most three main shapes with no chairs, food, or room
+details. Show a standalone mark, exact wordmark, and rounded-square favicon.
