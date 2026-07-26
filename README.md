@@ -126,6 +126,9 @@ bun run db:migrate:deploy
 Preview and production service isolation, readiness checks, backups, restores,
 and credential rotation are documented in
 [`docs/operations/platform-services.md`](docs/operations/platform-services.md).
+The one-price offer, evidence gates, founder-cost worksheet, second-lead
+qualification, and 30-day decision record for the first paid restaurant are in
+[`docs/operations/first-customer-validation.md`](docs/operations/first-customer-validation.md).
 The bearer-authenticated `/api/health/ready` route verifies PostgreSQL, Redis,
 and Amazon S3 without returning secret values. Each application
 instance coalesces concurrent checks and caches their aggregate result for five
