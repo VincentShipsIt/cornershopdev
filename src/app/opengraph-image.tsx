@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Cornershopdev — Your restaurant's front door, always current";
+export const alt = "Cornershopdev — the website factory for small business";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -14,9 +14,8 @@ export default function OpenGraphImage() {
         flexDirection: "column",
         justifyContent: "space-between",
         padding: "72px",
-        color: "#1d241f",
-        background:
-          "radial-gradient(circle at 85% 20%, #e7b596 0, transparent 32%), #f4efe5",
+        color: "#1F2622",
+        background: "#F7F1E7",
         fontFamily: "Arial, sans-serif",
       }}
     >
@@ -25,9 +24,10 @@ export default function OpenGraphImage() {
           style={{
             width: 58,
             height: 58,
-            borderRadius: 999,
-            background: "#a5482d",
-            color: "white",
+            position: "relative",
+            borderRadius: 14,
+            background: "#0D4A39",
+            color: "#F7F1E7",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -35,7 +35,28 @@ export default function OpenGraphImage() {
             fontWeight: 700,
           }}
         >
-          RF
+          C
+          <div
+            style={{
+              position: "absolute",
+              left: 7,
+              top: 0,
+              display: "flex",
+              gap: 3,
+            }}
+          >
+            {[0, 1, 2].map((stripe) => (
+              <div
+                key={stripe}
+                style={{
+                  width: 9,
+                  height: 14,
+                  borderRadius: 3,
+                  background: "#F15A3D",
+                }}
+              />
+            ))}
+          </div>
         </div>
         <div style={{ fontSize: 28, fontWeight: 700 }}>Cornershopdev</div>
       </div>
@@ -49,10 +70,10 @@ export default function OpenGraphImage() {
           letterSpacing: "-5px",
         }}
       >
-        Your restaurant&apos;s front door, always current.
+        One factory. A storefront for every trade.
       </div>
-      <div style={{ display: "flex", fontSize: 23, color: "#675f56" }}>
-        Website, menu and imagery—already done.
+      <div style={{ display: "flex", fontSize: 23, color: "#646863" }}>
+        One engine, one database, one deploy.
       </div>
     </div>,
     size,

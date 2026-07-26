@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Vertical } from "@/generated/prisma/enums";
+import type { BrandIdentity } from "@/lib/brand";
 
 export type VerticalId = Vertical;
 
@@ -121,16 +122,16 @@ export type VerticalMarketing = {
   hostnames: string[];
   /** Bare domain printed as the niche's public identity, or null while unlaunched. */
   domain: string | null;
-  brand: { name: string; initials: string };
+  brand: BrandIdentity;
   /**
    * The address this niche's mail goes out as, and where a reply to it lands.
    * Every customer arrives through a niche storefront, so every customer email
-   * is a niche email: a restaurant that bought Restofront must never receive a
+   * is a niche email: a restaurant that bought Restofrontapp must never receive a
    * sign-in link from a factory address it has never heard of.
    *
    * Null until the niche's sending domain is verified with the mail provider.
    * That is not a soft default — a niche cannot send as a domain it does not
-   * own, and borrowing a launched niche's address would put Restofront's name
+   * own, and borrowing a launched niche's address would put Restofrontapp's name
    * on a salon's mail. So this gates launch alongside `domain`: a niche is
    * live when it has both, and until then `EMAIL_FROM` covers the stragglers.
    */

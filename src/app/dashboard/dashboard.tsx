@@ -54,8 +54,8 @@ type DomainSetup = {
 
 /**
  * `brand` is resolved on the server from the host the owner signed in through,
- * so someone managing a site they bought as Restofront keeps seeing Restofront
- * here rather than the factory that built it.
+ * so someone managing a site they bought as Restofrontapp keeps seeing
+ * Restofrontapp here rather than the factory that built it.
  */
 export function Dashboard({
   initialDraft,

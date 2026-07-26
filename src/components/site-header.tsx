@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight, Menu } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
+import type { BrandIdentity } from "@/lib/brand";
 import {
   Sheet,
   SheetClose,
@@ -31,7 +32,7 @@ export function SiteHeader({
   createHref = "/create",
   ctaLabel = "Build a preview",
 }: {
-  brand: { name: string; initials: string; href?: string };
+  brand: BrandIdentity & { href?: string };
   links?: SiteHeaderLink[];
   createHref?: string;
   ctaLabel?: string;

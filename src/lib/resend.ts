@@ -33,7 +33,7 @@ function nicheEmail(vertical: VerticalId | null | undefined) {
 /**
  * The address a message goes out as, resolved from the niche that owns the site
  * it concerns rather than from one platform-wide identity. A restaurant bought
- * Restofront, so Restofront is who writes to it — the same rule the wordmark
+ * Restofrontapp, so Restofrontapp is who writes to it — the same rule the wordmark
  * already follows, applied to the envelope.
  *
  * EMAIL_FROM survives only as the floor for a niche with no verified sending

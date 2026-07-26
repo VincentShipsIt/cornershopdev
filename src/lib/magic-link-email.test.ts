@@ -10,7 +10,7 @@ describe("magic-link email identity", () => {
     });
 
     expect(email.subject).toBe("Open the Cornershopdev operator console");
-    expect(email.from).not.toContain("Restofront");
+    expect(email.from).not.toContain("Restofrontapp");
     expect(email.html).toContain("operator console");
   });
 
@@ -21,8 +21,8 @@ describe("magic-link email identity", () => {
       site: { name: "Chez Lea", vertical: "RESTAURANT" },
     });
 
-    expect(email.subject).toBe("Open Chez Lea in Restofront");
-    expect(email.from).toContain("Restofront");
+    expect(email.subject).toBe("Open Chez Lea in Restofrontapp");
+    expect(email.from).toContain("Restofrontapp");
     expect(email.html).toContain("Chez Lea dashboard");
   });
 });

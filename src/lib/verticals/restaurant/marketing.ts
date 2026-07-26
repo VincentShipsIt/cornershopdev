@@ -1,19 +1,27 @@
 import type { VerticalMarketing } from "@/lib/verticals/types";
 
 /**
- * Restofront is the restaurant niche's public brand, and it stays Restofront: the
- * platform rename to Cornershopdev covers the factory, not the storefronts it
- * ships. A visitor on restofront.com should never see the factory's name, the
- * same way a visitor to a generated site never sees either.
+ * Restofrontapp is the restaurant niche's public brand. The platform rename to
+ * Cornershopdev covers the factory, not the storefronts it ships. A visitor on
+ * restofront.com should never see the factory's name, the same way a visitor to
+ * a generated site never sees either.
  */
 export const restaurantMarketing = {
   hostnames: ["restofront.com", "www.restofront.com"],
   domain: "restofront.com",
-  brand: { name: "Restofront", initials: "RF" },
+  brand: {
+    name: "Restofrontapp",
+    initials: "RA",
+    mark: {
+      src: "/brand/restofrontapp/mark.png",
+      faviconSrc: "/brand/restofrontapp/favicon-32.png",
+      appleTouchIconSrc: "/brand/restofrontapp/apple-touch-icon.png",
+    },
+  },
   // send.restofront.com is the verified sending domain; nobody reads it, so
   // replies are pointed at the bare domain instead.
   email: {
-    from: "Vincent from Restofront <vincent@send.restofront.com>",
+    from: "Vincent from Restofrontapp <vincent@send.restofront.com>",
     replyTo: "vincent@restofront.com",
   },
   audience: "restaurants",
@@ -36,7 +44,7 @@ export const restaurantMarketing = {
     {
       number: "01",
       title: "Drop the old website",
-      copy: "Paste a URL or restaurant name. Restofront recovers the menu, contact details, imagery and current integrations.",
+      copy: "Paste a URL or restaurant name. Restofrontapp recovers the menu, contact details, imagery and current integrations.",
     },
     {
       number: "02",
@@ -52,7 +60,7 @@ export const restaurantMarketing = {
   valueProps: {
     eyebrow: "The digital presence custodian",
     headline: "We improve the website. Not your whole operation.",
-    copy: "Restofront sits around the systems a restaurant already trusts, presenting them beautifully without forcing a painful migration.",
+    copy: "Restofrontapp sits around the systems a restaurant already trusts, presenting them beautifully without forcing a painful migration.",
     items: [
       {
         icon: "catalog",
@@ -82,7 +90,7 @@ export const restaurantMarketing = {
     imageAlt: "Restaurant dish photographed in natural light",
     eyebrow: "Credible imagery, not fantasy food",
     headline: "Fill the visual gaps without faking the restaurant.",
-    copy: "Restofront prioritises real source photography, then creates complementary editorial images for missing categories. Every generated asset stays reviewable before publishing.",
+    copy: "Restofrontapp prioritises real source photography, then creates complementary editorial images for missing categories. Every generated asset stays reviewable before publishing.",
     assurances: [
       {
         icon: "shield",
@@ -129,7 +137,7 @@ export const restaurantMarketing = {
   },
   closing: {
     headline: "See the restaurant before asking it to change.",
-    copy: "Paste one website. Restofront will do the first draft.",
+    copy: "Paste one website. Restofrontapp will do the first draft.",
   },
   footerTagline: "Your restaurant's front door, always current.",
 } satisfies VerticalMarketing;
