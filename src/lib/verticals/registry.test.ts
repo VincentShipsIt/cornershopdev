@@ -208,20 +208,21 @@ describe("niche routing", () => {
   });
 
   /**
-   * The factory homepage renders this list directly, so it has to contain every
-   * registered niche — an unlaunched one is the upcoming card — with the ones
-   * that already have a domain first.
+   * The factory homepage renders this list directly. Registered-but-unlaunched
+   * verticals stay private until their domain and niche positioning are ready.
    */
-  it("lists every niche for the homepage, launched ones first", () => {
-    const ordered = listMarketingVerticals();
-    expect([...ordered].sort()).toEqual([...listVerticalIds()].sort());
-
-    const launched = ordered.map((id) =>
-      Boolean(resolveVerticalConfig(id).marketing.domain),
+  it("lists only launched niches for the homepage", () => {
+    const listed = listMarketingVerticals();
+    expect(listed).toEqual(
+      listVerticalIds()
+        .filter((id) => Boolean(resolveVerticalConfig(id).marketing.domain))
+        .sort((a, b) =>
+          resolveVerticalConfig(a).marketing.brand.name.localeCompare(
+            resolveVerticalConfig(b).marketing.brand.name,
+          ),
+        ),
     );
-    expect(launched).toEqual(
-      [...launched].sort((a, b) => Number(b) - Number(a)),
-    );
+    expect(listed).not.toContain(Vertical.BEAUTY);
   });
 
   /**

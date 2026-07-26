@@ -114,9 +114,9 @@ export default function Home() {
               One factory. Every corner shop.
             </h1>
             <p className="mt-7 max-w-xl text-balance text-lg leading-8 text-muted-foreground">
-              Restaurants, salons, barbers — every trade gets its own brand and
-              its own domain. Behind all of them: one engine, one database, one
-              deploy.
+              Restaurants today, more trades when they are ready — each gets its
+              own brand and domain. Behind all of them: one engine, one database,
+              one deploy.
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button

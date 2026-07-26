@@ -107,20 +107,19 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
 }
 
 /**
- * Every registered niche, launched or not, for the factory homepage. Ones with a
- * live domain come first — the homepage sells what it can already deliver — and
- * ties break on the niche's own brand name so the order never depends on
- * registration order.
+ * Every launched niche for the factory homepage. A registered vertical can stay
+ * private while its positioning and storefront are still being developed; a
+ * public domain is the launch gate. Sorting by the niche's own brand name keeps
+ * the order independent of registration order.
  */
 export function listMarketingVerticals(): VerticalId[] {
-  return listVerticalIds().sort((a, b) => {
-    const left = resolveVerticalConfig(a).marketing;
-    const right = resolveVerticalConfig(b).marketing;
-    if (Boolean(left.domain) !== Boolean(right.domain)) {
-      return left.domain ? -1 : 1;
-    }
-    return left.brand.name.localeCompare(right.brand.name);
-  });
+  return listVerticalIds()
+    .filter((id) => Boolean(resolveVerticalConfig(id).marketing.domain))
+    .sort((a, b) =>
+      resolveVerticalConfig(a).marketing.brand.name.localeCompare(
+        resolveVerticalConfig(b).marketing.brand.name,
+      ),
+    );
 }
 
 /**
