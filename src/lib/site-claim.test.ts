@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import {
   CLAIMABLE_STATUSES,
   claimSite,
+  type CompletedCheckout,
   isClaimable,
   SiteNotClaimableError,
   unclaimedWhere,
@@ -165,7 +166,7 @@ describe("SiteNotClaimableError", () => {
  */
 async function expectClaimRejected(
   tx: Prisma.TransactionClient,
-  checkout: CompletedCheckoutInput = completedCheckout(),
+  checkout: CompletedCheckout = completedCheckout(),
 ): Promise<Record<string, unknown>> {
   const logged = spyOn(console, "error").mockImplementation(() => {});
   try {
@@ -179,7 +180,9 @@ async function expectClaimRejected(
   }
 }
 
-function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
+function completedCheckout(
+  overrides: Partial<CompletedCheckout> = {},
+): CompletedCheckout {
   return {
     email: "owner@chez-lea.test",
     siteSlug: "chez-lea",
@@ -189,8 +192,6 @@ function completedCheckout(overrides: Partial<CompletedCheckoutInput> = {}) {
     ...overrides,
   };
 }
-
-type CompletedCheckoutInput = ReturnType<typeof completedCheckout>;
 
 type SiteRow = {
   slug: string;

@@ -18,7 +18,7 @@ export const restaurantMarketing = {
     headline: "Your front door, always current.",
     subheadline:
       "Give us the restaurant. Get back a polished mobile-first website with the menu already inside—and keep the booking and ordering tools that already work.",
-    proofPoints: ["No setup call", "Private preview first", "From €25/month"],
+    proofPoints: ["No setup call", "Private preview first", "From $25/month"],
   },
   form: {
     placeholder: "Restaurant website or name",
@@ -95,7 +95,7 @@ export const restaurantMarketing = {
     plans: [
       {
         name: "Starter",
-        price: "€25",
+        price: "$25",
         cadence: "/month",
         copy: "The always-current essentials for one independent restaurant.",
         features: [
@@ -107,7 +107,7 @@ export const restaurantMarketing = {
       },
       {
         name: "Growth",
-        price: "€50",
+        price: "$50",
         cadence: "/month",
         copy: "For restaurants that change often and want the work handled.",
         features: [

@@ -9,6 +9,7 @@ import {
   type PersistedSiteImport,
 } from "@/lib/site-persistence";
 import {
+  aiIsConfigured,
   crawlSiteSource,
   enhanceSiteHeroImage,
   generateDraftForVertical,
@@ -179,7 +180,7 @@ async function enhanceDraftImages(
     !draft.autoEnhanceImages ||
     !draft.heroImageUrl?.startsWith("https://") ||
     !imageStorageIsConfigured() ||
-    (!process.env.VERCEL_OIDC_TOKEN && !process.env.AI_GATEWAY_API_KEY)
+    !aiIsConfigured()
   ) {
     console.log(`[site-import:enhance] SKIP slug=${draft.slug}`);
     return draft;

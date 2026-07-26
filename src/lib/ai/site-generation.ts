@@ -61,44 +61,76 @@ export const SHARED_SKELETON = `Rules:
 - Return three accessible hex colours in palette, derived from the source website's visible branding and photography rather than a generic palette.
 - Preserve sourceUrl and heroImageUrl exactly as instructed.`;
 
-function textAiIsConfigured(): boolean {
-  return Boolean(
-    process.env.OPENROUTER_API_KEY ||
-      process.env.VERCEL_OIDC_TOKEN ||
-      process.env.AI_GATEWAY_API_KEY,
-  );
+/**
+ * OpenRouter is the only model provider. Text and image generation share one
+ * key, so a single predicate gates both — callers degrade gracefully (text
+ * falls back to `deterministicDraft`, image enhancement is skipped) rather
+ * than failing the import.
+ */
+export function aiIsConfigured(): boolean {
+  return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
-function imageAiIsConfigured(): boolean {
-  return Boolean(
-    process.env.VERCEL_OIDC_TOKEN || process.env.AI_GATEWAY_API_KEY,
-  );
+function getOpenRouter() {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
+  return createOpenRouter({
+    apiKey,
+    compatibility: "strict",
+    headers: {
+      "HTTP-Referer":
+        process.env.NEXT_PUBLIC_APP_URL ?? "https://cornershop.dev",
+      "X-Title": "Cornershopdev",
+    },
+  });
 }
+
+/**
+ * Every request carries a customer's own website content, so routing is
+ * restricted to providers that neither retain nor train on the prompt.
+ * `require_parameters` keeps that restriction honest: a provider that cannot
+ * honour the routing preferences is skipped rather than silently substituted.
+ */
+const PRIVATE_ROUTING = {
+  require_parameters: true,
+  data_collection: "deny",
+} as const;
 
 function getTextModel() {
-  if (process.env.OPENROUTER_API_KEY) {
-    const openrouter = createOpenRouter({
-      apiKey: process.env.OPENROUTER_API_KEY,
-      compatibility: "strict",
-      headers: {
-        "HTTP-Referer":
-          process.env.NEXT_PUBLIC_APP_URL ?? "https://cornershop.dev",
-        "X-Title": "Cornershopdev",
+  return getOpenRouter().chat(
+    process.env.OPENROUTER_TEXT_MODEL ?? "openrouter/auto",
+    {
+      extraBody: {
+        provider: PRIVATE_ROUTING,
+        plugins: [{ id: "response-healing" }],
       },
-    });
-    return openrouter.chat(
-      process.env.OPENROUTER_TEXT_MODEL ?? "openrouter/auto",
-      {
-        extraBody: {
-          provider: { require_parameters: true },
-          plugins: [{ id: "response-healing" }],
-        },
-        usage: { include: true },
-      },
-    );
-  }
+      usage: { include: true },
+    },
+  );
+}
 
-  return process.env.AI_TEXT_MODEL ?? "openai/gpt-5.4";
+/**
+ * Image-output models are ordinary chat models on OpenRouter: the generated
+ * image comes back in `choices[].message.images[]`, which the provider maps
+ * onto AI SDK file parts. `modalities` is what opts the response into that.
+ *
+ * `require_parameters` matters more here than for text: a provider that drops
+ * `modalities` answers with prose, and `enhanceSiteImage` then throws on a
+ * missing file part. Skipping such a provider turns a confusing failure into
+ * the caller's existing "enhancement unavailable" path.
+ */
+function getImageModel() {
+  return getOpenRouter().chat(
+    process.env.OPENROUTER_IMAGE_MODEL ??
+      "google/gemini-3.1-flash-image",
+    {
+      extraBody: {
+        modalities: ["image", "text"],
+        provider: PRIVATE_ROUTING,
+      },
+      usage: { include: true },
+    },
+  );
 }
 
 export function deterministicDraft<
@@ -185,7 +217,7 @@ export async function generateSiteDraft<
   source: ExtractedSite,
   vertical: VerticalConfig<TAttributes, TItemAttributes, TTemplate, TDraft>,
 ): Promise<TDraft> {
-  if (!textAiIsConfigured()) return deterministicDraft(source, vertical);
+  if (!aiIsConfigured()) return deterministicDraft(source, vertical);
 
   const { output } = await generateText({
     model: getTextModel(),
@@ -258,8 +290,8 @@ export async function enhanceSiteImage(
   data: Uint8Array;
   mediaType: string;
 }> {
-  if (!imageAiIsConfigured()) {
-    throw new Error("AI Gateway is not configured");
+  if (!aiIsConfigured()) {
+    throw new Error("OPENROUTER_API_KEY is not configured");
   }
 
   const enhancement = vertical.imageEnhancement;
@@ -271,9 +303,7 @@ export async function enhanceSiteImage(
     ? `Requested finishing notes: ${request.enhancementNotes}`
     : "";
   const result = await generateText({
-    model:
-      process.env.AI_IMAGE_MODEL ??
-      "google/gemini-3.1-flash-image-preview",
+    model: getImageModel(),
     messages: [
       {
         role: "user",

@@ -1,4 +1,5 @@
 import {
+  aiIsConfigured,
   enhanceSiteImage,
   generateSiteDraft,
   type SiteImageEnhancementRequest,
@@ -7,6 +8,9 @@ import { inspectSource, type ExtractedSite } from "@/lib/importer";
 import type { PersistableSiteDraft } from "@/lib/site-persistence";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+
+/** Re-exported so callers gate on the pipeline facade, not the model layer. */
+export { aiIsConfigured };
 
 /**
  * The import pipeline addressed by `Vertical` value instead of by resolved
