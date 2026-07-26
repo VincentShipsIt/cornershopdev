@@ -3,6 +3,7 @@ import {
   billingPlanForPrice,
   BillingConfigurationError,
   configuredBillingPlans,
+  configuredBillingPriceIds,
 } from "@/lib/billing-plans";
 
 const configured = {
@@ -26,5 +27,26 @@ describe("configuredBillingPlans", () => {
         STRIPE_GROWTH_PRICE_ID: "price_same",
       }),
     ).toThrow("different Stripe prices");
+  });
+
+  it("grandfathers explicitly configured legacy prices for access only", () => {
+    const prices = configuredBillingPriceIds({
+      ...configured,
+      STRIPE_LEGACY_PRICE_IDS: "price_old_starter, price_old_growth",
+    });
+    expect(prices).toEqual(
+      new Set([
+        "price_starter",
+        "price_growth",
+        "price_old_starter",
+        "price_old_growth",
+      ]),
+    );
+    expect(
+      billingPlanForPrice(
+        "price_old_starter",
+        configuredBillingPlans(configured),
+      ),
+    ).toBeNull();
   });
 });

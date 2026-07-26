@@ -113,4 +113,407 @@ describe("Stripe webhook event idempotency", () => {
       console.error = original;
     }
   });
+
+  it("provisions once without a browser return and converges lifecycle events", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+
+    const { db, state } = createWebhookDatabase();
+    let currentSubscription = subscriptionFixture();
+    const stripe = {
+      checkout: {
+        sessions: {
+          retrieve: async () =>
+            checkoutFixture(currentSubscription),
+        },
+      },
+      subscriptions: {
+        retrieve: async () => currentSubscription,
+      },
+    } as unknown as Stripe;
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_checkout_1", 100),
+          stripe,
+          db,
+        ),
+      ).toBe("processed");
+      expect(state.users).toHaveLength(1);
+      expect(state.organizations).toHaveLength(1);
+      expect(state.memberships).toHaveLength(1);
+      expect(state.subscriptions).toHaveLength(1);
+      expect(state.sites[0]).toMatchObject({
+        status: "CLAIMED",
+        organizationId: state.organizations[0].id,
+      });
+      expect(state.invitation.acceptedAt).toBeInstanceOf(Date);
+      expect(state.audits).toHaveLength(1);
+
+      // A transport retry and a second valid completion event are both safe.
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_checkout_1", 100),
+          stripe,
+          db,
+        ),
+      ).toBe("duplicate");
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_checkout_2", 101),
+          stripe,
+          db,
+        ),
+      ).toBe("processed");
+      expect(state.users).toHaveLength(1);
+      expect(state.organizations).toHaveLength(1);
+      expect(state.memberships).toHaveLength(1);
+      expect(state.subscriptions).toHaveLength(1);
+      expect(state.audits).toHaveLength(1);
+
+      currentSubscription = subscriptionFixture({ status: "past_due" });
+      expect(
+        await processStripeWebhookEvent(
+          subscriptionEvent("evt_past_due", 200, currentSubscription),
+          stripe,
+          db,
+        ),
+      ).toBe("processed");
+      expect(state.subscriptions[0].status).toBe("PAST_DUE");
+
+      // A late older event reads Stripe's current resource but still cannot
+      // overwrite a state already recorded at a newer event timestamp.
+      currentSubscription = subscriptionFixture({ status: "active" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_late_active", 150, currentSubscription),
+        stripe,
+        db,
+      );
+      expect(state.subscriptions[0].status).toBe("PAST_DUE");
+
+      currentSubscription = subscriptionFixture({ status: "canceled" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_canceled", 300, currentSubscription),
+        stripe,
+        db,
+      );
+      expect(state.subscriptions[0].status).toBe("CANCELED");
+
+      currentSubscription = subscriptionFixture({ status: "active" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_resumed", 400, currentSubscription),
+        stripe,
+        db,
+      );
+      expect(state.subscriptions[0].status).toBe("ACTIVE");
+      expect(state.events).toHaveLength(6);
+    } finally {
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
 });
+
+type SiteRow = {
+  id: string;
+  slug: string;
+  status: string;
+  organizationId: string | null;
+};
+
+type SubscriptionRow = {
+  stripeCustomerId: string;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  status: string;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  lastStripeEventAt: Date | null;
+  organizationId: string;
+};
+
+function createWebhookDatabase() {
+  const state = {
+    events: [] as string[],
+    invitation: {
+      id: "invite_1",
+      email: "owner@chez-lea.test",
+      acceptedAt: null as Date | null,
+      stripeCheckoutSessionId: "cs_test_1",
+      stripePriceId: "price_growth",
+    },
+    sites: [
+      {
+        id: "site_1",
+        slug: "chez-lea",
+        status: "PREVIEW_READY",
+        organizationId: null,
+      },
+    ] as SiteRow[],
+    users: [] as Array<{ id: string; email: string }>,
+    organizations: [] as Array<{ id: string; name: string }>,
+    memberships: [] as Array<{ userId: string; organizationId: string }>,
+    subscriptions: [] as SubscriptionRow[],
+    audits: [] as unknown[],
+  };
+  let sequence = 0;
+  const nextId = (prefix: string) => `${prefix}_${(sequence += 1)}`;
+
+  const tx = {
+    stripeWebhookEvent: {
+      create: async ({ data }: { data: { eventId: string } }) => {
+        if (state.events.includes(data.eventId)) {
+          throw Object.assign(new Error("duplicate"), { code: "P2002" });
+        }
+        state.events.push(data.eventId);
+      },
+    },
+    claimInvitation: {
+      findUnique: async () => ({
+        ...state.invitation,
+        site: { id: state.sites[0].id, slug: state.sites[0].slug },
+      }),
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; acceptedAt: null };
+        data: { acceptedAt: Date };
+      }) => {
+        if (
+          state.invitation.id !== where.id ||
+          state.invitation.acceptedAt !== null
+        ) {
+          return { count: 0 };
+        }
+        state.invitation.acceptedAt = data.acceptedAt;
+        return { count: 1 };
+      },
+    },
+    user: {
+      upsert: async ({
+        where,
+        create,
+      }: {
+        where: { email: string };
+        create: { email: string };
+      }) => {
+        const existing = state.users.find((row) => row.email === where.email);
+        if (existing) return existing;
+        const user = { id: nextId("user"), email: create.email };
+        state.users.push(user);
+        return user;
+      },
+    },
+    membership: {
+      findFirst: async ({ where }: { where: { userId: string } }) =>
+        state.memberships.find((row) => row.userId === where.userId) ?? null,
+    },
+    organization: {
+      create: async ({
+        data,
+      }: {
+        data: {
+          name: string;
+          memberships: { create: { userId: string } };
+        };
+      }) => {
+        const organization = { id: nextId("org"), name: data.name };
+        state.organizations.push(organization);
+        state.memberships.push({
+          userId: data.memberships.create.userId,
+          organizationId: organization.id,
+        });
+        return organization;
+      },
+    },
+    site: {
+      findUnique: async ({ where }: { where: { slug: string } }) =>
+        state.sites.find((row) => row.slug === where.slug) ?? null,
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: {
+          slug: string;
+          organizationId: null;
+          status: { in: string[] };
+        };
+        data: Partial<SiteRow>;
+      }) => {
+        const matches = state.sites.filter(
+          (row) =>
+            row.slug === where.slug &&
+            row.organizationId === null &&
+            where.status.in.includes(row.status),
+        );
+        for (const row of matches) Object.assign(row, data);
+        return { count: matches.length };
+      },
+      count: async ({
+        where,
+      }: {
+        where: { slug: string; organizationId: string };
+      }) =>
+        state.sites.filter(
+          (row) =>
+            row.slug === where.slug &&
+            row.organizationId === where.organizationId,
+        ).length,
+    },
+    subscription: {
+      findUnique: async ({
+        where,
+      }: {
+        where: { stripeCustomerId: string };
+      }) =>
+        state.subscriptions.find(
+          (row) => row.stripeCustomerId === where.stripeCustomerId,
+        ) ?? null,
+      upsert: async ({
+        where,
+        update,
+        create,
+      }: {
+        where: { stripeCustomerId: string };
+        update: Partial<SubscriptionRow>;
+        create: SubscriptionRow;
+      }) => {
+        const existing = state.subscriptions.find(
+          (row) => row.stripeCustomerId === where.stripeCustomerId,
+        );
+        if (existing) return Object.assign(existing, update);
+        state.subscriptions.push(create);
+        return create;
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: {
+          stripeCustomerId: string;
+          OR: Array<
+            | { lastStripeEventAt: null }
+            | { lastStripeEventAt: { lte: Date } }
+          >;
+        };
+        data: Partial<SubscriptionRow>;
+      }) => {
+        const existing = state.subscriptions.find(
+          (row) => row.stripeCustomerId === where.stripeCustomerId,
+        );
+        if (!existing) return { count: 0 };
+        const eligible = where.OR.some((condition) => {
+          if (condition.lastStripeEventAt === null) {
+            return existing.lastStripeEventAt === null;
+          }
+          return (
+            existing.lastStripeEventAt !== null &&
+            existing.lastStripeEventAt <= condition.lastStripeEventAt.lte
+          );
+        });
+        if (!eligible) return { count: 0 };
+        Object.assign(existing, data);
+        return { count: 1 };
+      },
+    },
+    auditEvent: {
+      create: async (input: unknown) => {
+        state.audits.push(input);
+      },
+    },
+  };
+  const db = {
+    stripeWebhookEvent: {
+      findUnique: async ({ where }: { where: { eventId: string } }) =>
+        state.events.includes(where.eventId)
+          ? { eventId: where.eventId }
+          : null,
+    },
+    $transaction: async (
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(tx),
+  } as unknown as Pick<
+    PrismaClient,
+    "stripeWebhookEvent" | "$transaction"
+  >;
+  return { db, state };
+}
+
+function checkoutFixture(
+  subscription: Stripe.Subscription,
+): Stripe.Checkout.Session {
+  return {
+    id: "cs_test_1",
+    livemode: false,
+    mode: "subscription",
+    status: "complete",
+    payment_status: "paid",
+    client_reference_id: "invite_1",
+    customer: "cus_1",
+    customer_email: "owner@chez-lea.test",
+    customer_details: { email: "owner@chez-lea.test" },
+    metadata: {
+      claimInvitationId: "invite_1",
+      siteSlug: "chez-lea",
+      plan: "growth",
+    },
+    subscription,
+  } as unknown as Stripe.Checkout.Session;
+}
+
+function subscriptionFixture(
+  overrides: Partial<Stripe.Subscription> = {},
+): Stripe.Subscription {
+  return {
+    id: "sub_1",
+    customer: "cus_1",
+    status: "active",
+    cancel_at_period_end: false,
+    items: {
+      data: [
+        {
+          id: "si_1",
+          current_period_end: 1_785_110_400,
+          price: { id: "price_growth" },
+        },
+      ],
+    },
+    ...overrides,
+  } as Stripe.Subscription;
+}
+
+function checkoutEvent(id: string, created: number): Stripe.Event {
+  return {
+    id,
+    type: "checkout.session.completed",
+    created,
+    livemode: false,
+    data: { object: { id: "cs_test_1" } },
+  } as Stripe.Event;
+}
+
+function subscriptionEvent(
+  id: string,
+  created: number,
+  subscription: Stripe.Subscription,
+): Stripe.Event {
+  return {
+    id,
+    type: "customer.subscription.updated",
+    created,
+    livemode: false,
+    data: { object: subscription },
+  } as Stripe.Event;
+}
+
+function restoreEnvironment(name: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}

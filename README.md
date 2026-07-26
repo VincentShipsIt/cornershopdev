@@ -205,6 +205,8 @@ generation endpoint.
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_STARTER_PRICE_ID`
 - `STRIPE_GROWTH_PRICE_ID`
+- `STRIPE_LEGACY_PRICE_IDS` (optional comma-separated access allowlist used
+  during price migrations; never offered in Checkout)
 
 Configure the webhook endpoint as:
 

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { configuredBillingPlans } from "@/lib/billing-plans";
+import { checkoutSessionAction } from "@/lib/checkout-session-policy";
 import { isClaimInvitationAuthorized } from "@/lib/claim-authorization";
 import {
-  createCheckoutReturnState,
+  createCheckoutReturnToken,
   hashClaimInvitationToken,
 } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
         acceptedAt: true,
         stripeCheckoutSessionId: true,
         stripePriceId: true,
+        checkoutAttempt: true,
+        checkoutReturnExpiresAt: true,
         site: {
           select: {
             slug: true,
@@ -60,71 +63,106 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
-    if (invitation.stripePriceId && invitation.stripePriceId !== priceId) {
-      return Response.json(
-        { error: "This claim already has a checkout in progress" },
-        { status: 409 },
-      );
-    }
 
     const stripe = getStripe();
+    const staleSessionId = invitation.stripeCheckoutSessionId;
     if (invitation.stripeCheckoutSessionId) {
       const existing = await stripe.checkout.sessions.retrieve(
         invitation.stripeCheckoutSessionId,
       );
-      if (existing.url) {
+      let action = checkoutSessionAction(
+        {
+          status: existing.status,
+          url: existing.url,
+          priceId: invitation.stripePriceId,
+        },
+        priceId,
+      );
+      if (
+        action === "reuse" &&
+        (!invitation.checkoutReturnExpiresAt ||
+          invitation.checkoutReturnExpiresAt <= new Date())
+      ) {
+        action = "expire_and_replace";
+      }
+      if (action === "reuse" && existing.url) {
         return Response.json({ url: existing.url });
+      }
+      if (action === "await_provisioning") {
+        return Response.json(
+          { error: "Payment is complete and the account is being finalized" },
+          { status: 409 },
+        );
+      }
+      if (action === "expire_and_replace") {
+        await stripe.checkout.sessions.expire(existing.id);
       }
     }
 
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
-    const state = createCheckoutReturnState(invitation.id);
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
-      allow_promotion_codes: true,
-      customer_email: normalizedEmail,
-      client_reference_id: invitation.id,
-      metadata: {
-        claimInvitationId: invitation.id,
-        siteSlug,
-        plan,
-      },
-      subscription_data: {
+    const returnToken = createCheckoutReturnToken();
+    const returnExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const nextAttempt = invitation.checkoutAttempt + 1;
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        allow_promotion_codes: true,
+        customer_email: normalizedEmail,
+        client_reference_id: invitation.id,
         metadata: {
           claimInvitationId: invitation.id,
           siteSlug,
           plan,
         },
+        subscription_data: {
+          metadata: {
+            claimInvitationId: invitation.id,
+            siteSlug,
+            plan,
+          },
+        },
+        success_url:
+          `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}` +
+          `&claim_id=${encodeURIComponent(invitation.id)}` +
+          `&state=${encodeURIComponent(returnToken.token)}`,
+        // Never put the raw claim bearer token in a third-party return URL. A
+        // customer who cancels can reopen the original invitation.
+        cancel_url: `${appUrl}/claim/${encodeURIComponent(siteSlug)}?checkout=canceled`,
       },
-      success_url:
-        `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}` +
-        `&claim_id=${encodeURIComponent(invitation.id)}` +
-        `&state=${encodeURIComponent(state)}`,
-      // Never put the raw claim bearer token in a third-party return URL. A
-      // customer who cancels can reopen the original invitation.
-      cancel_url: `${appUrl}/claim/${encodeURIComponent(siteSlug)}?checkout=canceled`,
-    }, {
-      idempotencyKey: `claim-checkout-${invitation.id}`,
-    });
+      {
+        idempotencyKey: `claim-checkout-${invitation.id}-${nextAttempt}`,
+      },
+    );
 
     const bound = await db.claimInvitation.updateMany({
       where: {
         id: invitation.id,
         acceptedAt: null,
-        OR: [
-          { stripeCheckoutSessionId: null },
-          { stripeCheckoutSessionId: session.id },
-        ],
+        checkoutAttempt: invitation.checkoutAttempt,
+        stripeCheckoutSessionId: staleSessionId,
       },
       data: {
         stripeCheckoutSessionId: session.id,
         stripePriceId: priceId,
+        checkoutAttempt: nextAttempt,
+        checkoutReturnTokenHash: returnToken.tokenHash,
+        checkoutReturnExpiresAt: returnExpiresAt,
       },
     });
     if (bound.count !== 1) {
-      throw new Error("Claim invitation could not be bound to Checkout");
+      const winner = await db.claimInvitation.findUnique({
+        where: { id: invitation.id },
+        select: { stripeCheckoutSessionId: true },
+      });
+      if (winner?.stripeCheckoutSessionId === session.id && session.url) {
+        return Response.json({ url: session.url });
+      }
+      return Response.json(
+        { error: "Checkout changed in another request. Try again." },
+        { status: 409 },
+      );
     }
 
     return Response.json({ url: session.url });

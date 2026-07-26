@@ -70,6 +70,7 @@ export function ClaimPanel({
     if (!checkoutReturn) return;
     let stopped = false;
     let attempt = 0;
+    let retryTimer: number | undefined;
 
     async function reconcile() {
       const params = new URLSearchParams({
@@ -106,7 +107,10 @@ export function ClaimPanel({
       }
       attempt += 1;
       if (!stopped && attempt < 10) {
-        window.setTimeout(() => void reconcile(), Math.min(1_000 * attempt, 3_000));
+        retryTimer = window.setTimeout(
+          () => void reconcile(),
+          Math.min(1_000 * attempt, 3_000),
+        );
       } else if (!stopped) {
         setError(
           "Payment succeeded, but the account is still being finalized. Refresh in a moment.",
@@ -117,6 +121,7 @@ export function ClaimPanel({
     void reconcile();
     return () => {
       stopped = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, [checkoutReturn]);
 

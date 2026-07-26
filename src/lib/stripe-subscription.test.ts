@@ -19,6 +19,14 @@ describe("Stripe subscription lifecycle mapping", () => {
     expect(mapStripeSubscriptionStatus(stripeStatus)).toBe(localStatus);
   });
 
+  it("fails a future Stripe status closed until the mapping is updated", () => {
+    expect(
+      mapStripeSubscriptionStatus(
+        "future_status" as Stripe.Subscription.Status,
+      ),
+    ).toBe("INCOMPLETE");
+  });
+
   it("extracts the customer, configured price, period and cancellation state", () => {
     const snapshot = stripeSubscriptionSnapshot(
       subscription({

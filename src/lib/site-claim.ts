@@ -93,11 +93,10 @@ export type ClaimedSiteAccess = {
 /**
  * Turns a completed Stripe checkout into an owned site.
  *
- * Both the `success_url` callback and the `checkout.session.completed` webhook
- * run this, because either may arrive first and the browser redirect may never
- * arrive at all. It is therefore idempotent: the second caller finds the site
- * already owned by the same organization and returns without touching its
- * status, so a site that has since gone LIVE is not knocked back to CLAIMED.
+ * Stripe webhooks run this without relying on the browser returning from
+ * Checkout. It is idempotent because Stripe may deliver more than one
+ * completion event: a replay finds the site already owned by the same
+ * organization and leaves its status unchanged.
  *
  * Must be called inside a transaction — a rejected claim relies on the
  * rollback to undo the organization created moments earlier.

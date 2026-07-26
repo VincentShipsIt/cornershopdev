@@ -48,9 +48,16 @@ export function billingPlanForPrice(
 export function configuredBillingPriceIds(
   env: BillingEnvironment = process.env,
 ): Set<string> {
-  return new Set(
+  const current = new Set(
     Object.values(configuredBillingPlans(env)).map((plan) => plan.priceId),
   );
+  for (const priceId of (env.STRIPE_LEGACY_PRICE_IDS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)) {
+    current.add(validatePriceId(priceId, "STRIPE_LEGACY_PRICE_IDS"));
+  }
+  return current;
 }
 
 function validatePriceId(

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
-import { verifyCheckoutReturnState } from "@/lib/claim-security";
+import { verifyHashedToken } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
 import { getStripe } from "@/lib/stripe";
@@ -26,7 +26,28 @@ export async function GET(request: Request) {
     return Response.json({ error: "Invalid checkout return" }, { status: 400 });
   }
   const { sessionId, claimInvitationId, state, poll } = parsed.data;
-  if (!verifyCheckoutReturnState(claimInvitationId, state)) {
+  if (!process.env.DATABASE_URL) {
+    return Response.json(
+      { error: "Accounts are temporarily unavailable" },
+      { status: 503 },
+    );
+  }
+
+  const returnAuthorization = await getDb().claimInvitation.findUnique({
+    where: { id: claimInvitationId },
+    select: {
+      stripeCheckoutSessionId: true,
+      checkoutReturnTokenHash: true,
+      checkoutReturnExpiresAt: true,
+    },
+  });
+  if (
+    !returnAuthorization?.checkoutReturnTokenHash ||
+    !returnAuthorization.checkoutReturnExpiresAt ||
+    returnAuthorization.checkoutReturnExpiresAt <= new Date() ||
+    returnAuthorization.stripeCheckoutSessionId !== sessionId ||
+    !verifyHashedToken(state, returnAuthorization.checkoutReturnTokenHash)
+  ) {
     return Response.json({ error: "Invalid checkout return" }, { status: 403 });
   }
 
@@ -40,13 +61,6 @@ export async function GET(request: Request) {
     checkout.metadata?.claimInvitationId !== claimInvitationId
   ) {
     return Response.json({ error: "Checkout is not complete" }, { status: 400 });
-  }
-
-  if (!process.env.DATABASE_URL) {
-    return Response.json(
-      { error: "Accounts are temporarily unavailable" },
-      { status: 503 },
-    );
   }
 
   const customerId =

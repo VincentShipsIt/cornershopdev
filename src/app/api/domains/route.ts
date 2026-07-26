@@ -131,10 +131,6 @@ export async function GET(request: Request) {
       .parse(searchParams.get("siteSlug"));
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
-    const billing = await getOrganizationBillingAccess(
-      access.site.organizationId,
-    );
-    if (!billing.ok) return billingAccessFailureResponse(billing);
 
     const domain = await getDb().domain.findFirst({
       where: {

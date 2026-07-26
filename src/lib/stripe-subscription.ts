@@ -26,6 +26,10 @@ export function mapStripeSubscriptionStatus(
       return "PAST_DUE";
     case "canceled":
       return "CANCELED";
+    default:
+      // Stripe may introduce a status before this SDK is upgraded. Keep
+      // paid-feature access closed until that new state is understood.
+      return "INCOMPLETE";
   }
 }
 

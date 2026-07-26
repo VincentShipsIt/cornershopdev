@@ -1,4 +1,8 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 const developmentSecret = "cornershopdev-development-secret-change-me";
 
@@ -23,25 +27,22 @@ export function hashClaimInvitationToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function createCheckoutReturnState(
-  claimInvitationId: string,
-  secret = getClaimTokenSecret(),
-): string {
-  return createHmac("sha256", secret)
-    .update(`stripe-checkout-return:${claimInvitationId}`)
-    .digest("base64url");
+export function createCheckoutReturnToken(): {
+  token: string;
+  tokenHash: string;
+} {
+  const token = randomBytes(32).toString("base64url");
+  return { token, tokenHash: hashClaimInvitationToken(token) };
 }
 
-export function verifyCheckoutReturnState(
-  claimInvitationId: string,
-  supplied: string,
-  secret = getClaimTokenSecret(),
+export function verifyHashedToken(
+  suppliedToken: string,
+  expectedHash: string,
 ): boolean {
-  const expected = createCheckoutReturnState(claimInvitationId, secret);
-  const suppliedBuffer = Buffer.from(supplied);
-  const expectedBuffer = Buffer.from(expected);
+  const suppliedHash = Buffer.from(hashClaimInvitationToken(suppliedToken));
+  const expected = Buffer.from(expectedHash);
   return (
-    suppliedBuffer.length === expectedBuffer.length &&
-    timingSafeEqual(suppliedBuffer, expectedBuffer)
+    suppliedHash.length === expected.length &&
+    timingSafeEqual(suppliedHash, expected)
   );
 }

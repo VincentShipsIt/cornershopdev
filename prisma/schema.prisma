@@ -231,6 +231,9 @@ model ClaimInvitation {
   acceptedAt              DateTime?
   stripeCheckoutSessionId String?   @unique
   stripePriceId           String?
+  checkoutAttempt         Int       @default(0)
+  checkoutReturnTokenHash String?
+  checkoutReturnExpiresAt DateTime?
   siteId                  String
   site                    Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
   createdAt               DateTime  @default(now())

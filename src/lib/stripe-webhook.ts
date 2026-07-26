@@ -121,7 +121,7 @@ export async function processStripeWebhookEvent(
 async function retrieveCheckout(event: Stripe.Event, stripe: Stripe) {
   const eventSession = event.data.object as Stripe.Checkout.Session;
   const session = await stripe.checkout.sessions.retrieve(eventSession.id, {
-    expand: ["line_items.data.price", "subscription"],
+    expand: ["subscription"],
   });
   if (session.livemode !== event.livemode) {
     throw new StripeWebhookValidationError("Checkout mode mismatch");

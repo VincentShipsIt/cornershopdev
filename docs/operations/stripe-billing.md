@@ -13,12 +13,19 @@ The deployment requires all of:
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_STARTER_PRICE_ID`
 - `STRIPE_GROWTH_PRICE_ID`
+- `STRIPE_LEGACY_PRICE_IDS` (optional comma-separated retired price IDs)
 - `CLAIM_TOKEN_SECRET`
 
 Starter and Growth must be distinct active recurring Stripe Price IDs. Test
 mode and live mode have separate keys, prices, Customer Portal configurations,
 webhook endpoints, and signing secrets. Never copy a test identifier into
 Production or a live identifier into local development.
+
+When rotating a price, add the retiring price ID to
+`STRIPE_LEGACY_PRICE_IDS` and deploy that access allowlist before changing the
+current plan price ID. Existing subscribers then retain publishing access while
+new Checkout Sessions use only the new price. Remove the legacy ID only after
+all affected subscriptions have migrated or ended.
 
 Checkout also requires an unexpired, unused `ClaimInvitation` whose SHA-256
 token hash, intended email, and site all match. Issue #13 owns invitation

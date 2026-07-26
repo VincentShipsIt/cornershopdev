@@ -1,7 +1,10 @@
 -- AlterTable
 ALTER TABLE "ClaimInvitation"
 ADD COLUMN "stripeCheckoutSessionId" TEXT,
-ADD COLUMN "stripePriceId" TEXT;
+ADD COLUMN "stripePriceId" TEXT,
+ADD COLUMN "checkoutAttempt" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "checkoutReturnTokenHash" TEXT,
+ADD COLUMN "checkoutReturnExpiresAt" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "Subscription"
