@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { FACTORY_BRAND } from "@/lib/brand";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,14 +24,32 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_APP_URL ?? "https://cornershop.dev",
   ),
   title: {
-    default: "Cornershopdev — Your restaurant's front door, always current",
+    default: "Cornershopdev — the website factory for small business",
     template: "%s | Cornershopdev",
   },
   description:
-    "Turn any restaurant website into a polished, mobile-first presence with an always-current menu, without replacing bookings or ordering.",
+    "One engine, one database and a focused storefront brand for every trade.",
+  icons: FACTORY_BRAND.mark
+    ? {
+        icon: [
+          {
+            url: FACTORY_BRAND.mark.faviconSrc,
+            type: "image/png",
+            sizes: "32x32",
+          },
+        ],
+        apple: [
+          {
+            url: FACTORY_BRAND.mark.appleTouchIconSrc,
+            type: "image/png",
+            sizes: "180x180",
+          },
+        ],
+      }
+    : undefined,
   openGraph: {
     title: "Cornershopdev",
-    description: "Your restaurant's front door, always current.",
+    description: "The website factory for small business.",
     siteName: "Cornershopdev",
     type: "website",
   },

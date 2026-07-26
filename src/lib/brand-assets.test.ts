@@ -1,15 +1,27 @@
 import { describe, expect, it } from "bun:test";
+import { FACTORY_BRAND } from "@/lib/brand";
 
-const restofrontappAssets = [
+const brandAssetSets = [
+  {
+    brand: "Restofrontapp",
+    folder: "restofrontapp",
+  },
+  {
+    brand: "Cornershopdev",
+    folder: "cornershopdev",
+  },
+] as const;
+
+const assets = [
   { name: "logo-square.png", size: 1024 },
   { name: "mark.png", size: 512 },
   { name: "apple-touch-icon.png", size: 180 },
   { name: "favicon-32.png", size: 32 },
 ] as const;
 
-async function readPngDimensions(name: string) {
+async function readPngDimensions(folder: string, name: string) {
   const path = new URL(
-    `../../public/brand/restofrontapp/${name}`,
+    `../../public/brand/${folder}/${name}`,
     import.meta.url,
   );
   const bytes = await Bun.file(path).arrayBuffer();
@@ -30,14 +42,30 @@ async function readPngDimensions(name: string) {
   };
 }
 
-describe("Restofrontapp brand assets", () => {
-  it("keeps every production PNG square, transparent, and correctly sized", async () => {
-    for (const asset of restofrontappAssets) {
-      await expect(readPngDimensions(asset.name)).resolves.toEqual({
-        width: asset.size,
-        height: asset.size,
-        colorType: 6,
-      });
-    }
+describe("production brand assets", () => {
+  for (const identity of brandAssetSets) {
+    it(`keeps every ${identity.brand} PNG square, transparent, and correctly sized`, async () => {
+      for (const asset of assets) {
+        await expect(
+          readPngDimensions(identity.folder, asset.name),
+        ).resolves.toEqual({
+          width: asset.size,
+          height: asset.size,
+          colorType: 6,
+        });
+      }
+    });
+  }
+
+  it("registers the selected Cornershopdev mark for UI and browser chrome", () => {
+    expect(FACTORY_BRAND).toEqual({
+      name: "Cornershopdev",
+      initials: "CS",
+      mark: {
+        src: "/brand/cornershopdev/mark.png",
+        faviconSrc: "/brand/cornershopdev/favicon-32.png",
+        appleTouchIconSrc: "/brand/cornershopdev/apple-touch-icon.png",
+      },
+    });
   });
 });

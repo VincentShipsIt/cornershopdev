@@ -1,10 +1,11 @@
 # Brand identity concepts
 
 Generated with the built-in OpenAI image generator on 2026-07-26. These are
-directional review boards. Restofrontapp 05 is the selected direction; its chosen
-favicon artwork has been prepared as production raster assets under
-`public/brand/restofrontapp/`. The transparent, flat 1024 × 1024 master is
-`logo-square.png`; its exact burgundy is recorded in the root `DESIGN.md`.
+directional review boards. Cornershopdev 02 and Restofrontapp 05 are the selected
+directions. Their chosen artwork has been rebuilt as flat, transparent production
+assets under `public/brand/cornershopdev/` and `public/brand/restofrontapp/`.
+Each identity has a 1024 × 1024 master plus favicon derivatives and a linted
+DESIGN.md specification.
 
 ## Cornershopdev
 
@@ -19,7 +20,7 @@ space. Show a standalone mark, horizontal wordmark, and favicon tile. Use
 charcoal, warm cream, and burnt orange. Keep the silhouette bold and avoid
 shopping carts, globes, gears, clip art, gradients, slogans, and extra text.
 
-### 02 — Folded corner
+### 02 — Folded corner (selected)
 
 ![Folded corner concept](./cornershopdev-02-folded-corner.png)
 

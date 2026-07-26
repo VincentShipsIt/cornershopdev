@@ -7,7 +7,7 @@
     "build": "bunx --bun prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "design:lint": "designmd lint DESIGN.md",
+    "design:lint": "designmd lint DESIGN.md && designmd lint docs/brand/cornershopdev/DESIGN.md",
     "test": "bun test",
     "db:migrate:status": "bunx --bun prisma migrate status",
     "db:migrate:deploy": "bunx --bun prisma migrate deploy",

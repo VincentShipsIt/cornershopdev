@@ -21,4 +21,9 @@ export type BrandIdentity = {
 export const FACTORY_BRAND: BrandIdentity = {
   name: "Cornershopdev",
   initials: "CS",
+  mark: {
+    src: "/brand/cornershopdev/mark.png",
+    faviconSrc: "/brand/cornershopdev/favicon-32.png",
+    appleTouchIconSrc: "/brand/cornershopdev/apple-touch-icon.png",
+  },
 };
