@@ -11,9 +11,10 @@ Reference: the selected Fork R favicon from the Restofront 05 concept board.
 - `public/brand/restofront/favicon-32.png` — 32 × 32
 - `public/brand/restofront/apple-touch-icon.png` — 180 × 180
 
-The selected artwork was redrawn into a true square master, flattened to the
-`#7F2020` burgundy and `#F7F1E7` cream recorded in `DESIGN.md`, then resized
-without changing its fork, R, or rounded-square treatment.
+The selected artwork was redrawn into a true square RGBA master, flattened to
+the `#7F2020` burgundy and `#F7F1E7` cream recorded in `DESIGN.md`, made
+transparent outside the burgundy tile, then resized without changing its fork,
+R, or rounded-square treatment.
 
 ## Rendered checks
 
@@ -27,7 +28,8 @@ without changing its fork, R, or rounded-square treatment.
 
 ## Verification
 
-- All four production PNG exports pass an automated square-dimension check.
+- All four production PNG exports pass automated square-dimension and RGBA
+  transparency checks.
 - Google's official `@google/design.md` linter reports zero errors and zero
   warnings for the root `DESIGN.md`.
 - 87 tests passed.

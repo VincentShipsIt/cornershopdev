@@ -21,15 +21,19 @@ async function readPngDimensions(name: string) {
   return {
     width: view.getUint32(16),
     height: view.getUint32(20),
+    // PNG color type 6 is truecolor with alpha. Keeping this at the file-header
+    // level makes the check independent of an image-decoding test dependency.
+    colorType: view.getUint8(25),
   };
 }
 
 describe("Restofront brand assets", () => {
-  it("keeps every production PNG square at its declared export size", async () => {
+  it("keeps every production PNG square, transparent, and correctly sized", async () => {
     for (const asset of restofrontAssets) {
       await expect(readPngDimensions(asset.name)).resolves.toEqual({
         width: asset.size,
         height: asset.size,
+        colorType: 6,
       });
     }
   });

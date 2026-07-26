@@ -112,13 +112,15 @@ The brand mark itself is always flat.
 
 Cards use restrained rounded corners. Pills are appropriate only for badges and
 small status labels. The logo master is always a true 1:1 square PNG; the
-burgundy tile stays optically centered with equal padding on all four sides.
+burgundy tile stays optically centered with equal transparent padding on all
+four sides.
 
 ## Components
 
 - **Brand mark:** use `public/brand/restofront/logo-square.png` as the 1024 ×
-  1024 master. Derive smaller raster exports from it without stretching,
-  non-square cropping, color adjustment or effects.
+  1024 RGBA master. The canvas outside the burgundy tile is transparent. Derive
+  smaller raster exports from it without stretching, non-square cropping, color
+  adjustment or effects.
 - **Primary button:** burgundy background, cream text, 44px height.
 - **Cards:** warm cream surface, quiet border, 24–32px corner radius.
 - **Dark sections:** green-black surface with white text and burgundy/terracotta
@@ -128,7 +130,9 @@ burgundy tile stays optically centered with equal padding on all four sides.
 
 - Do keep the fork and R readable at 32px.
 - Do use the exact `#7F2020` burgundy for every flat brand application.
-- Do preserve the square logo master and generate square favicon exports.
+- Do preserve the transparent square logo master and generate transparent square
+  favicon exports.
 - Don't add gradients, bevels, shadows, textures or mockup lighting to the mark.
+- Don't place a cream or white rectangle behind the burgundy tile.
 - Don't add a knife, plate, cloche, chef hat or a second restaurant symbol.
 - Don't expose unlaunched verticals on the factory homepage.
