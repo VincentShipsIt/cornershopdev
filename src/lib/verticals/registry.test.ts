@@ -49,6 +49,22 @@ describe("vertical registry", () => {
     ).toBe("warm");
   });
 
+  it("preserves template-driven dish imagery when normalizing theme selection", () => {
+    const attributes = restaurantConfig.attributesSchema.parse({
+      cuisine: "Modern Italian",
+      showMenuImages: false,
+    });
+    const template = restaurantConfig.templates.resolve(attributes);
+    const normalized = restaurantConfig.normalizeGeneratedAttributes(
+      attributes,
+      template,
+    );
+
+    expect(template.id).toBe("warm");
+    expect(template.showMenuImagesByDefault).toBe(true);
+    expect(normalized.showMenuImages).toBe(true);
+  });
+
   it("resolves beauty templates by controlled service style", () => {
     expect(
       beautyConfig.templates.resolve({

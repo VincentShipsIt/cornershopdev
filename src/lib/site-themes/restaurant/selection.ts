@@ -197,18 +197,21 @@ export function normalizeGeneratedRestaurantThemeSelection(
     restaurantDesignProfileSchema.safeParse(profileInput).data ??
     DEFAULT_RESTAURANT_DESIGN_PROFILE;
   const parsed = restaurantThemeSelectionSchema.safeParse(generatedSelection);
-  const aiOutput = parsed.success
-    ? {
-        themeId: parsed.data.themeId,
-        confidence: parsed.data.confidence,
-        reasons: parsed.data.reasons,
-        alternatives: parsed.data.alternatives,
-        tokens: parsed.data.tokens,
-      }
-    : generatedSelection;
+  if (!parsed.success) {
+    return {
+      designProfile: profile,
+      themeSelection: selectDeterministicRestaurantTheme(profile),
+    };
+  }
 
   return {
     designProfile: profile,
-    themeSelection: selectRestaurantTheme(profile, aiOutput),
+    themeSelection: selectRestaurantTheme(profile, {
+      themeId: parsed.data.themeId,
+      confidence: parsed.data.confidence,
+      reasons: parsed.data.reasons,
+      alternatives: parsed.data.alternatives,
+      tokens: parsed.data.tokens,
+    }),
   };
 }

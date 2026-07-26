@@ -9,10 +9,9 @@ import {
   restaurantThemeSelectionSchema,
 } from "@/lib/site-themes/restaurant/contracts";
 import { restaurantThemeFixtures } from "@/lib/site-themes/restaurant/fixtures";
+import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
 import {
-  listRestaurantThemeManifests,
-} from "@/lib/site-themes/restaurant/registry";
-import {
+  normalizeGeneratedRestaurantThemeSelection,
   parseRestaurantThemeSelection,
   scoreRestaurantThemes,
   selectRestaurantTheme,
@@ -157,6 +156,35 @@ describe("bounded restaurant theme selection", () => {
     expect(absent.source).toBe("deterministic");
   });
 
+  it("does not upgrade bare or version-incompatible model output", () => {
+    const bareAiShape = normalizeGeneratedRestaurantThemeSelection(takeaway, {
+      themeId: "terroir-editorial",
+      confidence: 0.9,
+      reasons: ["Unversioned model choice"],
+      alternatives: ["after-dark", "counter-service"],
+      tokens: {},
+    });
+    const incompatibleVersion = normalizeGeneratedRestaurantThemeSelection(
+      takeaway,
+      {
+        schemaVersion: 1,
+        rendererVersion: 2,
+        themeId: "terroir-editorial",
+        source: "ai",
+        confidence: 0.9,
+        reasons: ["Future renderer"],
+        alternatives: ["after-dark", "counter-service"],
+        tokens: {},
+      },
+    );
+
+    expect(bareAiShape.themeSelection.source).toBe("deterministic");
+    expect(bareAiShape.themeSelection.themeId).toBe("counter-service");
+    expect(incompatibleVersion.themeSelection).toEqual(
+      bareAiShape.themeSelection,
+    );
+  });
+
   it("repairs body, surface and action contrast after token merging", () => {
     const selection = selectRestaurantTheme(fineDining, {
       themeId: "terroir-editorial",
@@ -285,5 +313,48 @@ describe("restaurant theme renderers", () => {
         expect(html).not.toContain('data-menu-experience="commerce"');
       }
     }
+  });
+
+  it("localizes theme chrome and preserves locale navigation", () => {
+    const expectedFrenchChrome = {
+      "terroir-editorial": "Guidé par la saison.",
+      "counter-service": "Choisissez votre commande.",
+      "after-dark": "Prolongez la soirée.",
+    } as const;
+
+    for (const manifest of listRestaurantThemeManifests()) {
+      const fixture = restaurantThemeFixtures[manifest.id];
+      const selection = restaurantThemeSelectionSchema.parse(
+        fixture.attributes.themeSelection,
+      );
+      const html = renderToStaticMarkup(
+        <RestaurantThemeRenderer
+          draft={fixture}
+          selection={selection}
+          locale="fr"
+          localeBasePath={`/preview/${fixture.slug}`}
+          availableLocales={["en", "fr"]}
+        />,
+      );
+
+      expect(html).toContain('lang="fr"');
+      expect(html).toContain('aria-label="Langue"');
+      expect(html).toContain(`/preview/${fixture.slug}/fr`);
+      expect(html).toContain(expectedFrenchChrome[manifest.id]);
+    }
+  });
+
+  it("does not invent operational hours for the after-dark theme", () => {
+    const fixture = restaurantThemeFixtures["after-dark"];
+    const selection = restaurantThemeSelectionSchema.parse(
+      fixture.attributes.themeSelection,
+    );
+    const html = renderToStaticMarkup(
+      <RestaurantThemeRenderer draft={fixture} selection={selection} />,
+    );
+
+    expect(html).not.toContain("Drinks from 18:00");
+    expect(html).not.toContain("late kitchen");
+    expect(html).toContain("Tonight’s programme");
   });
 });

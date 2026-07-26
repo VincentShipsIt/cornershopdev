@@ -139,7 +139,7 @@ export const restaurantConfig = {
     definitions: restaurantTemplates,
     resolve: resolveRestaurantTemplateFromAttributes,
   },
-  normalizeGeneratedAttributes: (attributes) => {
+  normalizeGeneratedAttributes: (attributes, template) => {
     const theme = normalizeGeneratedRestaurantThemeSelection(
       attributes.designProfile,
       attributes.themeSelection,
@@ -147,7 +147,9 @@ export const restaurantConfig = {
     return {
       ...attributes,
       ...theme,
-      showMenuImages: theme.themeSelection.themeId === "counter-service",
+      showMenuImages:
+        template.showMenuImagesByDefault ||
+        theme.themeSelection.themeId === "counter-service",
     };
   },
   providers: restaurantProviders,

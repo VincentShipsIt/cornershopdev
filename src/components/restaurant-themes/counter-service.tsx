@@ -6,6 +6,7 @@ import {
   ThemeAnalytics,
   ThemeExternalAction,
   ThemeHeroImage,
+  ThemeLocaleNavigation,
   ThemeLocation,
   type RestaurantThemeRendererProps,
 } from "@/components/restaurant-themes/shared";
@@ -15,6 +16,9 @@ export function CounterServiceTheme({
   draft,
   selection,
   locale = draft.defaultLocale,
+  localeBasePath,
+  availableLocales = [draft.defaultLocale],
+  dictionary,
   embedded = false,
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
@@ -48,6 +52,13 @@ export function CounterServiceTheme({
           {draft.name}
         </a>
         <div className="flex items-center gap-2">
+          <ThemeLocaleNavigation
+            locale={locale}
+            localeBasePath={localeBasePath}
+            availableLocales={availableLocales}
+            defaultLocale={draft.defaultLocale}
+            label={dictionary.language}
+          />
           <ThemeLocation
             draft={draft}
             className="hidden max-w-[16rem] text-xs font-medium md:flex"
@@ -55,6 +66,7 @@ export function CounterServiceTheme({
           {ordering ? (
             <ThemeExternalAction
               integration={ordering}
+              locale={locale}
               className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--theme-accent)] px-5 py-3 text-sm font-black text-[var(--theme-accent-fg)]"
             />
           ) : null}
@@ -83,6 +95,7 @@ export function CounterServiceTheme({
             {ordering ? (
               <ThemeExternalAction
                 integration={ordering}
+                locale={locale}
                 className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-current bg-[var(--theme-surface)] px-5 py-3 text-sm font-black"
               />
             ) : (
@@ -90,19 +103,20 @@ export function CounterServiceTheme({
                 href="#menu"
                 className="rounded-full border-2 border-current px-5 py-3 text-center text-sm font-black"
               >
-                Browse the menu
+                {dictionary.themeBrowseMenu}
               </a>
             )}
           </div>
         </div>
         <ThemeHeroImage
           draft={draft}
+          imageAlt={`${dictionary.heroImageAlt} ${draft.name}`}
           className="min-h-[400px] border-t-2 border-current lg:min-h-[640px] lg:border-l-2 lg:border-t-0"
         />
       </section>
 
       <nav
-        aria-label="Menu categories"
+        aria-label={dictionary.themeMenuCategories}
         className="sticky top-0 z-10 flex gap-2 overflow-x-auto border-b-2 border-current bg-[var(--theme-bg)] px-5 py-3 md:px-8"
       >
         {draft.catalogSections.map((section, index) => (
@@ -121,10 +135,10 @@ export function CounterServiceTheme({
           <div className="flex flex-col gap-4 border-b-2 border-current pb-8 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.12em]">
-                Ready when you are
+                {dictionary.counterMenuEyebrow}
               </p>
               <h2 className="mt-2 text-5xl font-black tracking-[-0.055em] md:text-7xl">
-                Pick your order.
+                {dictionary.counterMenuHeading}
               </h2>
             </div>
             <ThemeLocation draft={draft} className="max-w-sm text-sm" />
@@ -177,7 +191,12 @@ export function CounterServiceTheme({
         </div>
       </section>
 
-      <footer className="border-t-2 border-current px-5 py-8 md:px-8">
+      <footer
+        className={cn(
+          "border-t-2 border-current px-5 py-8 md:px-8",
+          ordering && !embedded ? "pb-24 md:pb-8" : undefined,
+        )}
+      >
         <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <span className="font-black">{draft.name}</span>
           <span>{draft.address}</span>
@@ -188,6 +207,7 @@ export function CounterServiceTheme({
         <div className="fixed inset-x-4 bottom-4 z-30 md:hidden">
           <ThemeExternalAction
             integration={ordering}
+            locale={locale}
             className="flex min-h-14 items-center justify-center gap-2 rounded-full border-2 border-current bg-[var(--theme-accent)] px-6 py-4 text-sm font-black text-[var(--theme-accent-fg)] shadow-xl"
           />
         </div>
@@ -196,6 +216,7 @@ export function CounterServiceTheme({
         <div className="sticky bottom-3 z-20 mx-3">
           <ThemeExternalAction
             integration={ordering}
+            locale={locale}
             className="flex min-h-12 items-center justify-center gap-2 rounded-full border-2 border-current bg-[var(--theme-accent)] px-5 py-3 text-xs font-black text-[var(--theme-accent-fg)] shadow-lg"
           />
         </div>

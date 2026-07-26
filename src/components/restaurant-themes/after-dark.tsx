@@ -7,6 +7,7 @@ import {
   ThemeAnalytics,
   ThemeExternalAction,
   ThemeHeroImage,
+  ThemeLocaleNavigation,
   ThemeLocation,
   type RestaurantThemeRendererProps,
 } from "@/components/restaurant-themes/shared";
@@ -16,6 +17,9 @@ export function AfterDarkTheme({
   draft,
   selection,
   locale = draft.defaultLocale,
+  localeBasePath,
+  availableLocales = [draft.defaultLocale],
+  dictionary,
   embedded = false,
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
@@ -44,6 +48,7 @@ export function AfterDarkTheme({
       <section className="relative min-h-[82svh] overflow-hidden border-b border-white/15">
         <ThemeHeroImage
           draft={draft}
+          imageAlt={`${dictionary.heroImageAlt} ${draft.name}`}
           className="absolute inset-0"
           overlayClassName="bg-[linear-gradient(90deg,rgba(7,6,6,0.92),rgba(7,6,6,0.34)_62%,rgba(7,6,6,0.58))]"
         />
@@ -58,15 +63,25 @@ export function AfterDarkTheme({
             {draft.name}
           </a>
           <div className="flex items-center gap-4">
+            <ThemeLocaleNavigation
+              locale={locale}
+              localeBasePath={localeBasePath}
+              availableLocales={availableLocales}
+              defaultLocale={draft.defaultLocale}
+              label={dictionary.language}
+              className="border-white/30"
+            />
             {eventLink ? (
               <ThemeExternalAction
                 integration={eventLink}
+                locale={locale}
                 className="hidden items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] sm:inline-flex"
               />
             ) : null}
             {booking ? (
               <ThemeExternalAction
                 integration={booking}
+                locale={locale}
                 className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--theme-accent)] px-4 py-3 text-xs font-black uppercase tracking-[0.11em] text-[var(--theme-accent-fg)]"
               />
             ) : null}
@@ -101,27 +116,23 @@ export function AfterDarkTheme({
         </div>
       </section>
 
-      <section className="border-b border-current/15 bg-[var(--theme-surface)] px-6 py-7 md:px-10">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <CalendarDays className="size-5 text-[var(--theme-accent)]" />
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">
-                This evening
-              </p>
-              <p className="mt-1 text-sm font-semibold">
-                Drinks from 18:00 · late kitchen · midnight set
+      {eventLink ? (
+        <section className="border-b border-current/15 bg-[var(--theme-surface)] px-6 py-7 md:px-10">
+          <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <CalendarDays className="size-5 text-[var(--theme-accent)]" />
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em]">
+                {dictionary.afterDarkEventsEyebrow}
               </p>
             </div>
-          </div>
-          {eventLink ? (
             <ThemeExternalAction
               integration={eventLink}
+              locale={locale}
               className="inline-flex items-center gap-2 border-b border-current pb-1 text-xs font-bold uppercase tracking-[0.12em]"
             />
-          ) : null}
-        </div>
-      </section>
+          </div>
+        </section>
+      ) : null}
 
       <section
         id="menu"
@@ -131,7 +142,7 @@ export function AfterDarkTheme({
           <div className="grid gap-8 border-b border-current/20 pb-10 lg:grid-cols-[0.7fr_1.3fr] lg:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--theme-accent)]">
-                Food & drink
+                {dictionary.afterDarkMenuEyebrow}
               </p>
               <h2
                 className={cn(
@@ -139,12 +150,11 @@ export function AfterDarkTheme({
                   fontPairClass(tokens),
                 )}
               >
-                Stay after dark.
+                {dictionary.afterDarkMenuHeading}
               </h2>
             </div>
             <p className="max-w-xl text-sm leading-7 opacity-65 lg:justify-self-end">
-              House drinks and late plates, presented plainly enough to choose
-              in low light.
+              {dictionary.afterDarkMenuIntro}
             </p>
           </div>
           <div className="grid gap-12 pt-12 lg:grid-cols-2">
@@ -203,11 +213,12 @@ export function AfterDarkTheme({
               fontPairClass(tokens),
             )}
           >
-            A table, a drink, then one more song.
+            {dictionary.afterDarkClosing}
           </p>
           {booking ? (
             <ThemeExternalAction
               integration={booking}
+              locale={locale}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-[var(--theme-accent-fg)] px-5 py-3 text-sm font-black uppercase tracking-[0.1em] text-[var(--theme-accent)]"
             />
           ) : null}

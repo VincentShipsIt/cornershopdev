@@ -6,6 +6,7 @@ import {
   ThemeAnalytics,
   ThemeExternalAction,
   ThemeHeroImage,
+  ThemeLocaleNavigation,
   ThemeLocation,
   type RestaurantThemeRendererProps,
 } from "@/components/restaurant-themes/shared";
@@ -15,6 +16,9 @@ export function TerroirEditorialTheme({
   draft,
   selection,
   locale = draft.defaultLocale,
+  localeBasePath,
+  availableLocales = [draft.defaultLocale],
+  dictionary,
   embedded = false,
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
@@ -50,19 +54,29 @@ export function TerroirEditorialTheme({
         >
           {draft.name}
         </a>
-        {booking ? (
-          <ThemeExternalAction
-            integration={booking}
-            className="inline-flex min-h-11 items-center gap-2 border-b border-current pb-1 text-xs font-semibold uppercase tracking-[0.16em]"
+        <div className="flex items-center gap-3">
+          <ThemeLocaleNavigation
+            locale={locale}
+            localeBasePath={localeBasePath}
+            availableLocales={availableLocales}
+            defaultLocale={draft.defaultLocale}
+            label={dictionary.language}
           />
-        ) : (
-          <a
-            href="#visit"
-            className="border-b border-current pb-1 text-xs font-semibold uppercase tracking-[0.16em]"
-          >
-            Plan a visit
-          </a>
-        )}
+          {booking ? (
+            <ThemeExternalAction
+              integration={booking}
+              locale={locale}
+              className="inline-flex min-h-11 items-center gap-2 border-b border-current pb-1 text-xs font-semibold uppercase tracking-[0.16em]"
+            />
+          ) : (
+            <a
+              href="#visit"
+              className="border-b border-current pb-1 text-xs font-semibold uppercase tracking-[0.16em]"
+            >
+              {dictionary.themePlanVisit}
+            </a>
+          )}
+        </div>
       </header>
 
       <section className="grid min-h-[74svh] lg:grid-cols-[0.82fr_1.18fr]">
@@ -87,6 +101,7 @@ export function TerroirEditorialTheme({
         </div>
         <ThemeHeroImage
           draft={draft}
+          imageAlt={`${dictionary.heroImageAlt} ${draft.name}`}
           className="min-h-[480px] lg:min-h-full"
           overlayClassName="bg-[linear-gradient(180deg,transparent_65%,rgba(20,18,15,0.18))]"
         />
@@ -99,7 +114,7 @@ export function TerroirEditorialTheme({
         <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[0.55fr_1.45fr]">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-55">
-              The menu
+              {dictionary.themeMenuEyebrow}
             </p>
             <h2
               className={cn(
@@ -107,7 +122,7 @@ export function TerroirEditorialTheme({
                 fontPairClass(tokens),
               )}
             >
-              Guided by the season.
+              {dictionary.terroirMenuHeading}
             </h2>
           </div>
           <div className="space-y-14">
@@ -160,7 +175,7 @@ export function TerroirEditorialTheme({
         <div className="mx-auto flex max-w-6xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-55">
-              At the table
+              {dictionary.terroirVisitEyebrow}
             </p>
             <p
               className={cn(
@@ -168,13 +183,14 @@ export function TerroirEditorialTheme({
                 fontPairClass(tokens),
               )}
             >
-              Make time for the whole menu.
+              {dictionary.terroirVisitHeading}
             </p>
           </div>
           <div className="flex flex-wrap gap-5">
             {booking ? (
               <ThemeExternalAction
                 integration={booking}
+                locale={locale}
                 className="inline-flex items-center gap-2 bg-[var(--theme-accent)] px-5 py-3 text-sm font-semibold text-[var(--theme-accent-fg)]"
               />
             ) : null}
@@ -182,6 +198,7 @@ export function TerroirEditorialTheme({
               <ThemeExternalAction
                 key={`${integration.type}-${integration.url}`}
                 integration={integration}
+                locale={locale}
                 className="inline-flex items-center gap-2 border-b border-current py-2 text-sm"
               />
             ))}
