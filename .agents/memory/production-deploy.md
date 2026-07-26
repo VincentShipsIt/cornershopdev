@@ -8,6 +8,12 @@ status: durable
 Host `i-00e74422e719396c3` (us-west-1), single container `cornershopdev` behind
 `shipshit-caddy`, single-origin on `cornershop.dev`.
 
+Production application data and Workflow state both use the PostgreSQL database
+`cornershopdev` on RDS `api-shipshit-dev`. It was renamed in place from
+`restofront` on 2026-07-26; the original `restofront_app` owner was preserved
+and both encrypted SSM URLs were updated before the same v0.2.0 artifact was
+redeployed.
+
 ## Deploying is a release, never a merge
 
 `ci.yml` runs `deploy` only on `workflow_dispatch` or a **published,
@@ -79,3 +85,22 @@ Read-only inspection of the running container goes through
 `aws ssm send-command --document-name AWS-RunShellScript`. Long inline
 compound commands trip the permission classifier; write the parameters payload
 to a JSON file and pass `--parameters file://<path>` instead.
+
+## Legacy AWS cleanup completed
+
+The infrastructure side of the restofront→cornershopdev rebrand was closed out
+on 2026-07-26:
+
+- CloudFront distribution `E3GR7TCBV48UVV` was disabled, allowed to finish
+  deploying, then deleted.
+- `api.restofront.com`, `assets.restofront.com`, and the assets certificate
+  validation CNAME were deleted from Route 53.
+- The `assets.restofront.com` ACM certificate was deleted after CloudFront no
+  longer referenced it.
+- Inline IAM policy `restofront-ssm-deploy` was replaced by
+  `cornershopdev-ssm-deploy`; `restofront-aws-provision` was deleted.
+- The PostgreSQL database was renamed from `restofront` to `cornershopdev`
+  without copying or dropping data.
+
+Do not treat other `restofront.com` records as cleanup targets. Restofront is
+the active restaurant niche, and its email/DKIM records remain intentional.
