@@ -47,15 +47,20 @@ export function ClaimPanel({
   slug,
   vertical,
   fallbackDraft,
+  checkoutReturn,
 }: {
   slug: string;
   vertical: VerticalId;
   fallbackDraft: SiteDraftView;
+  checkoutReturn: {
+    sessionId: string;
+    claimInvitationId: string;
+  } | null;
 }) {
   const draft = fallbackDraft;
   const [plan, setPlan] = useState<"starter" | "growth">("growth");
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(checkoutReturn));
   const [invitationSent, setInvitationSent] = useState(false);
   const [invitationToken, setInvitationToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +83,64 @@ export function ClaimPanel({
       if (revealToken !== undefined) window.clearTimeout(revealToken);
     };
   }, []);
+
+  useEffect(() => {
+    if (!checkoutReturn) return;
+    let stopped = false;
+    let attempt = 0;
+    let retryTimer: number | undefined;
+
+    async function reconcile() {
+      const params = new URLSearchParams({
+        session_id: checkoutReturn!.sessionId,
+        claim_id: checkoutReturn!.claimInvitationId,
+        poll: "1",
+      });
+      try {
+        const response = await fetch(`/api/auth/checkout?${params}`, {
+          cache: "no-store",
+        });
+        const result = (await response.json()) as {
+          ready?: boolean;
+          url?: string;
+          error?: string;
+        };
+        if (response.ok && result.ready && result.url) {
+          window.location.assign(result.url);
+          return;
+        }
+        if (!response.ok && response.status !== 202) {
+          throw new Error(result.error ?? "Account provisioning failed");
+        }
+      } catch (caught) {
+        if (!stopped) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Account provisioning failed",
+          );
+        }
+        return;
+      }
+      attempt += 1;
+      if (!stopped && attempt < 10) {
+        retryTimer = window.setTimeout(
+          () => void reconcile(),
+          Math.min(1_000 * attempt, 3_000),
+        );
+      } else if (!stopped) {
+        setError(
+          "Payment succeeded, but the account is still being finalized. Refresh in a moment.",
+        );
+      }
+    }
+
+    void reconcile();
+    return () => {
+      stopped = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [checkoutReturn]);
 
   async function requestInvitation() {
     if (!email) return;
@@ -187,6 +250,12 @@ export function ClaimPanel({
             Claiming creates the owner account and unlocks editing. The current
             website and domain stay untouched until the final DNS step.
           </p>
+          {checkoutReturn ? (
+            <p className="mt-4 rounded-xl border bg-muted/45 px-4 py-3 text-xs leading-5">
+              Payment received. Finalizing the owner account from Stripe&apos;s
+              signed webhook…
+            </p>
+          ) : null}
 
           <div className="mt-8 grid gap-3">
             {plans.map((item) => (

@@ -215,12 +215,20 @@ generation endpoint.
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_STARTER_PRICE_ID`
 - `STRIPE_GROWTH_PRICE_ID`
+- `STRIPE_LEGACY_PRICE_IDS` (optional comma-separated access allowlist used
+  during price migrations; never offered in Checkout)
 
 Configure the webhook endpoint as:
 
 ```text
 https://cornershop.dev/api/webhooks/stripe
 ```
+
+Test-mode verification, the exact event allowlist, retry/replay behavior,
+Customer Portal setup, and the production activation blockers are documented
+in [`docs/operations/stripe-billing.md`](docs/operations/stripe-billing.md).
+Checkout requires a valid hashed claim invitation; a public preview URL alone
+cannot authorize billing or ownership.
 
 ### Owner sign-in
 

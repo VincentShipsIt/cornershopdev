@@ -1,12 +1,20 @@
+import { cookies } from "next/headers";
 import { z } from "zod";
+import { configuredBillingPlans } from "@/lib/billing-plans";
+import { checkoutSessionAction } from "@/lib/checkout-session-policy";
 import {
   authorizeClaimInvitationForCheckout,
   bindClaimInvitationToCheckout,
   buildClaimCheckoutIdempotencyKey,
   ClaimFlowError,
   MIN_CLAIM_CHECKOUT_TTL_MS,
+  type CheckoutClaimInvitation,
   recordClaimRejection,
 } from "@/lib/claim-invitations";
+import {
+  CHECKOUT_RETURN_COOKIE,
+  createCheckoutReturnToken,
+} from "@/lib/claim-security";
 import { limitClaimCheckout } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { getStripe } from "@/lib/stripe";
@@ -46,45 +54,45 @@ export async function POST(request: Request) {
     const input = requestSchema.parse(await request.json());
     const { plan, invitationToken } = input;
     siteSlug = input.siteSlug;
-    const priceId =
-      plan === "starter"
-        ? process.env.STRIPE_STARTER_PRICE_ID
-        : process.env.STRIPE_GROWTH_PRICE_ID;
-
-    if (!priceId) {
-      throw new Error(`Stripe price for the ${plan} plan is not configured`);
-    }
-
     if (!process.env.DATABASE_URL) {
       return Response.json(
         { error: "Claim checkout is temporarily unavailable." },
         { status: 503 },
       );
     }
+
+    const priceId = configuredBillingPlans()[plan].priceId;
     const invitation = await authorizeClaimInvitationForCheckout({
       siteSlug,
       token: invitationToken,
     });
-
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
     const stripe = getStripe();
-    const previousSessionId = invitation.checkoutSessionId;
-    if (previousSessionId) {
-      const previousSession =
-        await stripe.checkout.sessions.retrieve(previousSessionId);
-      if (
-        previousSession.status === "open" &&
-        previousSession.metadata?.plan === plan &&
-        previousSession.url
-      ) {
-        return Response.json({ url: previousSession.url });
+
+    if (invitation.checkoutSessionId) {
+      const existing = await stripe.checkout.sessions.retrieve(
+        invitation.checkoutSessionId,
+      );
+      const action = checkoutSessionAction(
+        {
+          status: existing.status,
+          url: existing.url,
+          priceId: invitation.stripePriceId,
+        },
+        priceId,
+      );
+      if (action === "reuse" && existing.url) {
+        return bindReturnCredential(
+          invitation,
+          existing.id,
+          existing.url,
+          priceId,
+          invitation.checkoutAttempt + 1,
+        );
       }
-      if (previousSession.status === "complete") {
-        throw new ClaimFlowError(
-          "invitation_used",
-          409,
-          "This checkout is already complete. Refresh to continue to your account.",
+      if (action === "await_provisioning") {
+        return Response.json(
+          { error: "Payment is complete and the account is being finalized" },
+          { status: 409 },
         );
       }
       if (
@@ -97,20 +105,21 @@ export async function POST(request: Request) {
           "This ownership link is near expiry. Continue the existing checkout or request a new email after it expires.",
         );
       }
-      if (previousSession.status === "open") {
+      if (action === "expire_and_replace") {
         try {
-          await stripe.checkout.sessions.expire(previousSession.id);
+          await stripe.checkout.sessions.expire(existing.id);
         } catch (error) {
-          // Concurrent retries can both observe an open session. Continue only
-          // when the other request successfully expired it.
           const refreshed = await stripe.checkout.sessions.retrieve(
-            previousSession.id,
+            existing.id,
           );
           if (refreshed.status !== "expired") throw error;
         }
       }
     }
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (!appUrl) throw new Error("NEXT_PUBLIC_APP_URL is not configured");
+    const nextAttempt = invitation.checkoutAttempt + 1;
     const checkoutExpiresAt = Math.min(
       Math.floor(Date.now() / 1000) + 24 * 60 * 60,
       Math.floor(invitation.expiresAt.getTime() / 1000),
@@ -122,81 +131,42 @@ export async function POST(request: Request) {
         line_items: [{ price: priceId, quantity: 1 }],
         allow_promotion_codes: true,
         customer_email: invitation.email,
-        client_reference_id: siteSlug,
+        client_reference_id: invitation.id,
         metadata: {
+          claimInvitationId: invitation.id,
           siteSlug,
           plan,
-          priceId,
-          claimInvitationId: invitation.id,
         },
         subscription_data: {
           metadata: {
+            claimInvitationId: invitation.id,
             siteSlug,
             plan,
-            priceId,
-            claimInvitationId: invitation.id,
           },
         },
-        success_url: `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
+        success_url:
+          `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}` +
+          `&claim_id=${encodeURIComponent(invitation.id)}`,
+        cancel_url: `${appUrl}/claim/${encodeURIComponent(siteSlug)}?checkout=canceled`,
       },
       {
-        // expires_at is part of the key because it is part of Stripe's
-        // idempotency comparison. Requests in the same second are identical;
-        // later/concurrent sessions are reconciled by the database CAS below.
         idempotencyKey: buildClaimCheckoutIdempotencyKey({
           invitationId: invitation.id,
           plan,
-          previousSessionId,
+          previousSessionId: invitation.checkoutSessionId,
           expiresAt: checkoutExpiresAt,
         }),
       },
     );
-    try {
-      const boundSessionId = await bindClaimInvitationToCheckout({
-        invitation,
-        stripeCheckoutSessionId: session.id,
-        expectedCheckoutSessionId: previousSessionId,
-      });
-      if (boundSessionId !== session.id) {
-        if (session.status === "open") {
-          await stripe.checkout.sessions.expire(session.id);
-        }
-        const winner = await stripe.checkout.sessions.retrieve(boundSessionId);
-        if (
-          winner.status === "open" &&
-          winner.metadata?.plan === plan &&
-          winner.url
-        ) {
-          return Response.json({ url: winner.url });
-        }
-        throw new ClaimFlowError(
-          "invitation_used",
-          409,
-          "Another checkout replaced this one. Reopen the ownership email and try again.",
-        );
-      }
-    } catch (error) {
-      // Never leave an unbound payment path open: Stripe could otherwise
-      // collect money for a checkout that claimSite must reject.
-      if (session.status === "open") {
-        try {
-          await stripe.checkout.sessions.expire(session.id);
-        } catch (cleanupError) {
-          console.error("[checkout] failed to expire unbound session", {
-            siteSlug,
-            stripeCheckoutSessionId: session.id,
-            error:
-              cleanupError instanceof Error
-                ? cleanupError.message
-                : "unknown",
-          });
-        }
-      }
-      throw error;
-    }
+    if (!session.url) throw new Error("Stripe Checkout returned no URL");
 
-    return Response.json({ url: session.url });
+    return bindReturnCredential(
+      invitation,
+      session.id,
+      session.url,
+      priceId,
+      nextAttempt,
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json(
@@ -210,16 +180,9 @@ export async function POST(request: Request) {
         reason: error.code,
         actor: "claimant:checkout",
       });
-      return Response.json(
-        { error: error.message },
-        { status: error.status },
-      );
+      return Response.json({ error: error.message }, { status: error.status });
     }
 
-    // Everything else is ours, not the caller's: an unset price ID, a Stripe
-    // outage, a database that will not answer. Returning `error.message` here
-    // named our own environment variables to anyone who could POST malformed
-    // input, and reported a server fault as a 400 the client could not fix.
     console.error("[checkout] failed", {
       siteSlug,
       error: error instanceof Error ? error.message : "unknown",
@@ -228,5 +191,67 @@ export async function POST(request: Request) {
       { error: "Checkout could not start. Try again in a moment." },
       { status: 500 },
     );
+  }
+}
+
+async function bindReturnCredential(
+  invitation: CheckoutClaimInvitation,
+  sessionId: string,
+  sessionUrl: string,
+  priceId: string,
+  checkoutAttempt: number,
+): Promise<Response> {
+  const returnToken = createCheckoutReturnToken();
+  const returnExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+  let binding;
+  try {
+    binding = await bindClaimInvitationToCheckout({
+      invitation,
+      stripeCheckoutSessionId: sessionId,
+      stripePriceId: priceId,
+      checkoutAttempt,
+      checkoutReturnTokenHash: returnToken.tokenHash,
+      checkoutReturnExpiresAt: returnExpiresAt,
+    });
+  } catch (error) {
+    if (sessionId !== invitation.checkoutSessionId) {
+      await expireUnboundCheckout(sessionId);
+    }
+    throw error;
+  }
+  if (!binding.didBind) {
+    if (binding.checkoutSessionId !== sessionId) {
+      await expireUnboundCheckout(sessionId);
+    }
+    throw new ClaimFlowError(
+      "invitation_used",
+      409,
+      "Another checkout replaced this one. Reopen the ownership email and try again.",
+    );
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(CHECKOUT_RETURN_COOKIE, returnToken.token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 30 * 60,
+    path: "/",
+  });
+  return Response.json({ url: sessionUrl });
+}
+
+async function expireUnboundCheckout(sessionId: string): Promise<void> {
+  try {
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.status === "open") {
+      await stripe.checkout.sessions.expire(session.id);
+    }
+  } catch (error) {
+    console.error("[checkout] failed to expire unbound session", {
+      stripeCheckoutSessionId: sessionId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
   }
 }
