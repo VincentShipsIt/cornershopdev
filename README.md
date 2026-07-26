@@ -15,6 +15,43 @@ Cornershopdev turns an existing restaurant website—or just a restaurant name�
 9. Authorize the restaurant domain for on-demand TLS and show the exact DNS records.
 10. Monitor and maintain the menu, imagery, and external links from the dashboard.
 
+## Customer workspace and operator console
+
+Each claimed site has a tenant-scoped `/dashboard` workspace. Owners can edit
+their site, connect a domain, review first-party booking leads, and move each
+request from `NEW` to `CONTACTED` or `CLOSED`. Contact details are returned only
+after the session is revalidated against that site's organization membership.
+
+`/admin` is the platform operator console. It requires both a database
+`SUPERADMIN` role and an email listed in `SUPERADMIN_EMAILS`. It shows signups,
+subscriptions, request totals, portfolio traffic and conversion summaries, and
+bounded per-site operational rows. It intentionally does not expose customer
+lead contact details across tenants.
+
+## First-party analytics
+
+Analytics run only on verified customer domains. Factory pages, private preview
+routes, bots, and automated browsers are excluded. The browser creates an
+ephemeral visit UUID in `sessionStorage` and sends only:
+
+- event UUID
+- visit UUID
+- site view or CTA click
+- server-owned site identity derived from the verified request hostname
+- server timestamp
+
+Raw analytics events never store IP addresses, user-agent strings, referrers,
+paths, query strings, provider URLs, names, email addresses, phone numbers, or
+booking notes. A one-minute Redis limiter may use a transient hash derived from
+the connection address; it is not written to PostgreSQL.
+
+Booking requests remain the authoritative lead count, so a dropped analytics
+beacon cannot lose a real lead. The corresponding `LEAD_CREATED` event is
+server-owned and best effort. Client and operator workspaces expose 7, 30, and
+90-day distinct-visit, CTA-visitor, booking-lead, and conversion metrics.
+Raw analytics events are retained for 120 days and pruned daily under a
+PostgreSQL advisory lock.
+
 ## Restaurant templates
 
 Restaurant sites use Geist Sans rather than the Cornershopdev marketing display
@@ -226,5 +263,7 @@ this same container, where the rewrite fires again — an infinite loop.
 - `/claim/[slug]` — pricing and claim checkout
 - `/dashboard` — authenticated restaurant management
 - `/dashboard?demo=1` — local demo dashboard
+- `/admin` — dual-gated superadmin operator console
+- `/api/analytics/events` — first-party cookieless live-site event intake
 - `/preview/[slug]` — private full-screen restaurant preview
 - `/preview/[slug]/[locale]` — translated restaurant preview

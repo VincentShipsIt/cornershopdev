@@ -57,13 +57,25 @@ enum ImageProvenance {
   PERMISSIONED_UGC
 }
 
+enum PlatformRole {
+  USER
+  SUPERADMIN
+}
+
+enum AnalyticsEventType {
+  SITE_VIEW
+  CTA_CLICK
+  LEAD_CREATED
+}
+
 model User {
-  id          String       @id @default(cuid())
-  email       String       @unique
-  name        String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  memberships Membership[]
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  platformRole PlatformRole @default(USER)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  memberships  Membership[]
 }
 
 model Organization {
@@ -91,6 +103,7 @@ model Site {
   id                   String            @id @default(cuid())
   slug                 String            @unique
   name                 String
+  eyebrow              String?
   description          String?
   address              String?
   phone                String?
@@ -119,6 +132,7 @@ model Site {
   claimInvitations     ClaimInvitation[]
   auditEvents          AuditEvent[]
   bookingRequests      BookingRequest[]
+  analyticsEvents      AnalyticsEvent[]
 }
 
 model CatalogSection {
@@ -153,6 +167,7 @@ model Integration {
   provider String?
   label    String
   url      String
+  position Int             @default(0)
   /// Owner's id inside the provider (an OpenTable `rid`). Only consumed after the
   /// provider's own anchored `idPattern` matches it — see `src/lib/booking-embed.ts`.
   venueId   String?
@@ -161,6 +176,8 @@ model Integration {
   site      Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+
+  @@index([siteId, position])
 }
 
 model ImportJob {
@@ -263,4 +280,16 @@ model BookingRequest {
   updatedAt   DateTime             @updatedAt
 
   @@index([siteId, status, createdAt])
+}
+
+model AnalyticsEvent {
+  id         String             @id @db.Uuid
+  visitId    String             @db.Uuid
+  type       AnalyticsEventType
+  siteId     String
+  site       Site               @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  occurredAt DateTime           @default(now())
+
+  @@index([siteId, occurredAt, type])
+  @@index([occurredAt])
 }

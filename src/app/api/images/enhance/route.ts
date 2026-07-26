@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { Vertical } from "@/generated/prisma/enums";
 import { enhanceSiteImage } from "@/lib/ai/site-generation";
-import { getCurrentSession } from "@/lib/current-session";
+import {
+  accessFailureResponse,
+  getSiteAccess,
+} from "@/lib/authorization";
 import { getDb } from "@/lib/db";
 import { fetchPublicImage } from "@/lib/importer";
 import { storeSiteImage } from "@/lib/storage/images";
@@ -22,45 +24,32 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = await getCurrentSession();
-    if (!session) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const { sourceImageUrl, siteSlug, siteName, enhancementNotes } =
       requestSchema.parse(await request.json());
-    if (session.siteSlug !== siteSlug) {
-      return Response.json({ error: "Forbidden" }, { status: 403 });
+    const access = await getSiteAccess(siteSlug);
+    if (!access.ok) return accessFailureResponse(access);
+
+    const site = await getDb().site.findUnique({
+      where: { id: access.site.id },
+      select: {
+        heroImageUrl: true,
+        heroOriginalImageUrl: true,
+      },
+    });
+    if (!site) {
+      return Response.json({ error: "Site not found" }, { status: 404 });
     }
-
-    // Without a database there is no site row to read the vertical from, so the
-    // demo-mode fallback matches the fixture fallbacks in `sites.ts`: the seeded
-    // sample site is a restaurant.
-    let vertical: VerticalId = Vertical.RESTAURANT;
-
-    if (process.env.DATABASE_URL) {
-      const site = await getDb().site.findUnique({
-        where: { slug: siteSlug },
-        select: {
-          vertical: true,
-          heroImageUrl: true,
-          heroOriginalImageUrl: true,
-        },
-      });
-      if (!site) {
-        return Response.json({ error: "Site not found" }, { status: 404 });
-      }
-      vertical = site.vertical;
-      const approvedSources = new Set(
-        [site.heroOriginalImageUrl, site.heroImageUrl].filter(
-          (value): value is string => Boolean(value),
-        ),
+    const vertical: VerticalId = access.site.vertical;
+    const approvedSources = new Set(
+      [site.heroOriginalImageUrl, site.heroImageUrl].filter(
+        (value): value is string => Boolean(value),
+      ),
+    );
+    if (!approvedSources.has(sourceImageUrl)) {
+      return Response.json(
+        { error: "Choose an approved image from this site's library" },
+        { status: 409 },
       );
-      if (!approvedSources.has(sourceImageUrl)) {
-        return Response.json(
-          { error: "Choose an approved image from this site's library" },
-          { status: 409 },
-        );
-      }
     }
 
     const originalImage = await fetchPublicImage(sourceImageUrl);

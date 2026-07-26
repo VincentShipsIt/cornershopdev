@@ -1,4 +1,5 @@
 import { resolveVerticalByHostname } from "@/lib/verticals/registry";
+export { requestHostname } from "@/lib/request-hostname";
 
 /**
  * The factory's own hostnames, overridable so a staging box can answer for its

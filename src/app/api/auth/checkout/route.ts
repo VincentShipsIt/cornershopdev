@@ -45,8 +45,9 @@ export async function GET(request: Request) {
     );
   }
 
+  let claimedAccess: Awaited<ReturnType<typeof claimSite>>;
   try {
-    await getDb().$transaction((tx) =>
+    claimedAccess = await getDb().$transaction((tx) =>
       claimSite(tx, {
         email,
         siteSlug,
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE,
-    createSessionToken({ email, siteSlug }),
+    createSessionToken({ userId: claimedAccess.userId, siteSlug }),
     {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

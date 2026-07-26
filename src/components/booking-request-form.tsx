@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getAnalyticsVisitId } from "@/lib/analytics-browser";
 
 export type BookingRequestFormCopy = {
   name: string;
@@ -77,6 +78,7 @@ export function BookingRequestForm({
             // typed it and read as local time by the server.
             requestedAt,
             partySize: partySize ? Number(partySize) : undefined,
+            analyticsVisitId: getAnalyticsVisitId(slug) ?? undefined,
           }),
         },
       );

@@ -41,6 +41,7 @@ export const bookingRequestInputSchema = z
     requestedAt: requestedAtSchema.optional(),
     partySize: z.number().int().min(1).max(200).optional(),
     notes: z.string().trim().max(1000).optional(),
+    analyticsVisitId: z.uuid().optional(),
   })
   .superRefine((value, ctx) => {
     if (!value.email && !value.phone) {

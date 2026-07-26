@@ -114,3 +114,18 @@ export function limitBookingRequest(
     windowMs,
   });
 }
+
+/**
+ * Analytics has a deliberately generous, short bucket. A limiter outage or a
+ * full bucket makes the ingest route drop the event with a successful empty
+ * response; customer navigation never inherits Redis availability.
+ */
+export function limitAnalyticsEvent(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "analytics-event",
+    limit: 120,
+    windowMs: 60_000,
+  });
+}
