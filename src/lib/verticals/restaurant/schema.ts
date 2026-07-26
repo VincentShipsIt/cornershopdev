@@ -9,6 +9,10 @@ import {
   translatedCatalogItemSchema,
   translatedCatalogSectionSchema,
 } from "@/lib/verticals/schema";
+import {
+  safeOptionalRestaurantDesignProfileSchema,
+  safeOptionalRestaurantThemeSelectionSchema,
+} from "@/lib/site-themes/restaurant/contracts";
 
 /**
  * The engine primitives live in `@/lib/verticals/schema` so a second vertical can
@@ -30,6 +34,8 @@ export {
 export const restaurantAttributesSchema = z.object({
   cuisine: z.string().max(80).default(""),
   showMenuImages: z.boolean().default(false),
+  designProfile: safeOptionalRestaurantDesignProfileSchema,
+  themeSelection: safeOptionalRestaurantThemeSelectionSchema,
 });
 
 export const restaurantItemAttributesSchema = z.object({
@@ -248,6 +254,8 @@ export function toRestaurantDraft(
     eyebrow: draft.eyebrow,
     description: draft.description,
     cuisine: draft.attributes.cuisine,
+    designProfile: draft.attributes.designProfile,
+    themeSelection: draft.attributes.themeSelection,
     address: draft.address,
     phone: draft.phone,
     sourceUrl: draft.sourceUrl,
@@ -303,6 +311,8 @@ export function fromRestaurantDraft(
     attributes: {
       cuisine: draft.cuisine,
       showMenuImages: draft.showMenuImages,
+      designProfile: draft.designProfile,
+      themeSelection: draft.themeSelection,
     },
     address: draft.address,
     phone: draft.phone,

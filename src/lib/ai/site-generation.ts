@@ -163,7 +163,8 @@ export function deterministicDraft<
       foreground: "#1d241f",
       accent: "#a5482d",
     },
-    attributes: vertical.attributeDefaults,
+    attributes:
+      vertical.deterministicAttributes ?? vertical.attributeDefaults,
     autoEnhanceImages: false,
     defaultLocale: source.sourceLocale ?? "en",
     translations: [],

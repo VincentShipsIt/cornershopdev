@@ -95,7 +95,9 @@ describe("vertical registry", () => {
       restaurantConfig,
     );
 
-    expect(draft.attributes).toEqual(restaurantConfig.attributeDefaults);
+    expect(draft.attributes).toMatchObject(restaurantConfig.attributeDefaults);
+    expect(draft.attributes.designProfile).toBeDefined();
+    expect(draft.attributes.themeSelection?.source).toBe("deterministic");
     expect(draft.catalogSections[0]?.name).toBe(
       restaurantConfig.vocabulary.catalog,
     );

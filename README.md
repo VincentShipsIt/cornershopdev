@@ -52,21 +52,27 @@ server-owned and best effort. Client and operator workspaces expose 7, 30, and
 Raw analytics events are retained for 120 days and pruned daily under a
 PostgreSQL advisory lock.
 
-## Restaurant templates
+## Restaurant themes
 
-Restaurant sites use Geist Sans rather than the Cornershopdev marketing display
-font. The renderer automatically combines the imported brand palette with a
-cuisine-aware layout:
+New restaurant previews use a versioned theme registry driven by service model,
+primary customer intent, menu experience, brand traits, price position,
+location count, and photography quality:
 
-- `heritage` — French, bistro, brasserie, and traditional restaurants
-- `fresh` — healthy, vegan, vegetarian, organic, salad, and juice concepts
-- `bold` — American, burger, barbecue, steak, and diner concepts
-- `nocturne` — Japanese, sushi, ramen, izakaya, and Korean concepts
-- `coastal` — seafood, fish, oyster, and coastal restaurants
-- `warm` — Italian, pizza, pasta, Mediterranean, Spanish, and fallback concepts
+- `terroir-editorial@1` — reservation-led, seasonal and editorial
+- `counter-service@1` — external-order-led commerce browsing
+- `after-dark@1` — atmospheric reservations, events and late-night visits
 
-Each template changes the hero structure, menu layout, weight, spacing, image
-treatment, and copy—not only the colours.
+The public registry and live renderer power `/themes/restaurant`. AI may choose
+only these IDs plus a closed set of validated colour and presentation tokens,
+plain-text reasons, confidence, and two alternatives. Unknown IDs, arbitrary
+CSS/HTML/classes/components/font URLs, malformed tokens, and low-contrast
+colour combinations are rejected or repaired before rendering. Missing or
+invalid model output uses the deterministic scorer.
+
+The six earlier cuisine-era templates (`heritage`, `fresh`, `bold`,
+`nocturne`, `coastal`, and `warm`) remain as a compatibility renderer. A stored
+restaurant without a valid structured selection keeps its existing layout;
+theme adoption is never inferred from a deployment.
 
 Dish imagery is a saved presentation setting rather than a destructive edit.
 Heritage and fine-dining templates default to a clean text-led menu; casual,

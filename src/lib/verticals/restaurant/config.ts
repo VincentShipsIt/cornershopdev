@@ -16,6 +16,11 @@ import {
 import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 import { restaurantPrompt } from "@/lib/verticals/restaurant/prompt";
 import {
+  DEFAULT_RESTAURANT_DESIGN_PROFILE,
+  normalizeGeneratedRestaurantThemeSelection,
+  selectDeterministicRestaurantTheme,
+} from "@/lib/site-themes/restaurant/selection";
+import {
   restaurantTemplates,
   resolveRestaurantTemplateFromAttributes,
   type RestaurantTemplate,
@@ -37,6 +42,21 @@ export const restaurantDictionaryExtensions = {
     bookingRequestHeading: "Request a table",
     bookingRequestIntro:
       "Tell us when you'd like to come and we'll confirm by email or phone.",
+    themePlanVisit: "Plan a visit",
+    themeMenuEyebrow: "The menu",
+    terroirMenuHeading: "Guided by the season.",
+    terroirVisitEyebrow: "At the table",
+    terroirVisitHeading: "Make time for the whole menu.",
+    themeBrowseMenu: "Browse the menu",
+    themeMenuCategories: "Menu categories",
+    counterMenuEyebrow: "Ready when you are",
+    counterMenuHeading: "Pick your order.",
+    afterDarkEventsEyebrow: "What’s on",
+    afterDarkMenuEyebrow: "Food & drink",
+    afterDarkMenuHeading: "Stay after dark.",
+    afterDarkMenuIntro:
+      "House drinks and late plates, presented plainly enough to choose in low light.",
+    afterDarkClosing: "A table, a drink, then one more song.",
   },
   fr: {
     language: "Langue",
@@ -49,6 +69,21 @@ export const restaurantDictionaryExtensions = {
     bookingRequestHeading: "Demander une table",
     bookingRequestIntro:
       "Dites-nous quand vous souhaitez venir, nous confirmerons par e-mail ou par téléphone.",
+    themePlanVisit: "Planifier une visite",
+    themeMenuEyebrow: "La carte",
+    terroirMenuHeading: "Guidé par la saison.",
+    terroirVisitEyebrow: "À table",
+    terroirVisitHeading: "Prenez le temps de savourer tout le menu.",
+    themeBrowseMenu: "Voir la carte",
+    themeMenuCategories: "Catégories du menu",
+    counterMenuEyebrow: "Quand vous voulez",
+    counterMenuHeading: "Choisissez votre commande.",
+    afterDarkEventsEyebrow: "À l’affiche",
+    afterDarkMenuEyebrow: "Cuisine et boissons",
+    afterDarkMenuHeading: "Prolongez la soirée.",
+    afterDarkMenuIntro:
+      "Cocktails maison et assiettes tardives, présentés clairement même en lumière tamisée.",
+    afterDarkClosing: "Une table, un verre, puis une chanson de plus.",
   },
 } satisfies Record<string, Record<string, string>>;
 
@@ -64,6 +99,14 @@ export const restaurantConfig = {
   attributeDefaults: {
     cuisine: "",
     showMenuImages: false,
+  },
+  deterministicAttributes: {
+    cuisine: "",
+    showMenuImages: false,
+    designProfile: DEFAULT_RESTAURANT_DESIGN_PROFILE,
+    themeSelection: selectDeterministicRestaurantTheme(
+      DEFAULT_RESTAURANT_DESIGN_PROFILE,
+    ),
   },
   itemAttributesSchema: restaurantItemAttributesSchema,
   itemAttributeDefaults: {
@@ -96,10 +139,17 @@ export const restaurantConfig = {
     definitions: restaurantTemplates,
     resolve: resolveRestaurantTemplateFromAttributes,
   },
-  normalizeGeneratedAttributes: (attributes, template) => ({
-    ...attributes,
-    showMenuImages: template.showMenuImagesByDefault,
-  }),
+  normalizeGeneratedAttributes: (attributes) => {
+    const theme = normalizeGeneratedRestaurantThemeSelection(
+      attributes.designProfile,
+      attributes.themeSelection,
+    );
+    return {
+      ...attributes,
+      ...theme,
+      showMenuImages: theme.themeSelection.themeId === "counter-service",
+    };
+  },
   providers: restaurantProviders,
   crawl: {
     relevantPathPattern: restaurantRelevantPathPattern,

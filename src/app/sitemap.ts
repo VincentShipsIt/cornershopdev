@@ -10,12 +10,22 @@ import { resolveRequestOrigin } from "@/lib/verticals/request-site";
  * own domains, and every other route here is noindex.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  return [
+  const origin = await resolveRequestOrigin();
+  const routes: MetadataRoute.Sitemap = [
     {
-      url: await resolveRequestOrigin(),
+      url: origin,
       lastModified: new Date(),
       changeFrequency: "weekly",
       priority: 1,
     },
   ];
+  if (origin === "https://restofront.com") {
+    routes.push({
+      url: `${origin}/themes/restaurant`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.8,
+    });
+  }
+  return routes;
 }

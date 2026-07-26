@@ -96,6 +96,12 @@ export default async function NichePage({
   // Every route out of this page carries the niche, so a lead is attached to the
   // vertical that produced it before the studio ever opens.
   const createHref = `/create?vertical=${slug}`;
+  const headerLinks = [
+    { href: "#how-it-works", label: "How it works" },
+    ...(marketing.themeGallery ? [marketing.themeGallery] : []),
+    { href: "#features", label: "What stays yours" },
+    { href: "#pricing", label: "Pricing" },
+  ];
   const formCopy = {
     vertical: slug,
     placeholder: marketing.form.placeholder,
@@ -108,6 +114,7 @@ export default async function NichePage({
     <>
       <SiteHeader
         brand={{ ...marketing.brand }}
+        links={headerLinks}
         createHref={createHref}
       />
       <main>
@@ -140,6 +147,15 @@ export default async function NichePage({
                 {marketing.hero.subheadline}
               </p>
               <ImportForm className="mt-9" {...formCopy} />
+              {marketing.themeGallery ? (
+                <Link
+                  href={marketing.themeGallery.href}
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary"
+                >
+                  {marketing.themeGallery.label}
+                  <ArrowRight className="size-4" />
+                </Link>
+              ) : null}
               <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
                 {marketing.hero.proofPoints.map((point) => (
                   <span key={point} className="flex items-center gap-1.5">

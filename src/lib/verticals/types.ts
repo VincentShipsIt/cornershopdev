@@ -157,6 +157,8 @@ export type VerticalMarketing = {
     submitLabel: string;
     pendingLabel: string;
   };
+  /** Optional public library powered by the vertical's registered site themes. */
+  themeGallery?: { href: string; label: string };
   steps: { number: string; title: string; copy: string }[];
   valueProps: {
     eyebrow: string;
@@ -194,6 +196,8 @@ export type VerticalConfig<
   marketing: VerticalMarketing;
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
+  /** Optional richer defaults used only for a brand-new non-AI import. */
+  deterministicAttributes?: TAttributes;
   itemAttributesSchema: z.ZodType<TItemAttributes>;
   itemAttributeDefaults: TItemAttributes;
   draftSchema: z.ZodType<TDraft>;

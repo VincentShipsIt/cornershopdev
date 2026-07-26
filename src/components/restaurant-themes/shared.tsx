@@ -1,0 +1,191 @@
+import { ArrowUpRight, MapPin } from "lucide-react";
+import Link from "next/link";
+import { SiteAnalytics } from "@/components/site-analytics";
+import { localizeIntegrationUrl } from "@/lib/site-i18n";
+import { localeHref } from "@/lib/site-surface";
+import type { SiteDraftView, SiteIntegrationView } from "@/lib/site-draft";
+import type {
+  RestaurantThemeSelection,
+  RestaurantThemeTokens,
+} from "@/lib/site-themes/restaurant/contracts";
+import { cn } from "@/lib/utils";
+
+export type RestaurantThemeRendererProps = {
+  draft: SiteDraftView;
+  selection: RestaurantThemeSelection;
+  locale?: string;
+  localeBasePath?: string;
+  availableLocales?: string[];
+  dictionary: Record<string, string>;
+  embedded?: boolean;
+  analyticsEnabled?: boolean;
+};
+
+export type RestaurantThemeRendererInputProps = Omit<
+  RestaurantThemeRendererProps,
+  "dictionary"
+> & {
+  dictionary?: Record<string, string>;
+};
+
+export function themeStyle(
+  tokens: RestaurantThemeTokens,
+): React.CSSProperties {
+  return {
+    "--theme-bg": tokens.colors.background,
+    "--theme-fg": tokens.colors.foreground,
+    "--theme-surface": tokens.colors.surface,
+    "--theme-accent": tokens.colors.accent,
+    "--theme-accent-fg": tokens.colors.accentForeground,
+    background: "var(--theme-bg)",
+    color: "var(--theme-fg)",
+  } as React.CSSProperties;
+}
+
+export function fontPairClass(tokens: RestaurantThemeTokens): string {
+  return {
+    editorial: "font-display",
+    grotesk: "font-sans",
+    condensed: "font-mono uppercase",
+  }[tokens.style.fontPair];
+}
+
+export function ThemeAnalytics({
+  draft,
+  enabled,
+}: {
+  draft: SiteDraftView;
+  enabled: boolean;
+}) {
+  return enabled ? <SiteAnalytics siteSlug={draft.slug} /> : null;
+}
+
+export function ThemeHeroImage({
+  draft,
+  imageAlt,
+  className,
+  overlayClassName,
+}: {
+  draft: Pick<SiteDraftView, "heroImageUrl" | "name">;
+  imageAlt: string;
+  className?: string;
+  overlayClassName?: string;
+}) {
+  return (
+    <div
+      role={draft.heroImageUrl ? "img" : undefined}
+      aria-label={draft.heroImageUrl ? imageAlt : undefined}
+      className={cn(
+        "relative overflow-hidden bg-[var(--theme-surface)] bg-cover bg-center",
+        className,
+      )}
+      style={
+        draft.heroImageUrl
+          ? { backgroundImage: `url("${draft.heroImageUrl}")` }
+          : undefined
+      }
+    >
+      {overlayClassName ? (
+        <div className={cn("absolute inset-0", overlayClassName)} />
+      ) : null}
+    </div>
+  );
+}
+
+export function ThemeLocation({
+  draft,
+  className,
+}: {
+  draft: Pick<SiteDraftView, "address">;
+  className?: string;
+}) {
+  return (
+    <span className={cn("flex items-start gap-2", className)}>
+      <MapPin className="mt-0.5 size-4 shrink-0" />
+      {draft.address}
+    </span>
+  );
+}
+
+export function ThemeExternalAction({
+  integration,
+  locale,
+  className,
+}: {
+  integration: SiteIntegrationView;
+  locale?: string;
+  className?: string;
+}) {
+  return (
+    <a
+      href={
+        locale
+          ? localizeIntegrationUrl(integration.url, locale)
+          : integration.url
+      }
+      data-analytics-cta
+      target="_blank"
+      rel="noreferrer"
+      className={className}
+    >
+      {integration.label}
+      <ArrowUpRight className="size-4 shrink-0" />
+    </a>
+  );
+}
+
+export function ThemeLocaleNavigation({
+  locale,
+  localeBasePath,
+  availableLocales,
+  defaultLocale,
+  label,
+  className,
+}: {
+  locale: string;
+  localeBasePath?: string;
+  availableLocales: string[];
+  defaultLocale: string;
+  label: string;
+  className?: string;
+}) {
+  if (!localeBasePath || availableLocales.length < 2) return null;
+
+  return (
+    <nav
+      aria-label={label}
+      className={cn(
+        "flex items-center rounded-full border border-current/25 p-1 text-[10px] font-bold uppercase tracking-[0.08em]",
+        className,
+      )}
+    >
+      {availableLocales.map((availableLocale) => (
+        <Link
+          key={availableLocale}
+          href={localeHref(
+            localeBasePath,
+            availableLocale,
+            defaultLocale,
+          )}
+          hrefLang={availableLocale}
+          aria-current={availableLocale === locale ? "page" : undefined}
+          className={cn(
+            "inline-flex min-h-8 min-w-8 items-center justify-center rounded-full px-2",
+            availableLocale === locale
+              ? "bg-[var(--theme-fg)] text-[var(--theme-bg)]"
+              : "opacity-70 hover:opacity-100",
+          )}
+        >
+          {availableLocale.split("-")[0]}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+export function itemBadges(attributes: Record<string, unknown>): string[] {
+  const labels = attributes.dietaryLabels;
+  return Array.isArray(labels)
+    ? labels.filter((label): label is string => typeof label === "string")
+    : [];
+}
