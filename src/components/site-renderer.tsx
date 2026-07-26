@@ -16,7 +16,11 @@ import {
   localizeIntegrationUrl,
 } from "@/lib/site-i18n";
 import { localeHref } from "@/lib/site-surface";
-import { formatPrice, type SiteDraftView } from "@/lib/site-draft";
+import {
+  formatPrice,
+  type SiteDraftView,
+  type SiteThemeView,
+} from "@/lib/site-draft";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import { cn } from "@/lib/utils";
@@ -37,6 +41,7 @@ type SiteRendererProps = {
   localeBasePath?: string;
   availableLocales?: string[];
   analyticsEnabled?: boolean;
+  theme?: SiteThemeView;
 };
 
 export function SiteRenderer({
@@ -47,6 +52,7 @@ export function SiteRenderer({
   localeBasePath,
   availableLocales = [draft.defaultLocale],
   analyticsEnabled = false,
+  theme,
 }: SiteRendererProps) {
   const config = resolveVerticalConfig(vertical);
   const booking = draft.integrations.find(
@@ -55,7 +61,10 @@ export function SiteRenderer({
   const ordering = draft.integrations.find((integration) =>
     ["ordering", "delivery"].includes(integration.type),
   );
-  const template = config.templates.resolve(draft.attributes);
+  const resolvedTemplate = config.templates.resolve(draft.attributes);
+  const template = theme
+    ? (config.templates.definitions[theme.id] ?? resolvedTemplate)
+    : resolvedTemplate;
   const capabilities = config.rendererCapabilities(draft.attributes);
   const bookingEmbed = booking ? resolveBookingEmbed(vertical, booking) : null;
   // A site with no booking tool at all always gets the form — otherwise its only
@@ -94,6 +103,7 @@ export function SiteRenderer({
     <article
       lang={locale}
       data-site-template={template.id}
+      data-site-theme-version={theme?.version}
       className={cn(
         "font-sans",
         embedded

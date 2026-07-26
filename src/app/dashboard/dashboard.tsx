@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCcw,
+  Rocket,
   Save,
   Settings,
   Sparkles,
@@ -76,15 +77,19 @@ export function Dashboard({
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [domain, setDomain] = useState("");
   const [domainSetup, setDomainSetup] = useState<DomainSetup | null>(null);
   const [domainError, setDomainError] = useState<string | null>(null);
   const [domainLoading, setDomainLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setSaving(true);
     setSaved(false);
+    setPublishError(null);
     try {
       if (!demo) {
         const response = await fetch(`/api/sites/${draft.slug}`, {
@@ -95,8 +100,66 @@ export function Dashboard({
         if (!response.ok) throw new Error("Save failed");
       }
       setSaved(true);
+      setPublishedVersion(null);
+      return true;
+    } catch (caught) {
+      setPublishError(
+        caught instanceof Error ? caught.message : "Save failed",
+      );
+      return false;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function publish() {
+    const changeSummary = window
+      .prompt(
+        "Summarize what will change on the public site:",
+        "Publish approved draft",
+      )
+      ?.trim();
+    if (!changeSummary) return;
+    if (changeSummary.length < 3 || changeSummary.length > 280) {
+      setPublishError("Use a change summary between 3 and 280 characters");
+      return;
+    }
+    if (
+      !window.confirm(
+        "Publish this saved draft to the connected public domain now?",
+      )
+    ) {
+      return;
+    }
+
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      if (!(await save())) return;
+      if (demo) {
+        setPublishedVersion(1);
+        return;
+      }
+
+      const response = await fetch(`/api/sites/${draft.slug}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changeSummary }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        published?: { version: number };
+      };
+      if (!response.ok || !result.published) {
+        throw new Error(result.error ?? "Publish failed");
+      }
+      setPublishedVersion(result.published.version);
+    } catch (caught) {
+      setPublishError(
+        caught instanceof Error ? caught.message : "Publish failed",
+      );
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -201,14 +264,34 @@ export function Dashboard({
           <Button
             size="sm"
             onClick={() => void save()}
-            disabled={saving}
+            disabled={saving || publishing}
           >
             {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
             {saved ? "Saved" : "Save"}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void publish()}
+            disabled={saving || publishing}
+          >
+            {publishing ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <Rocket />
+            )}
+            {publishedVersion
+              ? `Published v${publishedVersion}`
+              : "Publish"}
+          </Button>
         </div>
       </header>
 
+      {publishError ? (
+        <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-center text-sm text-red-800">
+          {publishError}
+        </div>
+      ) : null}
       {checkoutComplete ? (
         <div className="border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm text-emerald-800">
           <CircleCheck className="mr-2 inline size-4" />

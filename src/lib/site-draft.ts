@@ -14,6 +14,22 @@ export type SitePaletteView = {
   accent: string;
 };
 
+export const LEGACY_THEME_VERSION = "legacy-v1";
+
+/**
+ * The renderer identity pinned independently from the editable content.
+ *
+ * `selection` deliberately remains an open JSON-shaped record. Issue #19 will
+ * add bounded automatic/manual selection metadata there without another
+ * publish-schema migration, while `id` and `version` stay the stable contract
+ * this renderer needs today.
+ */
+export type SiteThemeView = {
+  id: string;
+  version: string;
+  selection: Record<string, unknown>;
+};
+
 export type SiteCatalogItemView = {
   name: string;
   description: string;
