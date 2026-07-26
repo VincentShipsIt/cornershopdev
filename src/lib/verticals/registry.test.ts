@@ -223,4 +223,22 @@ describe("niche routing", () => {
       [...launched].sort((a, b) => Number(b) - Number(a)),
     );
   });
+
+  /**
+   * The two halves of launching a niche, tied together. A niche with a domain is
+   * selling, and a selling niche writes to its customers — if it has no sender of
+   * its own, `emailSender` falls through to the deploy-wide `EMAIL_FROM` and a
+   * salon owner gets their sign-in link from Cornershopdev. Adding the domain and
+   * forgetting the sender is exactly the omission that produces that, so it fails
+   * here instead of in someone's inbox.
+   */
+  it("gives every launched niche a sender of its own", () => {
+    for (const id of listVerticalIds()) {
+      const { domain, email } = resolveVerticalConfig(id).marketing;
+      if (!domain) continue;
+      expect(email).not.toBeNull();
+      expect(email?.from).toContain("@");
+      expect(email?.replyTo).toContain("@");
+    }
+  });
 });

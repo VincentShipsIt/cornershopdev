@@ -55,7 +55,14 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const site = await getDb().site.findUnique({
       where: { slug },
-      select: { id: true, name: true, slug: true, organizationId: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        organizationId: true,
+        // Decides which niche the owner's notification is sent as.
+        vertical: true,
+      },
     });
     if (!site) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });

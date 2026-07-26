@@ -10,6 +10,12 @@ export const restaurantMarketing = {
   hostnames: ["restofront.com", "www.restofront.com"],
   domain: "restofront.com",
   brand: { name: "Restofront", initials: "RF" },
+  // send.restofront.com is the verified sending domain; nobody reads it, so
+  // replies are pointed at the bare domain instead.
+  email: {
+    from: "Vincent from Restofront <vincent@send.restofront.com>",
+    replyTo: "vincent@restofront.com",
+  },
   audience: "restaurants",
   tagline: "Menus, bookings and hours that stay current on their own.",
   heroVisual: "transformation",
