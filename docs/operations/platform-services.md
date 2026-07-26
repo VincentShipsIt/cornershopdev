@@ -53,6 +53,61 @@ Production.
 6. Record the migration name, target environment, operator, and backup reference
    in the release record.
 
+### Reviewed fixture imports
+
+Approved lead previews must be imported with a dedicated create-only operator
+script. Do not send them back through `/api/import`: that route crawls and
+regenerates content instead of preserving the reviewed fixture.
+
+Le Petit Meunier uses the canonical slug `le-petit-meunier`. Run the dry-run
+inside the healthy production container first:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:import:le-petit-meunier
+```
+
+The preflight stops if the canonical slug, the legacy
+`restaurant-le-petit-meunier` slug, the normalized source identity, or the
+source URL already exists. After confirming the RDS recovery window is healthy,
+execute the same reviewed import:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:import:le-petit-meunier --execute
+```
+
+The importer writes the site, catalog, integrations, version snapshot, import
+job, and audit event in one serializable transaction. It verifies the expected
+relation counts before commit and reads the canonical row back afterward.
+
+### Superadmin bootstrap
+
+The operator console at `/admin` is protected by two independent gates:
+
+1. the user's PostgreSQL `platformRole` is `SUPERADMIN`;
+2. the normalized email is present in the deployment's comma-separated
+   `SUPERADMIN_EMAILS`.
+
+Store `SUPERADMIN_EMAILS` as a SecureString under
+`/shipshit/production/cornershopdev/SUPERADMIN_EMAILS`, deploy it, then preview
+the role change:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:grant-superadmin --email owner@example.com
+```
+
+Apply it only after confirming the target:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:grant-superadmin --email owner@example.com --execute
+```
+
+The script can create a platform-only operator with no customer organization.
+Removing either the database role or the environment entry revokes `/admin`.
+
 The container applies committed Prisma migrations and the idempotent Workflow
 bootstrap before it starts accepting traffic. A candidate must pass its
 container health check before Caddy is reloaded. A failed migration stops the

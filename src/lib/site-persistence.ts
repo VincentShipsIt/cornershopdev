@@ -24,6 +24,7 @@ const mutableImportStatuses = new Set(["PROSPECT", "PREVIEW_READY"]);
 export type PersistableSiteDraft = {
   slug: string;
   name: string;
+  eyebrow: string;
   description: string;
   address: string;
   phone: string;
@@ -31,6 +32,11 @@ export type PersistableSiteDraft = {
   heroImageUrl: string | null;
   heroOriginalImageUrl?: string | null;
   heroImageProvenance?: "official" | "owner" | "permissioned-ugc" | null;
+  palette: {
+    background: string;
+    foreground: string;
+    accent: string;
+  };
   attributes: Record<string, unknown>;
   autoEnhanceImages: boolean;
   defaultLocale: string;
@@ -76,6 +82,13 @@ export class ImportConflictError extends Error {
   constructor() {
     super("This site is already owned and cannot be replaced by an import");
     this.name = "ImportConflictError";
+  }
+}
+
+export class OperatorImportConflictError extends Error {
+  constructor() {
+    super("The operator import conflicts with an existing site");
+    this.name = "OperatorImportConflictError";
   }
 }
 
@@ -229,6 +242,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 select: { id: true, slug: true },
               });
 
+          await createNextSiteVersion(tx, site.id, draft);
           await tx.auditEvent.create({
             data: {
               type: existing ? "site.import.updated" : "site.import.created",
@@ -278,6 +292,143 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
 }
 
 /**
+ * Imports a reviewed fixture without invoking the public crawler or allowing the
+ * normal mutable-import path to replace a prospect. The preflight and every
+ * write share one serializable transaction, so a conflict leaves no queued job
+ * or partial site behind.
+ */
+export async function createOperatorSiteImport<
+  TDraft extends PersistableSiteDraft,
+>(input: {
+  draft: TDraft;
+  vertical: VerticalId;
+  source: string;
+  forbiddenSlugs?: string[];
+}): Promise<PersistedSiteImport<TDraft>> {
+  const db = requireImportDatabase();
+  const config = resolveVerticalConfig(input.vertical);
+  const draft = config.draftSchema.parse(input.draft) as TDraft;
+  const sourceKey = normalizeImportSource(draft.sourceUrl ?? input.source);
+  const slug =
+    slugify(draft.slug) || slugify(draft.name) || input.vertical.toLowerCase();
+  const forbiddenSlugs = [...new Set([slug, ...(input.forbiddenSlugs ?? [])])];
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await db.$transaction(
+        async (tx) => {
+          const identityConditions: Prisma.SiteWhereInput[] = [
+            { slug: { in: forbiddenSlugs } },
+            { sourceKey },
+          ];
+          if (draft.sourceUrl) {
+            identityConditions.push({ sourceUrl: draft.sourceUrl });
+          }
+
+          const conflict = await tx.site.findFirst({
+            where: { OR: identityConditions },
+            select: { id: true },
+          });
+          if (conflict) throw new OperatorImportConflictError();
+
+          const importJob = await tx.importJob.create({
+            data: {
+              source: storedImportSource(input.source),
+              sourceKey,
+              vertical: input.vertical,
+              status: "QUEUED",
+              startedAt: new Date(),
+            },
+            select: { id: true },
+          });
+          const site = await tx.site.create({
+            data: {
+              slug,
+              ...siteScalarData(draft, input.vertical, sourceKey),
+              integrations: { create: integrationCreateData(draft) },
+              catalogSections: {
+                create: catalogSectionCreateData(draft, input.vertical),
+              },
+            },
+            select: { id: true, slug: true },
+          });
+
+          await createNextSiteVersion(tx, site.id, draft);
+          await tx.auditEvent.create({
+            data: {
+              type: "site.import.created",
+              actor: "operator:fixture-import",
+              metadata: {
+                importJobId: importJob.id,
+                vertical: input.vertical,
+                source: storedImportSource(input.source),
+                sourceKey,
+              },
+              siteId: site.id,
+            },
+          });
+          await tx.importJob.update({
+            where: { id: importJob.id },
+            data: {
+              status: "READY",
+              completedAt: new Date(),
+              siteId: site.id,
+            },
+          });
+
+          const [sectionCount, itemCount, integrationRows, versionCount] =
+            await Promise.all([
+              tx.catalogSection.count({ where: { siteId: site.id } }),
+              tx.catalogItem.count({
+                where: { section: { siteId: site.id } },
+              }),
+              tx.integration.findMany({
+                where: { siteId: site.id },
+                orderBy: { position: "asc" },
+                select: { label: true, position: true },
+              }),
+              tx.siteVersion.count({ where: { siteId: site.id } }),
+            ]);
+          const expectedItemCount = draft.catalogSections.reduce(
+            (sum, section) => sum + section.items.length,
+            0,
+          );
+          const integrationOrderMatches = integrationRows.every(
+            (integration, index) =>
+              integration.position === index &&
+              integration.label === draft.integrations[index]?.label,
+          );
+          if (
+            sectionCount !== draft.catalogSections.length ||
+            itemCount !== expectedItemCount ||
+            integrationRows.length !== draft.integrations.length ||
+            !integrationOrderMatches ||
+            versionCount !== 1
+          ) {
+            throw new Error(
+              "The operator import failed its atomic fidelity check",
+            );
+          }
+
+          return {
+            draft,
+            importJobId: importJob.id,
+            urls: buildImportUrls(site.slug),
+            created: true,
+          };
+        },
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (attempt < 2 && isRetryablePrismaError(error)) continue;
+      throw error;
+    }
+  }
+
+  throw new Error("The operator site import could not be persisted");
+}
+
+/**
  * Owner-initiated edit of an already-persisted site. Shares the exact same column
  * and relation mapping as the import path so the two can never drift. Identity and
  * lifecycle columns (slug, vertical, sourceUrl, sourceKey, status) stay owned by the
@@ -291,14 +442,30 @@ export async function updateSiteDraft(
 ): Promise<void> {
   const config = resolveVerticalConfig(vertical);
   const parsed = config.draftSchema.parse(draft) as PersistableSiteDraft;
+  const db = requireImportDatabase();
 
-  await requireImportDatabase().site.update({
-    where: { slug },
-    data: {
-      ...editableSiteScalarData(parsed, vertical),
-      ...siteRelationReplaceData(parsed, vertical),
-    },
-  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await db.$transaction(
+        async (tx) => {
+          const site = await tx.site.update({
+            where: { slug },
+            data: {
+              ...editableSiteScalarData(parsed, vertical),
+              ...siteRelationReplaceData(parsed, vertical),
+            },
+            select: { id: true },
+          });
+          await createNextSiteVersion(tx, site.id, parsed);
+        },
+        { isolationLevel: "Serializable" },
+      );
+      return;
+    } catch (error) {
+      if (attempt < 2 && isRetryablePrismaError(error)) continue;
+      throw error;
+    }
+  }
 }
 
 function requireImportDatabase() {
@@ -349,6 +516,7 @@ function editableSiteScalarData(
   const config = resolveVerticalConfig(vertical);
   return {
     name: draft.name,
+    eyebrow: draft.eyebrow,
     description: draft.description,
     address: draft.address,
     phone: draft.phone,
@@ -368,13 +536,35 @@ function editableSiteScalarData(
 }
 
 function integrationCreateData(draft: PersistableSiteDraft) {
-  return draft.integrations.map((integration) => ({
+  return draft.integrations.map((integration, position) => ({
     type: toDatabaseIntegrationType(integration.type),
     label: integration.label,
     provider: integration.provider,
     url: integration.url,
     venueId: integration.venueId ?? null,
+    position,
   }));
+}
+
+async function createNextSiteVersion(
+  tx: Prisma.TransactionClient,
+  siteId: string,
+  draft: PersistableSiteDraft,
+): Promise<void> {
+  const latest = await tx.siteVersion.findFirst({
+    where: { siteId },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+
+  await tx.siteVersion.create({
+    data: {
+      siteId,
+      version: (latest?.version ?? 0) + 1,
+      theme: draft.palette as Prisma.InputJsonValue,
+      content: draft as Prisma.InputJsonValue,
+    },
+  });
 }
 
 function catalogSectionCreateData(

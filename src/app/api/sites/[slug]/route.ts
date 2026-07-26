@@ -1,16 +1,17 @@
 import { Vertical } from "@/generated/prisma/enums";
+import {
+  accessFailureResponse,
+  getSiteAccess,
+} from "@/lib/authorization";
 import { fromRestaurantDraft, restaurantDraftSchema } from "@/lib/restaurant";
-import { getCurrentSession } from "@/lib/current-session";
 import { updateSiteDraft } from "@/lib/site-persistence";
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
 export async function PUT(request: Request, { params }: RouteContext) {
   const { slug } = await params;
-  const session = await getCurrentSession();
-  if (!session || session.siteSlug !== slug) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await getSiteAccess(slug);
+  if (!access.ok) return accessFailureResponse(access);
 
   try {
     const draft = restaurantDraftSchema.parse(await request.json());

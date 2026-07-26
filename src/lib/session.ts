@@ -4,8 +4,8 @@ import { z } from "zod";
 export const SESSION_COOKIE = "cornershopdev_session";
 
 const sessionPayloadSchema = z.object({
-  email: z.email(),
-  siteSlug: z.string().min(2).max(80),
+  userId: z.string().min(1).max(128),
+  siteSlug: z.string().min(2).max(80).nullable(),
   expiresAt: z.number().int().positive(),
 });
 
@@ -27,10 +27,14 @@ function signature(value: string): string {
 }
 
 export function createSessionToken(
-  input: Omit<SessionPayload, "expiresAt"> & { expiresAt?: number },
+  input: Omit<SessionPayload, "expiresAt" | "siteSlug"> & {
+    siteSlug?: string | null;
+    expiresAt?: number;
+  },
 ): string {
   const payload = sessionPayloadSchema.parse({
     ...input,
+    siteSlug: input.siteSlug ?? null,
     expiresAt: input.expiresAt ?? Date.now() + 30 * 24 * 60 * 60 * 1000,
   });
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");

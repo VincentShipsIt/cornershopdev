@@ -80,6 +80,11 @@ export type CompletedCheckout = {
   stripePriceId: string | null;
 };
 
+export type ClaimedSiteAccess = {
+  userId: string;
+  organizationId: string;
+};
+
 /**
  * Turns a completed Stripe checkout into an owned site.
  *
@@ -95,7 +100,7 @@ export type CompletedCheckout = {
 export async function claimSite(
   tx: Prisma.TransactionClient,
   checkout: CompletedCheckout,
-): Promise<void> {
+): Promise<ClaimedSiteAccess> {
   const user = await tx.user.upsert({
     where: { email: checkout.email },
     update: {},
@@ -172,4 +177,6 @@ export async function claimSite(
       },
     });
   }
+
+  return { userId: user.id, organizationId };
 }

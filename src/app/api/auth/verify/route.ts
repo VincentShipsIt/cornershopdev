@@ -7,7 +7,8 @@ import {
 } from "@/lib/session";
 
 export async function GET(request: Request) {
-  const token = new URL(request.url).searchParams.get("token");
+  const searchParams = new URL(request.url).searchParams;
+  const token = searchParams.get("token");
   const session = token ? verifySessionToken(token) : null;
   if (!token || !session) redirect("/sign-in?error=invalid-link");
 
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   cookieStore.set(
     SESSION_COOKIE,
     createSessionToken({
-      email: session.email,
+      userId: session.userId,
       siteSlug: session.siteSlug,
     }),
     {
@@ -26,5 +27,5 @@ export async function GET(request: Request) {
     path: "/",
     },
   );
-  redirect("/dashboard");
+  redirect(searchParams.get("destination") === "admin" ? "/admin" : "/dashboard");
 }
