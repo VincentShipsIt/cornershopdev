@@ -41,11 +41,13 @@ launch. Full report deleted after distillation; this file is the record.
 - Launch: single €49/month tier or ~€399/year founding offer.
 - Later: €89/month presence tier (custom-domain concierge, multilingual
   menus, Google Business Profile sync, maintenance).
-- Do not headline €25: it sits above €12–€19 DIY competitors (Menu Builder,
-  RestoWebMaker, Wix) while leaving no margin for DNS, corrections, support.
-- Competitive anchors (July 2026): Owner.com $249–499/mo, Popmenu ~$199/mo,
-  Sociavore/Flavor Plate/UpMenu ~$49/mo, Fisherman $249/mo. PitchKit
-  commoditizes the preview-first cold pitch at $3–39.
+- Do not headline €25: it sits above €12–€19 DIY competitors while leaving
+  too little margin for DNS, corrections, and support.
+- Competitive anchors (July 2026): Owner.com $249–499/mo, Popmenu ~CAD $199/mo,
+  Sociavore $49/mo, Flavor Plate $49/mo, UpMenu €49–169/mo, Fisherman $249/mo.
+  Low end: Menu Builder €12–16/mo, RestoWebMaker free–$59/mo, Wix from $17/mo,
+  editor.menu €6/mo. PitchKit commoditizes the preview-first cold pitch at
+  $3–39 one-time.
 
 ## Compliance constraints (non-negotiable in the audit)
 
