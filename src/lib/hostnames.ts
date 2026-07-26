@@ -1,4 +1,5 @@
 import { resolveVerticalByHostname } from "@/lib/verticals/registry";
+export { requestHostname } from "@/lib/request-hostname";
 
 /**
  * The factory's own hostnames, overridable so a staging box can answer for its
@@ -18,20 +19,6 @@ export function platformHostnames(
       .map((hostname) => hostname.trim().toLowerCase())
       .filter(Boolean),
   );
-}
-
-/**
- * Normalizes the original public hostname at the reverse-proxy boundary.
- * Caddy supplies `x-forwarded-host`; the first value is authoritative when
- * multiple proxies have appended entries.
- */
-export function requestHostname(headers: Headers): string {
-  const forwardedHost = headers.get("x-forwarded-host");
-  return (forwardedHost ?? headers.get("host") ?? "")
-    .split(",")[0]
-    .trim()
-    .split(":")[0]
-    .toLowerCase();
 }
 
 /**

@@ -29,13 +29,22 @@ export default async function DashboardPage({
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
-  const [draft, analyticsSummary, bookingRequests] = access?.ok
+  const [draft, analyticsSummary, bookingInbox] = access?.ok
     ? await Promise.all([
         getRestaurantDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
       ])
-    : [sampleRestaurant, buildEmptyAnalyticsSummary(), []];
+    : [
+        sampleRestaurant,
+        buildEmptyAnalyticsSummary(),
+        {
+          requests: [],
+          total: 0,
+          awaitingContact: 0,
+          truncated: false,
+        },
+      ];
 
   return (
     <Dashboard
@@ -45,7 +54,7 @@ export default async function DashboardPage({
       demo={!session}
       brand={await resolveRequestBrand()}
       analyticsSummary={analyticsSummary}
-      bookingRequests={bookingRequests}
+      bookingInbox={bookingInbox}
     />
   );
 }

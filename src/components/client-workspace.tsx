@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Check, LoaderCircle, Mail, Phone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import type {
   AnalyticsSummaryDto,
   AnalyticsWindowDays,
 } from "@/lib/analytics-contract";
-import type { BookingRequestDto } from "@/lib/booking-request-inbox";
+import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
 
 export function ClientAnalyticsPanel({
   summary,
@@ -68,9 +68,9 @@ export function ClientAnalyticsPanel({
           detail={`${formatPercent(metrics.ctaRate)} of visits`}
         />
         <AnalyticsMetric
-          label="Booking leads"
+          label="Live booking leads"
           value={formatInteger(metrics.bookingLeads)}
-          detail="Durable requests received"
+          detail="Submitted on the live domain"
         />
         <AnalyticsMetric
           label="Lead conversion"
@@ -84,24 +84,19 @@ export function ClientAnalyticsPanel({
 
 export function ClientBookingRequestInbox({
   siteSlug,
-  initialRequests,
+  initialInbox,
   demo,
 }: {
   siteSlug: string;
-  initialRequests: BookingRequestDto[];
+  initialInbox: BookingRequestInboxDto;
   demo: boolean;
 }) {
-  const [requests, setRequests] = useState(initialRequests);
+  const [requests, setRequests] = useState(initialInbox.requests);
+  const [awaitingContact, setAwaitingContact] = useState(
+    initialInbox.awaitingContact,
+  );
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const openCount = useMemo(
-    () =>
-      requests.filter(
-        (request) =>
-          request.status === "NEW" || request.status === "NOTIFIED",
-      ).length,
-    [requests],
-  );
 
   async function updateStatus(
     requestId: string,
@@ -120,6 +115,7 @@ export function ClientBookingRequestInbox({
         },
       );
       if (!response.ok) throw new Error("Status update failed");
+      const previous = requests.find((request) => request.id === requestId);
       setRequests((current) =>
         current.map((request) =>
           request.id === requestId
@@ -131,6 +127,12 @@ export function ClientBookingRequestInbox({
             : request,
         ),
       );
+      if (
+        previous?.status === "NEW" ||
+        previous?.status === "NOTIFIED"
+      ) {
+        setAwaitingContact((current) => Math.max(0, current - 1));
+      }
     } catch {
       setError("The lead status could not be updated. Please try again.");
     } finally {
@@ -153,13 +155,19 @@ export function ClientBookingRequestInbox({
             analytics events.
           </p>
         </div>
-        <Badge variant={openCount > 0 ? "secondary" : "outline"}>
-          {openCount} awaiting contact
+        <Badge variant={awaitingContact > 0 ? "secondary" : "outline"}>
+          {awaitingContact} awaiting contact
         </Badge>
       </div>
       {error ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
           {error}
+        </p>
+      ) : null}
+      {initialInbox.truncated ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Showing the latest {requests.length} of {initialInbox.total} requests.
+          The awaiting-contact count includes the full inbox.
         </p>
       ) : null}
 

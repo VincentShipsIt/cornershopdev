@@ -1,4 +1,10 @@
-export type AnalyticsHeaderReader = Pick<Headers, "get">;
+import {
+  normalizeHostname,
+  requestHostname,
+  type HeaderReader,
+} from "@/lib/request-hostname";
+
+export type AnalyticsHeaderReader = HeaderReader;
 
 export type AnalyticsHostSite = {
   id: string;
@@ -17,13 +23,7 @@ const automatedUserAgent =
  * Reads the public hostname before a reverse proxy can replace it with the
  * container address. Only the first forwarded value belongs to the caller.
  */
-export function analyticsRequestHostname(
-  headers: AnalyticsHeaderReader,
-): string {
-  const forwarded = firstHeaderValue(headers.get("x-forwarded-host"));
-  const host = forwarded || firstHeaderValue(headers.get("host"));
-  return normalizeHostname(host);
-}
+export const analyticsRequestHostname = requestHostname;
 
 /**
  * Uses request headers only as a transient rejection signal. Callers receive a
@@ -65,19 +65,4 @@ export async function resolveEligibleAnalyticsSite({
 
   const site = await lookup(normalized);
   return site?.verified ? site : null;
-}
-
-function firstHeaderValue(value: string | null): string {
-  return value?.split(",")[0]?.trim() ?? "";
-}
-
-function normalizeHostname(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (normalized.startsWith("[")) {
-    const closingBracket = normalized.indexOf("]");
-    return closingBracket > 0
-      ? normalized.slice(1, closingBracket)
-      : normalized;
-  }
-  return normalized.replace(/:\d+$/, "").replace(/\.$/, "");
 }

@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { BrandIdentity } from "@/lib/brand";
 import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
-import type { BookingRequestDto } from "@/lib/booking-request-inbox";
+import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
 import {
   formatPrice,
   type RestaurantDraft,
@@ -63,7 +63,7 @@ export function Dashboard({
   demo,
   brand,
   analyticsSummary,
-  bookingRequests,
+  bookingInbox,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -71,7 +71,7 @@ export function Dashboard({
   demo: boolean;
   brand: BrandIdentity;
   analyticsSummary: AnalyticsSummaryDto;
-  bookingRequests: BookingRequestDto[];
+  bookingInbox: BookingRequestInboxDto;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -368,7 +368,7 @@ export function Dashboard({
             <TabsContent value="leads" className="mt-0">
               <ClientBookingRequestInbox
                 siteSlug={draft.slug}
-                initialRequests={bookingRequests}
+                initialInbox={bookingInbox}
                 demo={demo}
               />
             </TabsContent>

@@ -121,7 +121,7 @@ export default async function AdminPage() {
                   <th scope="col" className="px-5 py-3 font-medium">Visits</th>
                   <th scope="col" className="px-5 py-3 font-medium">CTA visitors</th>
                   <th scope="col" className="px-5 py-3 font-medium">CTA rate</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Booking leads</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Live booking leads</th>
                   <th scope="col" className="px-5 py-3 font-medium">Lead conversion</th>
                 </tr>
               </thead>

@@ -113,24 +113,33 @@ export async function getSiteAnalyticsSummary(
         FROM "AnalyticsEvent" AS event
         WHERE event."siteId" = ${siteId}
           AND event."type" = 'SITE_VIEW'
-          AND event."occurredAt" >= ${now} - windows.days * INTERVAL '1 day'
-          AND event."occurredAt" < ${now}
+          AND event."occurredAt" >=
+            (${now}::timestamptz AT TIME ZONE 'UTC')
+            - make_interval(days => windows.days)
+          AND event."occurredAt" <
+            (${now}::timestamptz AT TIME ZONE 'UTC')
       ) AS visits,
       (
         SELECT COUNT(DISTINCT event."visitId")::int
         FROM "AnalyticsEvent" AS event
         WHERE event."siteId" = ${siteId}
           AND event."type" = 'CTA_CLICK'
-          AND event."occurredAt" >= ${now} - windows.days * INTERVAL '1 day'
-          AND event."occurredAt" < ${now}
+          AND event."occurredAt" >=
+            (${now}::timestamptz AT TIME ZONE 'UTC')
+            - make_interval(days => windows.days)
+          AND event."occurredAt" <
+            (${now}::timestamptz AT TIME ZONE 'UTC')
       ) AS "ctaVisitors",
       (
         SELECT COUNT(*)::int
         FROM "BookingRequest" AS lead
         WHERE lead."siteId" = ${siteId}
           AND lead."source" = ${LIVE_BOOKING_REQUEST_SOURCE}
-          AND lead."createdAt" >= ${now} - windows.days * INTERVAL '1 day'
-          AND lead."createdAt" < ${now}
+          AND lead."createdAt" >=
+            (${now}::timestamptz AT TIME ZONE 'UTC')
+            - make_interval(days => windows.days)
+          AND lead."createdAt" <
+            (${now}::timestamptz AT TIME ZONE 'UTC')
       ) AS "bookingLeads"
     FROM windows
     ORDER BY windows.days ASC
@@ -169,22 +178,31 @@ export async function getPortfolioAnalytics(input: {
           SELECT COUNT(DISTINCT (event."siteId", event."visitId"))::int
           FROM "AnalyticsEvent" AS event
           WHERE event."type" = 'SITE_VIEW'
-            AND event."occurredAt" >= ${now} - windows.days * INTERVAL '1 day'
-            AND event."occurredAt" < ${now}
+            AND event."occurredAt" >=
+              (${now}::timestamptz AT TIME ZONE 'UTC')
+              - make_interval(days => windows.days)
+            AND event."occurredAt" <
+              (${now}::timestamptz AT TIME ZONE 'UTC')
         ) AS visits,
         (
           SELECT COUNT(DISTINCT (event."siteId", event."visitId"))::int
           FROM "AnalyticsEvent" AS event
           WHERE event."type" = 'CTA_CLICK'
-            AND event."occurredAt" >= ${now} - windows.days * INTERVAL '1 day'
-            AND event."occurredAt" < ${now}
+            AND event."occurredAt" >=
+              (${now}::timestamptz AT TIME ZONE 'UTC')
+              - make_interval(days => windows.days)
+            AND event."occurredAt" <
+              (${now}::timestamptz AT TIME ZONE 'UTC')
         ) AS "ctaVisitors",
         (
           SELECT COUNT(*)::int
           FROM "BookingRequest" AS lead
           WHERE lead."source" = ${LIVE_BOOKING_REQUEST_SOURCE}
-            AND lead."createdAt" >= ${now} - windows.days * INTERVAL '1 day'
-            AND lead."createdAt" < ${now}
+            AND lead."createdAt" >=
+              (${now}::timestamptz AT TIME ZONE 'UTC')
+              - make_interval(days => windows.days)
+            AND lead."createdAt" <
+              (${now}::timestamptz AT TIME ZONE 'UTC')
         ) AS "bookingLeads"
       FROM windows
       ORDER BY windows.days ASC
@@ -197,8 +215,10 @@ export async function getPortfolioAnalytics(input: {
         COUNT(DISTINCT event."visitId")
           FILTER (WHERE event."type" = 'CTA_CLICK')::int AS "ctaVisitors"
       FROM "AnalyticsEvent" AS event
-      WHERE event."occurredAt" >= ${cutoff30d}
-        AND event."occurredAt" < ${now}
+      WHERE event."occurredAt" >=
+          (${cutoff30d}::timestamptz AT TIME ZONE 'UTC')
+        AND event."occurredAt" <
+          (${now}::timestamptz AT TIME ZONE 'UTC')
         ${siteFilter}
       GROUP BY event."siteId"
     `),
@@ -208,8 +228,10 @@ export async function getPortfolioAnalytics(input: {
         COUNT(*)::int AS "bookingLeads"
       FROM "BookingRequest" AS lead
       WHERE lead."source" = ${LIVE_BOOKING_REQUEST_SOURCE}
-        AND lead."createdAt" >= ${cutoff30d}
-        AND lead."createdAt" < ${now}
+        AND lead."createdAt" >=
+          (${cutoff30d}::timestamptz AT TIME ZONE 'UTC')
+        AND lead."createdAt" <
+          (${now}::timestamptz AT TIME ZONE 'UTC')
         ${leadSiteFilter}
       GROUP BY lead."siteId"
     `),
