@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { verticalAssetNamespace } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 type Environment = Record<string, string | undefined>;
 
@@ -21,6 +23,7 @@ export function imageStorageIsConfigured(env: Environment = process.env) {
 
 export async function storeSiteImage(input: {
   siteSlug: string;
+  vertical: VerticalId;
   data: Uint8Array;
   mediaType: string;
   purpose: "hero" | "catalog" | "original-hero";
@@ -28,9 +31,11 @@ export async function storeSiteImage(input: {
   const { bucket, publicBaseUrl, region } = getImageStorageConfig();
   const extension =
     input.mediaType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
-  // Keys are only ever written here and stored whole; changing the prefix leaves
-  // any object written under the old one reachable by its already-stored URL.
-  const key = `sites/${input.siteSlug}/${input.purpose}-${randomUUID()}.${extension}`;
+  // One bucket serves every niche, so the niche's own folder comes first and a
+  // site slug only has to be unique within it. Keys are only ever written here
+  // and stored whole; changing the prefix leaves any object written under the
+  // old one reachable by its already-stored URL.
+  const key = `${verticalAssetNamespace(input.vertical)}/sites/${input.siteSlug}/${input.purpose}-${randomUUID()}.${extension}`;
   const s3 = new S3Client({ region });
   await s3.send(
     new PutObjectCommand({

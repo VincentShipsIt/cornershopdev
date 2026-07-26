@@ -13,6 +13,7 @@ import {
   resolveVerticalByHostname,
   resolveVerticalBySlug,
   resolveVerticalConfig,
+  verticalAssetNamespace,
   verticalSlug,
 } from "@/lib/verticals/registry";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
@@ -182,6 +183,23 @@ describe("niche routing", () => {
     expect(resolveVerticalByHostname("")).toBeNull();
   });
 
+  /**
+   * Every niche writes into the one `assets.cornershop.dev` bucket, so a
+   * collision here would let two niches overwrite each other's images.
+   */
+  it("gives every niche its own asset folder, named after its domain", () => {
+    expect(verticalAssetNamespace(Vertical.RESTAURANT)).toBe("restofrontcom");
+    expect(verticalAssetNamespace(Vertical.BEAUTY)).toBe(
+      verticalSlug(Vertical.BEAUTY),
+    );
+
+    const namespaces = listVerticalIds().map(verticalAssetNamespace);
+    expect(new Set(namespaces).size).toBe(namespaces.length);
+    for (const namespace of namespaces) {
+      expect(namespace).toMatch(/^[a-z0-9]+$/);
+    }
+  });
+
   it("lets no two verticals register the same hostname", () => {
     const claimed = listVerticalIds().flatMap(
       (id) => resolveVerticalConfig(id).marketing.hostnames,
@@ -210,7 +228,7 @@ describe("niche routing", () => {
    * The two halves of launching a niche, tied together. A niche with a domain is
    * selling, and a selling niche writes to its customers — if it has no sender of
    * its own, `emailSender` falls through to the deploy-wide `EMAIL_FROM` and a
-   * salon owner gets their sign-in link from Restofront. Adding the domain and
+   * salon owner gets their sign-in link from Cornershopdev. Adding the domain and
    * forgetting the sender is exactly the omission that produces that, so it fails
    * here instead of in someone's inbox.
    */

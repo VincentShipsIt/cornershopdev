@@ -58,8 +58,8 @@ The canonical site is available at `/preview/[slug]`; translations use
 - Bun
 - Tailwind CSS v4 and shadcn/ui
 - Prisma 7 with PostgreSQL and the `pg` driver adapter
-- Vercel AI SDK 6 with OpenRouter Auto for structured text generation
-- Vercel AI Gateway for optional source-photo enhancement
+- Vercel AI SDK 6 with OpenRouter for structured text generation and optional
+  source-photo enhancement
 - Workflow DevKit with its self-hosted PostgreSQL World
 - Amazon S3 and CloudFront for persistent enhanced derivatives
 - Redis for public preview rate limits
@@ -120,11 +120,14 @@ to normalize recovered content into a structured restaurant draft:
 OpenRouter Auto selects a compatible language model per import. Structured output
 is schema validated before it is persisted.
 
-For optional image enhancement, configure AI Gateway.
+Optional image enhancement runs through the same key and the same provider. The
+model must expose `image` output; the default does.
 
-- `AI_TEXT_MODEL` defaults to `openai/gpt-5.4`
-- `AI_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image-preview`
-- `AI_GATEWAY_API_KEY`
+- `OPENROUTER_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image`
+
+Without `OPENROUTER_API_KEY` an import still completes: the draft falls back to
+the deterministic composer and hero enhancement is skipped.
+
 - `WORKFLOW_ENABLED=true`
 - `WORKFLOW_TARGET_WORLD=@workflow/world-postgres`
 - `WORKFLOW_POSTGRES_URL`
@@ -191,11 +194,16 @@ and belongs to a restaurant.
 
 ### Production routing
 
-The frontend remains on Vercel at `cornershop.dev` and `www.cornershop.dev`.
-Set `CORNERSHOPDEV_API_ORIGIN=https://api.cornershop.dev` in the Vercel production
-environment so same-origin `/api/*` requests are proxied to the API without
-changing browser URLs. Route `api.cornershop.dev` and customer restaurant
-domains through Caddy on the EC2 application host.
+The app is single-origin. Caddy on the EC2 application host terminates TLS for
+every ingress the factory operates — `cornershop.dev`, `www`, `api`, `domains`,
+and each customer storefront via on-demand TLS — and reverse-proxies all of them
+to the one application container. No niche gets its own platform subdomain; a
+niche brings only the storefront domain its customers actually type.
+
+Leave `CORNERSHOPDEV_API_ORIGIN` empty. It exists for a future split deployment,
+where it makes `next.config.ts` proxy `/api/*` to a separate API origin. Setting
+it on a single-origin host proxies `/api/*` to a hostname that resolves back to
+this same container, where the rewrite fires again — an infinite loop.
 
 ## Security boundaries
 

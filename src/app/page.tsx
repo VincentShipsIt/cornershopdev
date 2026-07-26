@@ -33,7 +33,7 @@ import {
  * here goes through a niche first.
  */
 
-const REPO_URL = "https://github.com/VincentShipsIt/restofront";
+const REPO_URL = "https://github.com/VincentShipsIt/cornershopdev";
 
 export const metadata: Metadata = {
   title: "Cornershopdev — the website factory for small business",

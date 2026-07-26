@@ -155,7 +155,7 @@ export function ClaimPanel({
                     </p>
                   </div>
                   <span className="font-display text-4xl">
-                    €{item.price}
+                    ${item.price}
                     <small className="font-sans text-xs text-muted-foreground">
                       /mo
                     </small>
