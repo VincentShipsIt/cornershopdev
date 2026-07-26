@@ -16,7 +16,7 @@ export type BrandIdentity = {
 /**
  * Cornershopdev itself — used only on cornershop.dev and on screens reached from
  * a host that belongs to no niche. A small business that arrived through a niche
- * storefront should never see this: they bought Restofront, not a factory.
+ * storefront should never see this: they bought Restofrontapp, not a factory.
  */
 export const FACTORY_BRAND: BrandIdentity = {
   name: "Cornershopdev",

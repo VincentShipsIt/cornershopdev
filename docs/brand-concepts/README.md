@@ -1,9 +1,9 @@
 # Brand identity concepts
 
 Generated with the built-in OpenAI image generator on 2026-07-26. These are
-directional review boards. Restofront 05 is the selected direction; its chosen
+directional review boards. Restofrontapp 05 is the selected direction; its chosen
 favicon artwork has been prepared as production raster assets under
-`public/brand/restofront/`. The transparent, flat 1024 × 1024 master is
+`public/brand/restofrontapp/`. The transparent, flat 1024 × 1024 master is
 `logo-square.png`; its exact burgundy is recorded in the root `DESIGN.md`.
 
 ## Cornershopdev
@@ -42,14 +42,14 @@ mark, exact wordmark, and favicon tile. Use near-black, warm stone, and cobalt.
 Avoid generic cubes, blockchain aesthetics, corporate SaaS symbols, gradients,
 slogans, and extra text.
 
-## Restofront
+## Restofrontapp
 
 ### 01 — Table front
 
 ![Table front concept](./restofront-01-table-front.png)
 
 Prompt: Create a warm contemporary hospitality identity board for
-“Restofront,” a restaurant storefront product that keeps menus, bookings, and
+“Restofrontapp,” a restaurant storefront product that keeps menus, bookings, and
 hours current. Merge a restaurant doorway or façade arch with a table for two,
 with an R in the negative space. Show a standalone mark, exact wordmark, and
 favicon tile. Use oxblood, warm cream, and espresso. Avoid chef hats, crossed
@@ -59,7 +59,7 @@ cutlery, cloches, cartoon food, crests, gradients, slogans, and extra text.
 
 ![Menu doorway concept](./restofront-02-menu-doorway.png)
 
-Prompt: Create a crisp modernist hospitality identity board for “Restofront,” a
+Prompt: Create a crisp modernist hospitality identity board for “Restofrontapp,” a
 digital front door for independent restaurants. Make a folded menu card double
 as an open doorway, with a bold R emerging from the fold. Show a standalone
 mark, exact wordmark, and favicon tile. Use deep navy, butter yellow, and tomato
@@ -70,14 +70,14 @@ slogans, and extra text.
 
 ![Plate front concept](./restofront-03-plate-front.png)
 
-Prompt: Create a bold Mediterranean-editorial identity board for “Restofront.”
+Prompt: Create a bold Mediterranean-editorial identity board for “Restofrontapp.”
 Intersect a simple circular plate with a storefront awning or façade line to
 create an RF-like negative-space monogram. Show a standalone mark, exact
 wordmark, and favicon tile. Use terracotta, olive-black, and pale sand. Avoid
 generic plate-and-cutlery icons, chef hats, pizza slices, ornate crests,
 gradients, slogans, and extra text.
 
-## Restofront classy burgundy studies
+## Restofrontapp classy burgundy studies
 
 These studies return to the strongest territory from the first board: deep
 burgundy, warm cream, espresso, an editorial serif, and an unmistakable

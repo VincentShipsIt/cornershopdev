@@ -1,6 +1,6 @@
 ---
 version: "alpha"
-name: Restofront
+name: Restofrontapp
 description: Classy editorial hospitality identity built around the Fork R mark.
 colors:
   primary: "#7F2020"
@@ -70,13 +70,13 @@ components:
 
 ## Overview
 
-Restofront should feel like a well-run dining room: composed, warm, legible and
+Restofrontapp should feel like a well-run dining room: composed, warm, legible and
 quietly premium. The identity combines editorial serif typography with a single
-unmistakable restaurant cue—the fork cut into the Restofront R.
+unmistakable restaurant cue—the fork cut into the Restofrontapp R.
 
 ## Colors
 
-- **Primary (`#7F2020`):** Restofront burgundy. This exact flat sRGB value owns
+- **Primary (`#7F2020`):** Restofrontapp burgundy. This exact flat sRGB value owns
   the logo tile, primary calls to action and small brand accents.
 - **On primary / background (`#F7F1E7`):** Warm cream used inside the mark and
   across the paper-like page surface.
@@ -88,7 +88,7 @@ unmistakable restaurant cue—the fork cut into the Restofront R.
   sections.
 
 Do not substitute a brighter scarlet, orange-red or generic Tailwind red for
-Restofront burgundy.
+Restofrontapp burgundy.
 
 ## Typography
 
@@ -117,7 +117,7 @@ four sides.
 
 ## Components
 
-- **Brand mark:** use `public/brand/restofront/logo-square.png` as the 1024 ×
+- **Brand mark:** use `public/brand/restofrontapp/logo-square.png` as the 1024 ×
   1024 RGBA master. The canvas outside the burgundy tile is transparent. Derive
   smaller raster exports from it without stretching, non-square cropping, color
   adjustment or effects.

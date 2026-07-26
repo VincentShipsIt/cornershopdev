@@ -225,11 +225,13 @@ describe("niche routing", () => {
     expect(listed).not.toContain(Vertical.BEAUTY);
   });
 
-  it("registers the selected Restofront mark and favicon assets", () => {
+  it("registers the selected Restofrontapp mark and favicon assets", () => {
+    expect(restaurantConfig.marketing.brand.name).toBe("Restofrontapp");
+    expect(restaurantConfig.marketing.brand.initials).toBe("RA");
     expect(restaurantConfig.marketing.brand.mark).toEqual({
-      src: "/brand/restofront/mark.png",
-      faviconSrc: "/brand/restofront/favicon-32.png",
-      appleTouchIconSrc: "/brand/restofront/apple-touch-icon.png",
+      src: "/brand/restofrontapp/mark.png",
+      faviconSrc: "/brand/restofrontapp/favicon-32.png",
+      appleTouchIconSrc: "/brand/restofrontapp/apple-touch-icon.png",
     });
   });
 

@@ -1,15 +1,15 @@
-# Restofront Fork R — design QA
+# Restofrontapp Fork R — design QA
 
 Status: **Passed**
 
-Reference: the selected Fork R favicon from the Restofront 05 concept board.
+Reference: the selected Fork R favicon from the Restofrontapp 05 concept board.
 
 ## Production assets
 
-- `public/brand/restofront/logo-square.png` — 1024 × 1024 master
-- `public/brand/restofront/mark.png` — 512 × 512
-- `public/brand/restofront/favicon-32.png` — 32 × 32
-- `public/brand/restofront/apple-touch-icon.png` — 180 × 180
+- `public/brand/restofrontapp/logo-square.png` — 1024 × 1024 master
+- `public/brand/restofrontapp/mark.png` — 512 × 512
+- `public/brand/restofrontapp/favicon-32.png` — 32 × 32
+- `public/brand/restofrontapp/apple-touch-icon.png` — 180 × 180
 
 The selected artwork was redrawn into a true square RGBA master, flattened to
 the `#7F2020` burgundy and `#F7F1E7` cream recorded in `DESIGN.md`, made
@@ -18,10 +18,10 @@ R, or rounded-square treatment.
 
 ## Rendered checks
 
-- Restofront desktop header: passed at a measured 36 × 36 CSS pixels.
-- Restofront mobile header: passed at 390 × 844 with no horizontal overflow.
+- Restofrontapp desktop header: passed at a measured 36 × 36 CSS pixels.
+- Restofrontapp mobile header: passed at 390 × 844 with no horizontal overflow.
 - Cornershopdev storefront card: passed at a measured 36 × 36 CSS pixels.
-- Browser metadata: passed with the Restofront 32 × 32 favicon and 180 × 180
+- Browser metadata: passed with the Restofrontapp 32 × 32 favicon and 180 × 180
   Apple touch icon present alongside the route title.
 - Salonfront visibility: passed; the unpublished vertical does not render on the
   factory homepage.

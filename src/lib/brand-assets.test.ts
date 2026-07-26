@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-const restofrontAssets = [
+const restofrontappAssets = [
   { name: "logo-square.png", size: 1024 },
   { name: "mark.png", size: 512 },
   { name: "apple-touch-icon.png", size: 180 },
@@ -8,7 +8,10 @@ const restofrontAssets = [
 ] as const;
 
 async function readPngDimensions(name: string) {
-  const path = new URL(`../../public/brand/restofront/${name}`, import.meta.url);
+  const path = new URL(
+    `../../public/brand/restofrontapp/${name}`,
+    import.meta.url,
+  );
   const bytes = await Bun.file(path).arrayBuffer();
   const view = new DataView(bytes);
 
@@ -27,9 +30,9 @@ async function readPngDimensions(name: string) {
   };
 }
 
-describe("Restofront brand assets", () => {
+describe("Restofrontapp brand assets", () => {
   it("keeps every production PNG square, transparent, and correctly sized", async () => {
-    for (const asset of restofrontAssets) {
+    for (const asset of restofrontappAssets) {
       await expect(readPngDimensions(asset.name)).resolves.toEqual({
         width: asset.size,
         height: asset.size,
