@@ -75,3 +75,36 @@ create an RF-like negative-space monogram. Show a standalone mark, exact
 wordmark, and favicon tile. Use terracotta, olive-black, and pale sand. Avoid
 generic plate-and-cutlery icons, chef hats, pizza slices, ornate crests,
 gradients, slogans, and extra text.
+
+## Restofront simplified chair studies
+
+These studies reduce the table-front direction to favicon-grade geometry. The
+original board remains above as the source direction rather than a final mark.
+
+### 04 — R chair
+
+![R chair concept](./restofront-04-r-chair.png)
+
+Prompt: Reduce the original R, chair, and table identity to an R-first monogram
+made from at most four bold strokes. Let one angled stroke imply a chair back and
+one horizontal stroke imply a table edge. Remove the arch, columns, lamp, floor,
+chair legs, and ornamental detail. Show a standalone mark, exact wordmark, and
+favicon tile in oxblood and espresso.
+
+### 05 — Chair doorway
+
+![Chair doorway concept](./restofront-05-chair-doorway.png)
+
+Prompt: Create a single continuous dining-chair silhouette whose back and seat
+also form an open doorway or lowercase R. Keep the mark reductive, soft-cornered,
+and readable at 16px. Remove all building and room detail. Show a standalone
+mark, exact wordmark, and favicon tile in oxblood, cream, and espresso.
+
+### 06 — Table for two
+
+![Table for two concept](./restofront-06-table-for-two.png)
+
+Prompt: Create an asymmetrical top-down table-for-two symbol from exactly three
+bold shapes: one small table and two C-shaped chairs placed diagonally toward it.
+Avoid mirrored pillars, H shapes, pause symbols, and restaurant clichés. Show a
+standalone mark, exact wordmark, and favicon tile in oxblood and espresso.
