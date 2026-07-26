@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { recordClaimRejection } from "@/lib/claim-invitations";
 import { getDb } from "@/lib/db";
 import { claimSite, SiteNotClaimableError } from "@/lib/site-claim";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
@@ -18,7 +19,16 @@ export async function GET(request: Request) {
 
   const email = checkout.customer_details?.email ?? checkout.customer_email;
   const siteSlug = checkout.metadata?.siteSlug;
-  if (!email || !siteSlug) {
+  const claimInvitationId = checkout.metadata?.claimInvitationId;
+  if (!email || !siteSlug || !claimInvitationId) {
+    if (siteSlug) {
+      await recordClaimRejection({
+        siteSlug,
+        reason: "checkout_metadata_missing",
+        actor: "system:stripe-callback",
+        invitationId: claimInvitationId,
+      });
+    }
     return Response.json(
       { error: "Checkout is missing account details" },
       { status: 400 },
@@ -51,6 +61,8 @@ export async function GET(request: Request) {
       claimSite(tx, {
         email,
         siteSlug,
+        claimInvitationId,
+        stripeCheckoutSessionId: checkout.id,
         stripeCustomerId:
           typeof checkout.customer === "string" ? checkout.customer : null,
         stripeSubscriptionId:
@@ -62,6 +74,12 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     if (error instanceof SiteNotClaimableError) {
+      await recordClaimRejection({
+        siteSlug,
+        reason: "checkout_completion_rejected",
+        actor: "system:stripe-callback",
+        invitationId: claimInvitationId,
+      });
       return Response.json({ error: error.message }, { status: 409 });
     }
     throw error;
