@@ -125,12 +125,17 @@ export function selectDeterministicRestaurantTheme(
   input: RestaurantDesignProfile,
 ): RestaurantThemeSelection {
   const scored = scoreRestaurantThemes(input);
-  const winner = scored[0];
-  const alternatives = scored.slice(1, 3).map(({ manifest }) => manifest.id) as [
-    RestaurantThemeId,
-    RestaurantThemeId,
+  const [winner, firstAlternative, secondAlternative] = scored;
+  if (!winner || !firstAlternative || !secondAlternative) {
+    throw new Error(
+      "Restaurant theme selection requires at least three registered themes",
+    );
+  }
+  const alternatives: [RestaurantThemeId, RestaurantThemeId] = [
+    firstAlternative.manifest.id,
+    secondAlternative.manifest.id,
   ];
-  const gap = winner.score - scored[1].score;
+  const gap = winner.score - firstAlternative.score;
   const confidence = Math.min(0.95, Math.max(0.55, 0.62 + gap * 0.035));
   return resolvedSelection(
     {
