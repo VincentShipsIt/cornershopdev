@@ -1,9 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
+import { configuredBillingPlans } from "@/lib/billing-plans";
 import { getDb } from "@/lib/db";
 import { getRedisClient } from "@/lib/redis";
 
-export type PlatformService = "database" | "rateLimit" | "storage";
+export type PlatformService = "database" | "rateLimit" | "storage" | "billing";
 export type PlatformServiceStatus =
   | "ready"
   | "misconfigured"
@@ -133,6 +134,33 @@ function validateStorage(env: Environment): ServiceReadiness | null {
   return null;
 }
 
+function validateBilling(env: Environment): ServiceReadiness | null {
+  try {
+    configuredBillingPlans(env);
+  } catch {
+    return {
+      service: "billing",
+      status: "misconfigured",
+      message:
+        "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
+    };
+  }
+  if (
+    !env.STRIPE_SECRET_KEY ||
+    !env.STRIPE_WEBHOOK_SECRET?.startsWith("whsec_") ||
+    !env.CLAIM_TOKEN_SECRET ||
+    env.CLAIM_TOKEN_SECRET.length < 32
+  ) {
+    return {
+      service: "billing",
+      status: "misconfigured",
+      message:
+        "Set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and a 32-character CLAIM_TOKEN_SECRET.",
+    };
+  }
+  return null;
+}
+
 function configurationError(
   service: PlatformService,
   env: Environment,
@@ -140,7 +168,8 @@ function configurationError(
 ) {
   if (service === "database") return validateDatabase(env, environment);
   if (service === "rateLimit") return validateRateLimit(env);
-  return validateStorage(env);
+  if (service === "storage") return validateStorage(env);
+  return validateBilling(env);
 }
 
 function createDefaultProbes(env: Environment): ReadinessProbes {
@@ -157,6 +186,10 @@ function createDefaultProbes(env: Environment): ReadinessProbes {
       const s3 = new S3Client({ region: env.AWS_REGION });
       await s3.send(new HeadBucketCommand({ Bucket: env.S3_BUCKET }));
     },
+    // Price existence and recurring configuration are verified by Stripe when
+    // Checkout creates a session. Readiness intentionally avoids calling the
+    // Stripe API every five seconds.
+    billing: async () => {},
   };
 }
 
@@ -183,7 +216,12 @@ export async function checkPlatformReadiness(
 ): Promise<PlatformReadiness> {
   const environment = deploymentEnvironment(env);
   const services = await Promise.all(
-    (["database", "rateLimit", "storage"] satisfies PlatformService[]).map(
+    ([
+      "database",
+      "rateLimit",
+      "storage",
+      "billing",
+    ] satisfies PlatformService[]).map(
       async (service): Promise<ServiceReadiness> => {
         const error = configurationError(service, env, environment);
         if (error) return error;

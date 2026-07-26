@@ -1,60 +1,131 @@
 import { z } from "zod";
+import { normalizeAccountEmail } from "@/lib/account-email";
+import { configuredBillingPlans } from "@/lib/billing-plans";
+import { isClaimInvitationAuthorized } from "@/lib/claim-authorization";
+import {
+  createCheckoutReturnState,
+  hashClaimInvitationToken,
+} from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
-import { isClaimable } from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
 
 const requestSchema = z.object({
   plan: z.enum(["starter", "growth"]),
   siteSlug: z.string().trim().min(2).max(80),
-  email: z.email().optional(),
+  email: z.email(),
+  claimToken: z.string().trim().min(32).max(512),
 });
 
 export async function POST(request: Request) {
   try {
-    const { plan, siteSlug, email } = requestSchema.parse(
+    const { plan, siteSlug, email, claimToken } = requestSchema.parse(
       await request.json(),
     );
-    const priceId =
-      plan === "starter"
-        ? process.env.STRIPE_STARTER_PRICE_ID
-        : process.env.STRIPE_GROWTH_PRICE_ID;
-
-    if (!priceId) {
-      throw new Error(`Stripe price for the ${plan} plan is not configured`);
+    if (!process.env.DATABASE_URL) {
+      return Response.json(
+        { error: "Claims are temporarily unavailable" },
+        { status: 503 },
+      );
+    }
+    const priceId = configuredBillingPlans()[plan].priceId;
+    const normalizedEmail = normalizeAccountEmail(email);
+    const db = getDb();
+    const invitation = await db.claimInvitation.findUnique({
+      where: { tokenHash: hashClaimInvitationToken(claimToken) },
+      select: {
+        id: true,
+        email: true,
+        expiresAt: true,
+        acceptedAt: true,
+        stripeCheckoutSessionId: true,
+        stripePriceId: true,
+        site: {
+          select: {
+            slug: true,
+            status: true,
+            organizationId: true,
+          },
+        },
+      },
+    });
+    if (
+      !invitation ||
+      !isClaimInvitationAuthorized(invitation, {
+        siteSlug,
+        email: normalizedEmail,
+      })
+    ) {
+      return Response.json(
+        { error: "This claim invitation is invalid or expired" },
+        { status: 403 },
+      );
+    }
+    if (invitation.stripePriceId && invitation.stripePriceId !== priceId) {
+      return Response.json(
+        { error: "This claim already has a checkout in progress" },
+        { status: 409 },
+      );
     }
 
-    // Fail before taking money for a claim that cannot succeed. This is a
-    // courtesy check only — the authoritative, race-free guard runs inside the
-    // checkout callback's transaction in `api/auth/checkout`.
-    if (process.env.DATABASE_URL) {
-      const site = await getDb().site.findUnique({
-        where: { slug: siteSlug },
-        select: { status: true, organizationId: true },
-      });
-      if (!site || !isClaimable(site)) {
-        return Response.json(
-          { error: "This site is not available to claim" },
-          { status: 409 },
-        );
+    const stripe = getStripe();
+    if (invitation.stripeCheckoutSessionId) {
+      const existing = await stripe.checkout.sessions.retrieve(
+        invitation.stripeCheckoutSessionId,
+      );
+      if (existing.url) {
+        return Response.json({ url: existing.url });
       }
     }
 
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
-    const stripe = getStripe();
+    const state = createCheckoutReturnState(invitation.id);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       allow_promotion_codes: true,
-      customer_email: email,
-      client_reference_id: siteSlug,
-      metadata: { siteSlug, plan, priceId },
-      subscription_data: {
-        metadata: { siteSlug, plan, priceId },
+      customer_email: normalizedEmail,
+      client_reference_id: invitation.id,
+      metadata: {
+        claimInvitationId: invitation.id,
+        siteSlug,
+        plan,
       },
-      success_url: `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
+      subscription_data: {
+        metadata: {
+          claimInvitationId: invitation.id,
+          siteSlug,
+          plan,
+        },
+      },
+      success_url:
+        `${appUrl}/api/auth/checkout?session_id={CHECKOUT_SESSION_ID}` +
+        `&claim_id=${encodeURIComponent(invitation.id)}` +
+        `&state=${encodeURIComponent(state)}`,
+      // Never put the raw claim bearer token in a third-party return URL. A
+      // customer who cancels can reopen the original invitation.
+      cancel_url: `${appUrl}/claim/${encodeURIComponent(siteSlug)}?checkout=canceled`,
+    }, {
+      idempotencyKey: `claim-checkout-${invitation.id}`,
     });
+
+    const bound = await db.claimInvitation.updateMany({
+      where: {
+        id: invitation.id,
+        acceptedAt: null,
+        OR: [
+          { stripeCheckoutSessionId: null },
+          { stripeCheckoutSessionId: session.id },
+        ],
+      },
+      data: {
+        stripeCheckoutSessionId: session.id,
+        stripePriceId: priceId,
+      },
+    });
+    if (bound.count !== 1) {
+      throw new Error("Claim invitation could not be bound to Checkout");
+    }
 
     return Response.json({ url: session.url });
   } catch (error) {

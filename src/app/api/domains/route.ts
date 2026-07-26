@@ -5,6 +5,10 @@ import {
   accessFailureResponse,
   getSiteAccess,
 } from "@/lib/authorization";
+import {
+  billingAccessFailureResponse,
+  getOrganizationBillingAccess,
+} from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
 import { claimDomainForSite } from "@/lib/domain-claim";
@@ -51,6 +55,10 @@ export async function POST(request: Request) {
       .parse(body.siteSlug ?? session?.siteSlug);
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
+    const billing = await getOrganizationBillingAccess(
+      access.site.organizationId,
+    );
+    if (!billing.ok) return billingAccessFailureResponse(billing);
 
     const db = getDb();
     const target = getDomainTarget();
@@ -123,6 +131,10 @@ export async function GET(request: Request) {
       .parse(searchParams.get("siteSlug"));
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
+    const billing = await getOrganizationBillingAccess(
+      access.site.organizationId,
+    );
+    if (!billing.ok) return billingAccessFailureResponse(billing);
 
     const domain = await getDb().domain.findFirst({
       where: {

@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { evaluateBillingAccess } from "@/lib/billing-access";
+import { configuredBillingPriceIds } from "@/lib/billing-plans";
 import { platformHostnames, requestHostname } from "@/lib/hostnames";
 import { LIVE_SITE_SLUG_HEADER } from "@/lib/site-surface";
 import {
@@ -70,9 +72,40 @@ export async function proxy(request: NextRequest) {
 
   const domain = await getDb().domain.findFirst({
     where: { hostname, verified: true },
-    select: { site: { select: { slug: true } } },
+    select: {
+      site: {
+        select: {
+          slug: true,
+          organization: {
+            select: {
+              subscriptions: {
+                orderBy: { updatedAt: "desc" },
+                take: 1,
+                select: {
+                  status: true,
+                  stripePriceId: true,
+                  stripeCustomerId: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
   if (!domain) return new NextResponse("Not found", { status: 404 });
+  let billing;
+  try {
+    billing = evaluateBillingAccess(
+      domain.site.organization?.subscriptions[0] ?? null,
+      configuredBillingPriceIds(),
+    );
+  } catch {
+    return new NextResponse("Site temporarily unavailable", { status: 503 });
+  }
+  if (!billing.ok) {
+    return new NextResponse("Site unavailable", { status: 402 });
+  }
 
   const locale = request.nextUrl.pathname.match(/^\/([a-z]{2})\/?$/i)?.[1];
   const destination = locale

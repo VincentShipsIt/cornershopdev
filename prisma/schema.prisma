@@ -224,14 +224,16 @@ model Domain {
 }
 
 model ClaimInvitation {
-  id         String    @id @default(cuid())
-  email      String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  acceptedAt DateTime?
-  siteId     String
-  site       Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt  DateTime  @default(now())
+  id                      String    @id @default(cuid())
+  email                   String
+  tokenHash               String    @unique
+  expiresAt               DateTime
+  acceptedAt              DateTime?
+  stripeCheckoutSessionId String?   @unique
+  stripePriceId           String?
+  siteId                  String
+  site                    Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt               DateTime  @default(now())
 
   @@index([siteId, email])
 }
@@ -243,10 +245,19 @@ model Subscription {
   stripePriceId        String?
   status               SubscriptionStatus @default(INCOMPLETE)
   currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  lastStripeEventAt    DateTime?
   organizationId       String
   organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+}
+
+model StripeWebhookEvent {
+  eventId         String   @id
+  type            String
+  stripeCreatedAt DateTime
+  processedAt     DateTime @default(now())
 }
 
 model AuditEvent {

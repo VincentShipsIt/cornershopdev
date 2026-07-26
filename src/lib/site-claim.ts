@@ -76,9 +76,13 @@ function rejectClaim(
 export type CompletedCheckout = {
   email: string;
   siteSlug: string;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
+  stripeCustomerId: string;
+  stripeSubscriptionId: string;
   stripePriceId: string | null;
+  subscriptionStatus: "INCOMPLETE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  stripeEventCreatedAt: Date;
 };
 
 export type ClaimedSiteAccess = {
@@ -162,19 +166,33 @@ export async function claimSite(
     }
   }
 
-  if (checkout.stripeCustomerId) {
+  const existingSubscription = await tx.subscription.findUnique({
+    where: { stripeCustomerId: checkout.stripeCustomerId },
+    select: { lastStripeEventAt: true },
+  });
+  if (
+    !existingSubscription ||
+    !existingSubscription.lastStripeEventAt ||
+    existingSubscription.lastStripeEventAt <= checkout.stripeEventCreatedAt
+  ) {
     await tx.subscription.upsert({
       where: { stripeCustomerId: checkout.stripeCustomerId },
       update: {
         stripeSubscriptionId: checkout.stripeSubscriptionId,
         stripePriceId: checkout.stripePriceId,
-        status: "ACTIVE",
+        status: checkout.subscriptionStatus,
+        currentPeriodEnd: checkout.currentPeriodEnd,
+        cancelAtPeriodEnd: checkout.cancelAtPeriodEnd,
+        lastStripeEventAt: checkout.stripeEventCreatedAt,
       },
       create: {
         stripeCustomerId: checkout.stripeCustomerId,
         stripeSubscriptionId: checkout.stripeSubscriptionId,
         stripePriceId: checkout.stripePriceId,
-        status: "ACTIVE",
+        status: checkout.subscriptionStatus,
+        currentPeriodEnd: checkout.currentPeriodEnd,
+        cancelAtPeriodEnd: checkout.cancelAtPeriodEnd,
+        lastStripeEventAt: checkout.stripeEventCreatedAt,
         organizationId,
       },
     });

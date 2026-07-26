@@ -8,6 +8,7 @@ import {
   Check,
   CircleCheck,
   Copy,
+  CreditCard,
   ExternalLink,
   Globe2,
   ImageIcon,
@@ -39,6 +40,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { BrandIdentity } from "@/lib/brand";
 import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
 import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
+import type { BillingAccess } from "@/lib/billing-access";
 import {
   formatPrice,
   type RestaurantDraft,
@@ -64,6 +66,7 @@ export function Dashboard({
   brand,
   analyticsSummary,
   bookingInbox,
+  billingAccess,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -72,6 +75,7 @@ export function Dashboard({
   brand: BrandIdentity;
   analyticsSummary: AnalyticsSummaryDto;
   bookingInbox: BookingRequestInboxDto;
+  billingAccess: BillingAccess | null;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -81,6 +85,7 @@ export function Dashboard({
   const [domainError, setDomainError] = useState<string | null>(null);
   const [domainLoading, setDomainLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   async function save() {
     setSaving(true);
@@ -123,6 +128,32 @@ export function Dashboard({
       );
     } finally {
       setDomainLoading(false);
+    }
+  }
+
+  async function openBillingPortal() {
+    setPortalLoading(true);
+    try {
+      const response = await fetch("/api/billing/portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteSlug: draft.slug }),
+      });
+      const result = (await response.json()) as {
+        url?: string;
+        error?: string;
+      };
+      if (!response.ok || !result.url) {
+        throw new Error(result.error ?? "Billing portal could not open");
+      }
+      window.location.assign(result.url);
+    } catch (caught) {
+      alert(
+        caught instanceof Error
+          ? caught.message
+          : "Billing portal could not open",
+      );
+      setPortalLoading(false);
     }
   }
 
@@ -198,6 +229,21 @@ export function Dashboard({
           >
             View site <ExternalLink />
           </Button>
+          {!demo && billingAccess?.ok ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void openBillingPortal()}
+              disabled={portalLoading}
+            >
+              {portalLoading ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <CreditCard />
+              )}
+              Billing
+            </Button>
+          ) : null}
           <Button
             size="sm"
             onClick={() => void save()}
@@ -214,6 +260,21 @@ export function Dashboard({
           <CircleCheck className="mr-2 inline size-4" />
           Account created. Your website remains private until the domain is
           connected.
+        </div>
+      ) : null}
+      {!demo && billingAccess && !billingAccess.ok ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-center text-sm text-amber-900">
+          {billingAccess.message}. Publishing and monitoring are paused.
+          {billingAccess.customerPortalAvailable ? (
+            <Button
+              variant="link"
+              className="ml-1 h-auto p-0 text-amber-950 underline"
+              onClick={() => void openBillingPortal()}
+              disabled={portalLoading}
+            >
+              Manage billing
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {demo ? (

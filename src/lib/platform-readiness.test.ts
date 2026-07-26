@@ -14,6 +14,11 @@ const configuredEnvironment = {
   S3_BUCKET: "assets.cornershop.dev",
   S3_PUBLIC_BASE_URL: "https://assets.cornershopdev.example.test",
   AWS_REGION: "us-west-1",
+  STRIPE_SECRET_KEY: "sk_test_configured",
+  STRIPE_WEBHOOK_SECRET: "whsec_configured",
+  STRIPE_STARTER_PRICE_ID: "price_starter",
+  STRIPE_GROWTH_PRICE_ID: "price_growth",
+  CLAIM_TOKEN_SECRET: "a-secure-test-secret-that-is-long-enough",
 };
 
 function probes(): ReadinessProbes {
@@ -21,6 +26,7 @@ function probes(): ReadinessProbes {
     database: mock(async () => {}),
     rateLimit: mock(async () => {}),
     storage: mock(async () => {}),
+    billing: mock(async () => {}),
   };
 }
 
@@ -51,10 +57,17 @@ describe("checkPlatformReadiness", () => {
         message:
           "Set S3_BUCKET, S3_PUBLIC_BASE_URL, and AWS_REGION for this deployment environment.",
       },
+      {
+        service: "billing",
+        status: "misconfigured",
+        message:
+          "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
+      },
     ]);
     expect(serviceProbes.database).not.toHaveBeenCalled();
     expect(serviceProbes.rateLimit).not.toHaveBeenCalled();
     expect(serviceProbes.storage).not.toHaveBeenCalled();
+    expect(serviceProbes.billing).not.toHaveBeenCalled();
   });
 
   it("reports configured and reachable services as ready", async () => {

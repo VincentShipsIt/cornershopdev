@@ -1,10 +1,7 @@
 import type Stripe from "stripe";
 import { getDb } from "@/lib/db";
-import {
-  claimSite,
-  SiteNotClaimableError,
-} from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
+import { processStripeWebhookEvent } from "@/lib/stripe-webhook";
 
 export const runtime = "nodejs";
 
@@ -30,50 +27,30 @@ export async function POST(request: Request) {
   }
 
   if (!process.env.DATABASE_URL) {
-    return Response.json({ received: true, persisted: false });
+    // A 2xx response would tell Stripe to stop retrying an event that was
+    // never durably recorded.
+    return Response.json(
+      { error: "Webhook persistence is unavailable" },
+      { status: 503 },
+    );
   }
 
-  const db = getDb();
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const slug = session.metadata?.siteSlug;
-    const email = session.customer_details?.email ?? session.customer_email;
-    if (slug && email) {
-      // Stripe routinely delivers this before the browser follows success_url,
-      // and may be the only completion signal we ever get if the customer
-      // closes the tab. So the webhook performs the whole claim rather than
-      // flipping a status: a status without an owner would strand the row in
-      // a state the callback can no longer claim, locking the customer out.
-      try {
-        await db.$transaction((tx) =>
-          claimSite(tx, {
-            email,
-            siteSlug: slug,
-            stripeCustomerId:
-              typeof session.customer === "string" ? session.customer : null,
-            stripeSubscriptionId:
-              typeof session.subscription === "string"
-                ? session.subscription
-                : null,
-            stripePriceId: session.metadata?.priceId ?? null,
-          }),
-        );
-      } catch (error) {
-        if (!(error instanceof SiteNotClaimableError)) throw error;
-        // Checkout metadata is attacker-influenced, so a slug pointing at
-        // somebody else's site is expected here. Acknowledge it: no
-        // amount of retrying will make that site claimable.
-      }
-    }
-  }
-
-  if (event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object;
-    await db.subscription.updateMany({
-      where: { stripeSubscriptionId: subscription.id },
-      data: { status: "CANCELED" },
+  try {
+    const result = await processStripeWebhookEvent(
+      event,
+      getStripe(),
+      getDb(),
+    );
+    return Response.json({ received: true, persisted: true, result });
+  } catch (error) {
+    console.error("[stripe-webhook] processing failed", {
+      eventId: event.id,
+      eventType: event.type,
+      error: error instanceof Error ? error.message : "unknown",
     });
+    return Response.json(
+      { error: "Webhook processing failed" },
+      { status: 500 },
+    );
   }
-
-  return Response.json({ received: true, persisted: true });
 }

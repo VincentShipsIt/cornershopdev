@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -47,26 +47,93 @@ export function ClaimPanel({
   slug,
   vertical,
   fallbackDraft,
+  claimToken,
+  checkoutReturn,
 }: {
   slug: string;
   vertical: VerticalId;
   fallbackDraft: SiteDraftView;
+  claimToken: string;
+  checkoutReturn: {
+    sessionId: string;
+    claimInvitationId: string;
+    state: string;
+  } | null;
 }) {
   const draft = fallbackDraft;
   const [plan, setPlan] = useState<"starter" | "growth">("growth");
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(checkoutReturn));
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!checkoutReturn) return;
+    let stopped = false;
+    let attempt = 0;
+
+    async function reconcile() {
+      const params = new URLSearchParams({
+        session_id: checkoutReturn!.sessionId,
+        claim_id: checkoutReturn!.claimInvitationId,
+        state: checkoutReturn!.state,
+        poll: "1",
+      });
+      try {
+        const response = await fetch(`/api/auth/checkout?${params}`, {
+          cache: "no-store",
+        });
+        const result = (await response.json()) as {
+          ready?: boolean;
+          url?: string;
+          error?: string;
+        };
+        if (response.ok && result.ready && result.url) {
+          window.location.assign(result.url);
+          return;
+        }
+        if (!response.ok && response.status !== 202) {
+          throw new Error(result.error ?? "Account provisioning failed");
+        }
+      } catch (caught) {
+        if (!stopped) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Account provisioning failed",
+          );
+        }
+        return;
+      }
+      attempt += 1;
+      if (!stopped && attempt < 10) {
+        window.setTimeout(() => void reconcile(), Math.min(1_000 * attempt, 3_000));
+      } else if (!stopped) {
+        setError(
+          "Payment succeeded, but the account is still being finalized. Refresh in a moment.",
+        );
+      }
+    }
+
+    void reconcile();
+    return () => {
+      stopped = true;
+    };
+  }, [checkoutReturn]);
+
   async function checkout() {
-    if (!email) return;
+    if (!email || !claimToken) return;
     setLoading(true);
     setError(null);
     try {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, siteSlug: slug, email }),
+        body: JSON.stringify({
+          plan,
+          siteSlug: slug,
+          email,
+          claimToken,
+        }),
       });
       const result = (await response.json()) as {
         url?: string;
@@ -129,6 +196,17 @@ export function ClaimPanel({
             Claiming creates the owner account and unlocks editing. The current
             website and domain stay untouched until the final DNS step.
           </p>
+          {!claimToken && !checkoutReturn ? (
+            <p className="mt-4 rounded-xl border border-amber-400/40 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950">
+              A secure, unexpired claim invitation is required before checkout.
+            </p>
+          ) : null}
+          {checkoutReturn ? (
+            <p className="mt-4 rounded-xl border bg-muted/45 px-4 py-3 text-xs leading-5">
+              Payment received. Finalizing the owner account from Stripe&apos;s
+              signed webhook…
+            </p>
+          ) : null}
 
           <div className="mt-8 grid gap-3">
             {plans.map((item) => (
@@ -194,7 +272,7 @@ export function ClaimPanel({
           <Button
             size="lg"
             className="mt-4 h-12 w-full"
-            disabled={!email || loading}
+            disabled={!email || !claimToken || loading}
             onClick={() => void checkout()}
           >
             {loading ? (

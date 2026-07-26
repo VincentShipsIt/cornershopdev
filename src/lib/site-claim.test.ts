@@ -63,6 +63,9 @@ describe("claimSite", () => {
         stripeSubscriptionId: "sub_1",
         stripePriceId: "price_1",
         status: "ACTIVE",
+        currentPeriodEnd: new Date("2026-08-26T00:00:00.000Z"),
+        cancelAtPeriodEnd: false,
+        lastStripeEventAt: new Date("2026-07-26T00:00:00.000Z"),
         organizationId: state.organizations[0].id,
       },
     ]);
@@ -159,6 +162,27 @@ describe("claimSite", () => {
 
     expect(state.users[0].email).toBe("owner@chez-lea.test");
   });
+
+  it("does not let an older checkout event overwrite newer billing state", async () => {
+    const { state, tx } = createFakeTx([
+      { slug: "chez-lea", status: "PREVIEW_READY", organizationId: null },
+    ]);
+    await claimSite(
+      tx,
+      completedCheckout({
+        subscriptionStatus: "PAST_DUE",
+        stripeEventCreatedAt: new Date("2026-07-26T00:00:10.000Z"),
+      }),
+    );
+    await claimSite(
+      tx,
+      completedCheckout({
+        subscriptionStatus: "ACTIVE",
+        stripeEventCreatedAt: new Date("2026-07-26T00:00:05.000Z"),
+      }),
+    );
+    expect(state.subscriptions[0].status).toBe("PAST_DUE");
+  });
 });
 
 describe("SiteNotClaimableError", () => {
@@ -207,6 +231,10 @@ function completedCheckout(
     stripeCustomerId: "cus_1",
     stripeSubscriptionId: "sub_1",
     stripePriceId: "price_1",
+    subscriptionStatus: "ACTIVE",
+    currentPeriodEnd: new Date("2026-08-26T00:00:00.000Z"),
+    cancelAtPeriodEnd: false,
+    stripeEventCreatedAt: new Date("2026-07-26T00:00:00.000Z"),
     ...overrides,
   };
 }
@@ -222,6 +250,9 @@ type SubscriptionRow = {
   stripeSubscriptionId: string | null;
   stripePriceId: string | null;
   status: string;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  lastStripeEventAt: Date | null;
   organizationId: string;
 };
 
@@ -282,6 +313,14 @@ function createFakeTx(sites: SiteRow[]) {
         state.sites.filter((row) => matches(row, where)).length,
     },
     subscription: {
+      findUnique: async ({
+        where,
+      }: {
+        where: { stripeCustomerId: string };
+      }) =>
+        state.subscriptions.find(
+          (row) => row.stripeCustomerId === where.stripeCustomerId,
+        ) ?? null,
       upsert: async ({ where, update, create }: UpsertSubscriptionArgs) => {
         const existing = state.subscriptions.find(
           (row) => row.stripeCustomerId === where.stripeCustomerId,
