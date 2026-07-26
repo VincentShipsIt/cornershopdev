@@ -250,5 +250,6 @@ export function getRestaurantThemeManifest(
 export function findRestaurantThemeManifest(
   id: string,
 ): RestaurantThemeManifest | null {
+  if (!Object.hasOwn(manifests, id)) return null;
   return (manifests as Record<string, RestaurantThemeManifest>)[id] ?? null;
 }

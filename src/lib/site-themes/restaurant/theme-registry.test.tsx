@@ -9,7 +9,10 @@ import {
   restaurantThemeSelectionSchema,
 } from "@/lib/site-themes/restaurant/contracts";
 import { restaurantThemeFixtures } from "@/lib/site-themes/restaurant/fixtures";
-import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
+import {
+  findRestaurantThemeManifest,
+  listRestaurantThemeManifests,
+} from "@/lib/site-themes/restaurant/registry";
 import {
   normalizeGeneratedRestaurantThemeSelection,
   parseRestaurantThemeSelection,
@@ -47,6 +50,11 @@ describe("restaurant theme registry", () => {
       expect(hasRestaurantThemeRenderer(manifest.id)).toBe(true);
       expect(() => JSON.stringify(manifest)).not.toThrow();
     }
+  });
+
+  it("does not resolve inherited object properties as theme manifests", () => {
+    expect(findRestaurantThemeManifest("__proto__")).toBeNull();
+    expect(findRestaurantThemeManifest("constructor")).toBeNull();
   });
 
   it("keeps order-app interaction capabilities on commerce only", () => {

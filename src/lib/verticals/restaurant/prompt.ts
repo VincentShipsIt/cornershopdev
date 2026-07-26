@@ -15,6 +15,7 @@ designProfile.primaryIntent: reserve | order | visit.
 designProfile.menuExperience: editorial | catalog | commerce.
 designProfile.brandTraits (1–3): classic | craft | minimal | playful | energetic | atmospheric.
 designProfile.pricePosition: value | midmarket | premium.
+designProfile.locationCount: integer from 1 to 50.
 designProfile.photographyQuality: none | limited | strong.
 themeSelection tokens are limited to six-digit hex colours plus fontPair editorial | grotesk | condensed, density airy | balanced | compact, radius none | soft | round, and imageTreatment natural | cinematic | graphic.
 Catalog content is described as menus, sections, and dishes.`,

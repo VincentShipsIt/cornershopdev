@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowRight, Check, ShieldCheck } from "lucide-react";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { SiteHeader } from "@/components/site-header";
@@ -70,7 +71,7 @@ export default function RestaurantThemeGalleryPage() {
             const selection = parseRestaurantThemeSelection(
               fixture.attributes.themeSelection,
             );
-            if (!selection) return null;
+            if (!selection) notFound();
 
             return (
               <article key={manifest.id}>

@@ -1,4 +1,6 @@
 import type { MetadataRoute } from "next";
+import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
+import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 import { resolveRequestOrigin } from "@/lib/verticals/request-site";
 
 /**
@@ -11,6 +13,9 @@ import { resolveRequestOrigin } from "@/lib/verticals/request-site";
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = await resolveRequestOrigin();
+  const restaurantOrigin = restaurantMarketing.domain
+    ? `https://${restaurantMarketing.domain}`
+    : null;
   const routes: MetadataRoute.Sitemap = [
     {
       url: origin,
@@ -19,13 +24,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 1,
     },
   ];
-  if (origin === "https://restofront.com") {
+  if (origin === restaurantOrigin) {
     routes.push({
       url: `${origin}/themes/restaurant`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.8,
     });
+    routes.push(
+      ...listRestaurantThemeManifests().map(({ id }) => ({
+        url: `${origin}/themes/restaurant/${id}`,
+        lastModified: new Date(),
+        changeFrequency: "monthly" as const,
+        priority: 0.7,
+      })),
+    );
   }
   return routes;
 }
