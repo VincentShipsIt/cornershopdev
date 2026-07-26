@@ -7,6 +7,7 @@ import {
 } from "@/lib/authorization";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
+import { claimDomainForSite } from "@/lib/domain-claim";
 
 const hostnameSchema = z
   .string()
@@ -52,28 +53,37 @@ export async function POST(request: Request) {
     if (!access.ok) return accessFailureResponse(access);
 
     const db = getDb();
-    const existingDomain = await db.domain.findUnique({
-      where: { hostname },
-      select: { siteId: true },
+    const target = getDomainTarget();
+    const verificationToken = randomBytes(24).toString("base64url");
+    const claimed = await claimDomainForSite({
+      runSerializable: (operation) =>
+        db.$transaction(
+          (transaction) =>
+            operation({
+              findOwner: async (candidateHostname) =>
+                (
+                  await transaction.domain.findUnique({
+                    where: { hostname: candidateHostname },
+                    select: { siteId: true },
+                  })
+                )?.siteId ?? null,
+              create: async (data) => {
+                await transaction.domain.create({ data });
+              },
+            }),
+          { isolationLevel: "Serializable" },
+        ),
+    }, {
+      hostname,
+      siteId: access.site.id,
+      verificationToken,
     });
-    if (existingDomain && existingDomain.siteId !== access.site.id) {
+    if (!claimed) {
       return Response.json(
         { error: "This domain is already connected to another site" },
         { status: 409 },
       );
     }
-
-    const target = getDomainTarget();
-    const verificationToken = randomBytes(24).toString("base64url");
-    await db.domain.upsert({
-      where: { hostname },
-      update: { siteId: access.site.id },
-      create: {
-        hostname,
-        siteId: access.site.id,
-        verificationToken,
-      },
-    });
 
     const isApex = hostname.split(".").length === 2;
     return Response.json({

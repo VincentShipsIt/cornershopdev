@@ -476,7 +476,10 @@ export async function createOperatorSiteImport<
           }
 
           return {
-            draft,
+            draft: config.draftSchema.parse({
+              ...draft,
+              slug: site.slug,
+            }) as TDraft,
             importJobId: importJob.id,
             urls: buildImportUrls(site.slug),
             created: true,

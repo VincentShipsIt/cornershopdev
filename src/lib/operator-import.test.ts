@@ -43,6 +43,27 @@ describe("operator import identity", () => {
       expect(conflict).toEqual({ id: "site_existing" });
     });
   }
+
+  it("ignores an unrelated site", async () => {
+    const conflict = await findOperatorImportConflict(
+      {
+        findFirstSite: async (where) =>
+          matchesWhere(
+            {
+              slug: "some-other-place",
+              sourceKey: "url:example.com",
+              sourceUrl: "https://example.com/",
+            },
+            where,
+          )
+            ? { id: "site_existing" }
+            : null,
+      },
+      identity,
+    );
+
+    expect(conflict).toBeNull();
+  });
 });
 
 function matchesWhere(

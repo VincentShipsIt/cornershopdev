@@ -91,6 +91,8 @@ async function main() {
       (sum, section) => sum + section._count.items,
       0,
     );
+    // This independent read intentionally repeats the transaction's fidelity
+    // guard to prove the committed row is visible through a fresh query.
     if (
       verified.slug !== canonicalSlug ||
       verified.eyebrow !== draft.eyebrow ||
@@ -127,4 +129,9 @@ function parseMode(args: string[]): boolean {
   throw new Error("Usage: bun run operator:import:le-petit-meunier [--execute]");
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Import failed");
+  process.exitCode = 1;
+}

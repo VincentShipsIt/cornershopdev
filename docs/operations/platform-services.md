@@ -47,10 +47,21 @@ Production.
 1. Confirm the target shell or CI environment contains the reviewed target
    `DATABASE_URL`.
 2. Take or verify a provider backup before any destructive migration.
-3. Check migration state with `bun run db:migrate:status`.
-4. Apply pending migrations with `bun run db:migrate:deploy`.
-5. Redeploy the application and confirm `/api/health/ready` returns `200`.
-6. Record the migration name, target environment, operator, and backup reference
+3. Before the account-email migration, run this read-only duplicate preflight:
+
+   ```sql
+   SELECT LOWER("email"), COUNT(*)
+   FROM "User"
+   GROUP BY LOWER("email")
+   HAVING COUNT(*) > 1;
+   ```
+
+   Resolve any returned rows before deploying; the migration itself also fails
+   closed on this condition.
+4. Check migration state with `bun run db:migrate:status`.
+5. Apply pending migrations with `bun run db:migrate:deploy`.
+6. Redeploy the application and confirm `/api/health/ready` returns `200`.
+7. Record the migration name, target environment, operator, and backup reference
    in the release record.
 
 ### Reviewed fixture imports

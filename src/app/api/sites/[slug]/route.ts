@@ -6,9 +6,10 @@ import {
 import { fromRestaurantDraft, restaurantDraftSchema } from "@/lib/restaurant";
 import { updateSiteDraft } from "@/lib/site-persistence";
 
-type RouteContext = { params: Promise<{ slug: string }> };
-
-export async function PUT(request: Request, { params }: RouteContext) {
+export async function PUT(
+  request: Request,
+  { params }: RouteContext<"/api/sites/[slug]">,
+) {
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);

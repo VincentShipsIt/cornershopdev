@@ -113,14 +113,14 @@ export default async function AdminPage() {
             <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
-                  <th className="px-5 py-3 font-medium">Business</th>
-                  <th className="px-5 py-3 font-medium">Lifecycle</th>
-                  <th className="px-5 py-3 font-medium">Signup</th>
-                  <th className="px-5 py-3 font-medium">Subscription</th>
-                  <th className="px-5 py-3 font-medium">Import</th>
-                  <th className="px-5 py-3 font-medium">Booking leads</th>
-                  <th className="px-5 py-3 font-medium">Created</th>
-                  <th className="px-5 py-3 text-right font-medium">Site</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Business</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Lifecycle</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Signup</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Subscription</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Import</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Booking leads</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Created</th>
+                  <th scope="col" className="px-5 py-3 text-right font-medium">Site</th>
                 </tr>
               </thead>
               <tbody className="divide-y">

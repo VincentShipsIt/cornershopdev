@@ -49,22 +49,42 @@ async function main() {
 }
 
 function parseArguments(args: string[]): { email: string; execute: boolean } {
-  const emailFlag = args.indexOf("--email");
-  const emailValue = emailFlag >= 0 ? args[emailFlag + 1] : undefined;
-  const allowed = new Set(["--email", emailValue ?? "", "--execute"]);
-  if (
-    !emailValue ||
-    args.some((argument) => !allowed.has(argument)) ||
-    args.filter((argument) => argument === "--email").length !== 1
-  ) {
-    throw new Error(
+  let emailValue: string | undefined;
+  let execute = false;
+  const usage = () =>
+    new Error(
       "Usage: bun run operator:grant-superadmin --email owner@example.com [--execute]",
     );
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--execute") {
+      if (execute) throw usage();
+      execute = true;
+      continue;
+    }
+    if (argument === "--email") {
+      const value = args[index + 1];
+      if (emailValue !== undefined || !value || value.startsWith("--")) {
+        throw usage();
+      }
+      emailValue = value;
+      index += 1;
+      continue;
+    }
+    throw usage();
   }
+
+  if (!emailValue) throw usage();
   return {
     email: normalizeAccountEmail(emailValue),
-    execute: args.includes("--execute"),
+    execute,
   };
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Promotion failed");
+  process.exitCode = 1;
+}

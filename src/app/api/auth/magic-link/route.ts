@@ -58,8 +58,11 @@ export async function POST(request: Request) {
       siteSlug: site?.slug,
       expiresAt: Date.now() + 20 * 60 * 1000,
     });
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
+    const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (!configuredAppUrl) {
+      throw new Error("NEXT_PUBLIC_APP_URL is not configured");
+    }
+    const appUrl = new URL(configuredAppUrl).origin;
     const destination = isSuperadmin ? "admin" : "dashboard";
     const verifyUrl = `${appUrl}/api/auth/verify?token=${encodeURIComponent(token)}&destination=${destination}`;
     // Customer links use the niche identity they already trust. Operator links

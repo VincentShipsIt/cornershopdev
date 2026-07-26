@@ -1,28 +1,22 @@
 import "server-only";
+import type {
+  ImportStatus,
+  SiteStatus,
+  SubscriptionStatus,
+  Vertical,
+} from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 
 export type OperatorSiteRow = {
   id: string;
   slug: string;
   name: string;
-  vertical: "RESTAURANT" | "BEAUTY";
-  status: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
+  vertical: Vertical;
+  status: SiteStatus;
   createdAt: Date;
   ownerCount: number;
-  subscriptionStatus:
-    | "INCOMPLETE"
-    | "ACTIVE"
-    | "PAST_DUE"
-    | "CANCELED"
-    | null;
-  latestImportStatus:
-    | "QUEUED"
-    | "CRAWLING"
-    | "EXTRACTING"
-    | "GENERATING"
-    | "READY"
-    | "FAILED"
-    | null;
+  subscriptionStatus: SubscriptionStatus | null;
+  latestImportStatus: ImportStatus | null;
   latestImportAt: Date | null;
   bookingRequestCount: number;
   newBookingRequestCount: number;
@@ -55,7 +49,11 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
     sites,
   ] = await Promise.all([
     db.site.count(),
-    db.site.count({ where: { organizationId: { not: null } } }),
+    db.site.count({
+      where: {
+        organization: { memberships: { some: {} } },
+      },
+    }),
     db.subscription.count({ where: { status: "ACTIVE" } }),
     db.bookingRequest.count(),
     db.bookingRequest.count({ where: { status: "NEW" } }),
