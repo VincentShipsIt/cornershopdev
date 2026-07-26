@@ -367,7 +367,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
 
     expect(results.map((result) => result.version).sort()).toEqual([3, 4]);
     expect(versions.map((version) => version.version)).toEqual([1, 2, 3, 4]);
-    expect(pointer.publishedSiteVersionId).toBe(versions.at(-1)?.id);
+    expect(pointer.publishedSiteVersionId).toBe(versions.at(-1)?.id ?? null);
 
     await expect(
       Promise.resolve(
