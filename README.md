@@ -123,7 +123,7 @@ is schema validated before it is persisted.
 Optional image enhancement runs through the same key and the same provider. The
 model must expose `image` output; the default does.
 
-- `OPENROUTER_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image-preview`
+- `OPENROUTER_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image`
 
 Without `OPENROUTER_API_KEY` an import still completes: the draft falls back to
 the deterministic composer and hero enhancement is skipped.

@@ -106,7 +106,7 @@ function getTextModel() {
 function getImageModel() {
   return getOpenRouter().chat(
     process.env.OPENROUTER_IMAGE_MODEL ??
-      "google/gemini-3.1-flash-image-preview",
+      "google/gemini-3.1-flash-image",
     {
       extraBody: { modalities: ["image", "text"] },
       usage: { include: true },

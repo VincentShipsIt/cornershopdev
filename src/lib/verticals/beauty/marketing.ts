@@ -22,7 +22,7 @@ export const beautyMarketing = {
     headline: "Every service, priced and bookable.",
     subheadline:
       "Give us the salon. Get back a mobile-first website with the full service list, durations and prices already inside—and keep the booking system your clients already use.",
-    proofPoints: ["No setup call", "Private preview first", "From €25/month"],
+    proofPoints: ["No setup call", "Private preview first", "From $25/month"],
   },
   form: {
     placeholder: "Salon website or name",
@@ -99,7 +99,7 @@ export const beautyMarketing = {
     plans: [
       {
         name: "Starter",
-        price: "€25",
+        price: "$25",
         cadence: "/month",
         copy: "The always-current essentials for one independent salon.",
         features: [
@@ -111,7 +111,7 @@ export const beautyMarketing = {
       },
       {
         name: "Growth",
-        price: "€50",
+        price: "$50",
         cadence: "/month",
         copy: "For salons that change their offer often and want the work handled.",
         features: [
