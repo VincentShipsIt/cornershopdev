@@ -1,102 +1,72 @@
 import "server-only";
+import {
+  createAuthorizationPolicy,
+  type AccessFailure,
+  type SiteAccess,
+  type SiteAccessRecord,
+  type SuperadminAccess,
+} from "@/lib/authorization-policy";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
 import { isConfiguredSuperadminEmail } from "@/lib/superadmin-config";
-import type { VerticalId } from "@/lib/verticals/types";
 
-export type AccessFailure = {
-  ok: false;
-  status: 401 | 403 | 503;
-  message: string;
-};
+const authorization = createAuthorizationPolicy({
+  isDatabaseConfigured: () => Boolean(process.env.DATABASE_URL),
+  getSession: getCurrentSession,
+  findSiteForMember: async (siteSlug, userId) => {
+    const site = await getDb().site.findFirst({
+      where: {
+        slug: siteSlug,
+        organization: {
+          memberships: { some: { userId } },
+        },
+      },
+      select: {
+        id: true,
+        slug: true,
+        vertical: true,
+        organizationId: true,
+        organization: {
+          select: {
+            memberships: {
+              where: { userId },
+              take: 1,
+              select: {
+                user: { select: { id: true, email: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const user = site?.organization?.memberships[0]?.user;
+    if (!site?.organizationId || !user) return null;
 
-export type SiteAccess = {
-  ok: true;
-  session: {
-    userId: string;
-    siteSlug: string;
-  };
-  site: {
-    id: string;
-    slug: string;
-    vertical: VerticalId;
-    organizationId: string;
-  };
-  user: {
-    id: string;
-    email: string;
-  };
-};
-
-export type SuperadminAccess = {
-  id: string;
-  email: string;
-};
+    return {
+      id: site.id,
+      slug: site.slug,
+      vertical: site.vertical,
+      organizationId: site.organizationId,
+      user,
+    } satisfies SiteAccessRecord;
+  },
+  findUser: async (userId) =>
+    getDb().user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, platformRole: true },
+    }),
+  isSuperadminEmail: isConfiguredSuperadminEmail,
+});
 
 /**
  * Revalidates the signed session against current organization membership.
  * Removing a user from an organization therefore revokes access immediately,
  * even if their browser still holds an unexpired cookie.
  */
-export async function getSiteAccess(
+export function getSiteAccess(
   siteSlug: string,
 ): Promise<SiteAccess | AccessFailure> {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { ok: false, status: 401, message: "Unauthorized" };
-  }
-  if (!session.siteSlug || session.siteSlug !== siteSlug) {
-    return { ok: false, status: 403, message: "Forbidden" };
-  }
-  if (!process.env.DATABASE_URL) {
-    return {
-      ok: false,
-      status: 503,
-      message: "Account database is not configured",
-    };
-  }
-
-  const site = await getDb().site.findFirst({
-    where: {
-      slug: siteSlug,
-      organization: {
-        memberships: { some: { userId: session.userId } },
-      },
-    },
-    select: {
-      id: true,
-      slug: true,
-      vertical: true,
-      organizationId: true,
-      organization: {
-        select: {
-          memberships: {
-            where: { userId: session.userId },
-            take: 1,
-            select: {
-              user: { select: { id: true, email: true } },
-            },
-          },
-        },
-      },
-    },
-  });
-  const user = site?.organization?.memberships[0]?.user;
-  if (!site?.organizationId || !user) {
-    return { ok: false, status: 403, message: "Forbidden" };
-  }
-
-  return {
-    ok: true,
-    session: { userId: session.userId, siteSlug },
-    site: {
-      id: site.id,
-      slug: site.slug,
-      vertical: site.vertical,
-      organizationId: site.organizationId,
-    },
-    user,
-  };
+  return authorization.getSiteAccess(siteSlug);
 }
 
 /**
@@ -104,22 +74,8 @@ export async function getSiteAccess(
  * A stale database promotion or an accidental environment entry is insufficient
  * on its own.
  */
-export async function getSuperadminAccess(): Promise<SuperadminAccess | null> {
-  const session = await getCurrentSession();
-  if (!session || !process.env.DATABASE_URL) return null;
-
-  const user = await getDb().user.findUnique({
-    where: { id: session.userId },
-    select: { id: true, email: true, platformRole: true },
-  });
-  if (
-    !user ||
-    user.platformRole !== "SUPERADMIN" ||
-    !isConfiguredSuperadminEmail(user.email)
-  ) {
-    return null;
-  }
-  return { id: user.id, email: user.email };
+export function getSuperadminAccess(): Promise<SuperadminAccess | null> {
+  return authorization.getSuperadminAccess();
 }
 
 export function accessFailureResponse(failure: AccessFailure): Response {
@@ -131,3 +87,5 @@ export function accessFailureResponse(failure: AccessFailure): Response {
     },
   );
 }
+
+export type { AccessFailure, SiteAccess, SuperadminAccess };

@@ -15,10 +15,6 @@ export async function PUT(request: Request, { params }: RouteContext) {
 
   try {
     const draft = restaurantDraftSchema.parse(await request.json());
-    if (!process.env.DATABASE_URL) {
-      return Response.json({ ok: true, persisted: false });
-    }
-
     // Same column and relation mapping as the import path, so an owner edit can
     // never write a shape the read path refuses to parse.
     await updateSiteDraft(

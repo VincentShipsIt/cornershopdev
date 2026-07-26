@@ -20,6 +20,7 @@ export default async function DashboardPage({
   const query = await searchParams;
   const session = await getCurrentSession();
   if (!session && query.demo !== "1") redirect("/sign-in");
+  if (session && !session.siteSlug) redirect("/admin");
 
   const access =
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;

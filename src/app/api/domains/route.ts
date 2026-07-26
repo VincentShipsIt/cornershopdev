@@ -5,6 +5,7 @@ import {
   accessFailureResponse,
   getSiteAccess,
 } from "@/lib/authorization";
+import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
 
 const hostnameSchema = z
@@ -41,7 +42,12 @@ export async function POST(request: Request) {
       siteSlug?: string;
     };
     const hostname = hostnameSchema.parse(body.hostname);
-    const siteSlug = z.string().min(2).max(80).parse(body.siteSlug);
+    const session = await getCurrentSession();
+    const siteSlug = z
+      .string()
+      .min(2)
+      .max(80)
+      .parse(body.siteSlug ?? session?.siteSlug);
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
 
@@ -100,7 +106,11 @@ export async function GET(request: Request) {
   try {
     const searchParams = new URL(request.url).searchParams;
     const hostname = hostnameSchema.parse(searchParams.get("hostname"));
-    const siteSlug = z.string().min(2).max(80).parse(searchParams.get("siteSlug"));
+    const siteSlug = z
+      .string()
+      .min(2)
+      .max(80)
+      .parse(searchParams.get("siteSlug"));
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
 

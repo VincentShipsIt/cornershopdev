@@ -92,6 +92,51 @@ export class OperatorImportConflictError extends Error {
   }
 }
 
+export type OperatorImportIdentity = {
+  slug: string;
+  sourceKey: string;
+  sourceUrl: string | null;
+  forbiddenSlugs: string[];
+  where: Prisma.SiteWhereInput;
+};
+
+export function buildOperatorImportIdentity(
+  draft: Pick<PersistableSiteDraft, "slug" | "name" | "sourceUrl">,
+  source: string,
+  forbiddenSlugs: string[] = [],
+  vertical: VerticalId = Vertical.RESTAURANT,
+): OperatorImportIdentity {
+  const slug =
+    slugify(draft.slug) || slugify(draft.name) || vertical.toLowerCase();
+  const sourceKey = normalizeImportSource(draft.sourceUrl ?? source);
+  const allForbiddenSlugs = [...new Set([slug, ...forbiddenSlugs])];
+  const identityConditions: Prisma.SiteWhereInput[] = [
+    { slug: { in: allForbiddenSlugs } },
+    { sourceKey },
+  ];
+  if (draft.sourceUrl) {
+    identityConditions.push({ sourceUrl: draft.sourceUrl });
+  }
+  return {
+    slug,
+    sourceKey,
+    sourceUrl: draft.sourceUrl,
+    forbiddenSlugs: allForbiddenSlugs,
+    where: { OR: identityConditions },
+  };
+}
+
+export async function findOperatorImportConflict(
+  lookup: {
+    findFirstSite: (
+      where: Prisma.SiteWhereInput,
+    ) => Promise<{ id: string } | null>;
+  },
+  identity: OperatorImportIdentity,
+): Promise<{ id: string } | null> {
+  return lookup.findFirstSite(identity.where);
+}
+
 export async function createImportJob(
   source: string,
   vertical: VerticalId = Vertical.RESTAURANT,
@@ -308,33 +353,33 @@ export async function createOperatorSiteImport<
   const db = requireImportDatabase();
   const config = resolveVerticalConfig(input.vertical);
   const draft = config.draftSchema.parse(input.draft) as TDraft;
-  const sourceKey = normalizeImportSource(draft.sourceUrl ?? input.source);
-  const slug =
-    slugify(draft.slug) || slugify(draft.name) || input.vertical.toLowerCase();
-  const forbiddenSlugs = [...new Set([slug, ...(input.forbiddenSlugs ?? [])])];
+  const identity = buildOperatorImportIdentity(
+    draft,
+    input.source,
+    input.forbiddenSlugs,
+    input.vertical,
+  );
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await db.$transaction(
         async (tx) => {
-          const identityConditions: Prisma.SiteWhereInput[] = [
-            { slug: { in: forbiddenSlugs } },
-            { sourceKey },
-          ];
-          if (draft.sourceUrl) {
-            identityConditions.push({ sourceUrl: draft.sourceUrl });
-          }
-
-          const conflict = await tx.site.findFirst({
-            where: { OR: identityConditions },
-            select: { id: true },
-          });
+          const conflict = await findOperatorImportConflict(
+            {
+              findFirstSite: (where) =>
+                tx.site.findFirst({
+                  where,
+                  select: { id: true },
+                }),
+            },
+            identity,
+          );
           if (conflict) throw new OperatorImportConflictError();
 
           const importJob = await tx.importJob.create({
             data: {
               source: storedImportSource(input.source),
-              sourceKey,
+              sourceKey: identity.sourceKey,
               vertical: input.vertical,
               status: "QUEUED",
               startedAt: new Date(),
@@ -343,8 +388,8 @@ export async function createOperatorSiteImport<
           });
           const site = await tx.site.create({
             data: {
-              slug,
-              ...siteScalarData(draft, input.vertical, sourceKey),
+              slug: identity.slug,
+              ...siteScalarData(draft, input.vertical, identity.sourceKey),
               integrations: { create: integrationCreateData(draft) },
               catalogSections: {
                 create: catalogSectionCreateData(draft, input.vertical),
@@ -362,7 +407,7 @@ export async function createOperatorSiteImport<
                 importJobId: importJob.id,
                 vertical: input.vertical,
                 source: storedImportSource(input.source),
-                sourceKey,
+                sourceKey: identity.sourceKey,
               },
               siteId: site.id,
             },
@@ -376,8 +421,23 @@ export async function createOperatorSiteImport<
             },
           });
 
-          const [sectionCount, itemCount, integrationRows, versionCount] =
+          const [
+            persistedSite,
+            sectionCount,
+            itemCount,
+            integrationRows,
+            versionCount,
+          ] =
             await Promise.all([
+              tx.site.findUnique({
+                where: { id: site.id },
+                select: {
+                  slug: true,
+                  eyebrow: true,
+                  status: true,
+                  sourceKey: true,
+                },
+              }),
               tx.catalogSection.count({ where: { siteId: site.id } }),
               tx.catalogItem.count({
                 where: { section: { siteId: site.id } },
@@ -399,6 +459,11 @@ export async function createOperatorSiteImport<
               integration.label === draft.integrations[index]?.label,
           );
           if (
+            !persistedSite ||
+            persistedSite.slug !== identity.slug ||
+            persistedSite.eyebrow !== draft.eyebrow ||
+            persistedSite.status !== "PREVIEW_READY" ||
+            persistedSite.sourceKey !== identity.sourceKey ||
             sectionCount !== draft.catalogSections.length ||
             itemCount !== expectedItemCount ||
             integrationRows.length !== draft.integrations.length ||

@@ -146,6 +146,19 @@ describe("claimSite", () => {
       state.organizations[0].id,
     ]);
   });
+
+  it("normalizes Stripe email before creating account identity", async () => {
+    const { state, tx } = createFakeTx([
+      { slug: "chez-lea", status: "PREVIEW_READY", organizationId: null },
+    ]);
+
+    await claimSite(
+      tx,
+      completedCheckout({ email: " Owner@Chez-Lea.TEST " }),
+    );
+
+    expect(state.users[0].email).toBe("owner@chez-lea.test");
+  });
 });
 
 describe("SiteNotClaimableError", () => {

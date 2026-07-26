@@ -1,9 +1,10 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
-import { normalizeImportSource } from "@/lib/import-identity";
 import { leadSiteDrafts } from "@/lib/lead-drafts";
 import {
+  buildOperatorImportIdentity,
   createOperatorSiteImport,
+  findOperatorImportConflict,
   OperatorImportConflictError,
 } from "@/lib/site-persistence";
 
@@ -15,37 +16,42 @@ async function main() {
   const execute = parseMode(process.argv.slice(2));
   const source = draft.sourceUrl;
   if (!source) throw new Error("The approved fixture has no source URL");
-  const sourceKey = normalizeImportSource(source);
+  const identity = buildOperatorImportIdentity(draft, source, [legacySlug]);
+  if (identity.slug !== canonicalSlug) {
+    throw new Error(
+      `Fixture slug mismatch: expected ${canonicalSlug}, derived ${identity.slug}`,
+    );
+  }
   const expectedItemCount = draft.catalogSections.reduce(
     (sum, section) => sum + section.items.length,
     0,
   );
   const plan = {
     mode: execute ? "execute" : "dry-run",
-    slug: canonicalSlug,
+    slug: identity.slug,
     source,
-    sourceKey,
+    sourceKey: identity.sourceKey,
     vertical: Vertical.RESTAURANT,
     status: "PREVIEW_READY",
     sections: draft.catalogSections.length,
     items: expectedItemCount,
     integrations: draft.integrations.length,
     translations: draft.translations.length,
-    forbiddenSlugs: [canonicalSlug, legacySlug],
+    forbiddenSlugs: identity.forbiddenSlugs,
   };
 
   const db = getDb();
   try {
-    const conflict = await db.site.findFirst({
-      where: {
-        OR: [
-          { slug: { in: [canonicalSlug, legacySlug] } },
-          { sourceKey },
-          { sourceUrl: source },
-        ],
+    const conflict = await findOperatorImportConflict(
+      {
+        findFirstSite: (where) =>
+          db.site.findFirst({
+            where,
+            select: { id: true },
+          }),
       },
-      select: { slug: true, sourceKey: true, status: true },
-    });
+      identity,
+    );
     if (conflict) {
       throw new OperatorImportConflictError();
     }
@@ -89,7 +95,7 @@ async function main() {
       verified.slug !== canonicalSlug ||
       verified.eyebrow !== draft.eyebrow ||
       verified.status !== "PREVIEW_READY" ||
-      verified.sourceKey !== sourceKey ||
+      verified.sourceKey !== identity.sourceKey ||
       verified._count.catalogSections !== draft.catalogSections.length ||
       verifiedItemCount !== expectedItemCount ||
       verified._count.integrations !== draft.integrations.length ||

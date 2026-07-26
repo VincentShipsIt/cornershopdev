@@ -162,6 +162,11 @@ The host deployment script:
 4. Waits for `/api/health/ready`.
 5. Swaps container names, reloads Caddy, and rolls back on failure.
 
+The authorization migration intentionally changes the signed session payload
+from an email address to the immutable database user id. Existing browser
+sessions are invalidated once on rollout; affected customers sign in again by
+requesting a new magic link.
+
 Route53 sends `cornershop.dev`, `www.cornershop.dev`, and
 `domains.cornershop.dev` to the EC2 Elastic IP. Caddy owns TLS termination.
 Customer domains use on-demand TLS, gated by

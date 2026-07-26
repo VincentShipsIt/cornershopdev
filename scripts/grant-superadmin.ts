@@ -1,8 +1,6 @@
-import { z } from "zod";
+import { normalizeAccountEmail } from "@/lib/account-email";
 import { getDb } from "@/lib/db";
 import { isConfiguredSuperadminEmail } from "@/lib/superadmin-config";
-
-const emailSchema = z.email().transform((email) => email.trim().toLowerCase());
 
 async function main() {
   const { email, execute } = parseArguments(process.argv.slice(2));
@@ -64,7 +62,7 @@ function parseArguments(args: string[]): { email: string; execute: boolean } {
     );
   }
   return {
-    email: emailSchema.parse(emailValue),
+    email: normalizeAccountEmail(emailValue),
     execute: args.includes("--execute"),
   };
 }
