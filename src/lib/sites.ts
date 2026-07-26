@@ -1,7 +1,13 @@
+import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { leadSiteDrafts } from "@/lib/lead-drafts";
-import type { SiteDraftView } from "@/lib/site-draft";
+import type {
+  SiteDraftView,
+  SitePaletteView,
+  SiteThemeView,
+} from "@/lib/site-draft";
+import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 import {
   resolveVerticalConfig,
@@ -9,56 +15,47 @@ import {
 } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
+export const siteDraftRelations = {
+  integrations: {
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+  },
+  catalogSections: {
+    orderBy: { position: "asc" },
+    include: { items: { orderBy: { position: "asc" } } },
+  },
+} satisfies Prisma.SiteInclude;
+
+export type PersistedSiteDraftRecord = Prisma.SiteGetPayload<{
+  include: typeof siteDraftRelations;
+}>;
+
 export type LoadedSite = {
   vertical: VerticalId;
   config: ErasedVerticalConfig;
   draft: unknown;
+  theme: SiteThemeView;
 };
 
 /**
  * What a page needs to render a site: the draft in its structural form plus the
- * vertical it belongs to, so the renderer can resolve its own config.
+ * vertical and pinned theme identity that own it.
  */
 export type SiteView = {
   vertical: VerticalId;
   draft: SiteDraftView;
+  theme: SiteThemeView;
 };
 
 /**
- * The vertical-agnostic read path: load a `Site` row and project it back through
- * the owning vertical's own schemas. Nothing here knows what a menu, a cuisine or
- * a dietary label is — those live in the `attributes` bags and are re-validated on
- * the way out, so a bad write surfaces here rather than in the renderer.
+ * Projects editable Site rows through the owning vertical's schemas.
  *
- * Returns `null` when the database is not configured or the slug is unknown; the
- * in-code fixture fallbacks are layered on by `findSiteView` below rather than by
- * this storage read.
+ * This function is shared with the publish transaction so the private preview
+ * and the snapshot being published cannot drift into separate serialization
+ * formats.
  */
-export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
-  if (!process.env.DATABASE_URL) return null;
-
-  const site = await getDb().site.findUnique({
-    where: { slug },
-    include: {
-      integrations: {
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-      },
-      catalogSections: {
-        orderBy: { position: "asc" },
-        include: { items: { orderBy: { position: "asc" } } },
-      },
-      siteVersions: { orderBy: { version: "desc" }, take: 1 },
-    },
-  });
-
-  if (!site) return null;
-
+export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
   const config = resolveVerticalConfig(site.vertical);
   const attributes = config.attributesSchema.parse(site.attributes);
-  const latestTheme = site.siteVersions[0]?.theme as
-    | { background: string; foreground: string; accent: string }
-    | undefined;
-
   const draft = config.draftSchema.parse({
     slug: site.slug,
     name: site.name,
@@ -73,8 +70,13 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
     sourceUrl: site.sourceUrl,
     heroImageUrl: site.heroImageUrl,
     heroOriginalImageUrl: site.heroOriginalImageUrl,
-    heroImageProvenance: fromDatabaseImageProvenance(site.heroImageProvenance),
-    palette: latestTheme ?? config.presentation.fallbackPalette,
+    heroImageProvenance: fromDatabaseImageProvenance(
+      site.heroImageProvenance,
+    ),
+    palette: storedPalette(
+      site.draftPalette,
+      config.presentation.fallbackPalette,
+    ),
     attributes,
     autoEnhanceImages: site.autoEnhanceImages,
     defaultLocale: site.defaultLocale,
@@ -102,30 +104,105 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
     })),
   });
 
-  return { vertical: site.vertical, config, draft };
+  return {
+    vertical: site.vertical,
+    config,
+    draft,
+    theme: editableTheme(config, attributes, site.draftTheme, site.draftThemeVersion),
+  };
 }
 
 /**
- * The loader every rendering page uses. It adds the demo-mode fixture fallbacks on
- * top of the storage read: without `DATABASE_URL` the app still serves the seeded
- * lead drafts and the sample site, which is what makes `bun run dev` work with no
- * infrastructure. Those fixtures are restaurant drafts today — when a second
- * vertical ships fixtures they move behind the registry, not into this branch.
+ * Loads only editable draft state. Private previews and owner dashboards use
+ * this path; custom domains never do.
+ */
+export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
+  if (!process.env.DATABASE_URL) return null;
+
+  const site = await getDb().site.findUnique({
+    where: { slug },
+    include: siteDraftRelations,
+  });
+
+  return site ? projectSiteDraft(site) : null;
+}
+
+/**
+ * Dereferences the site's one live pointer and validates the immutable snapshot
+ * before rendering it. Mutable Site columns and child rows are intentionally not
+ * selected, so a Save cannot leak into a public custom domain.
+ */
+export async function findPublishedSiteView(
+  slug: string,
+): Promise<SiteView | null> {
+  if (!process.env.DATABASE_URL) return null;
+
+  const site = await getDb().site.findUnique({
+    where: { slug },
+    select: {
+      publishedSiteVersion: {
+        select: {
+          vertical: true,
+          theme: true,
+          themeVersion: true,
+          palette: true,
+          content: true,
+          translations: true,
+          integrations: true,
+          publishedAt: true,
+        },
+      },
+    },
+  });
+  const version = site?.publishedSiteVersion;
+  if (!version?.publishedAt) return null;
+
+  const config = resolveVerticalConfig(version.vertical);
+  const content = jsonRecord(version.content);
+  const draft = config.draftSchema.parse({
+    ...content,
+    palette: version.palette,
+    translations: version.translations,
+    integrations: version.integrations,
+  }) as SiteDraftView;
+  const theme = publishedTheme(config, version.theme, version.themeVersion);
+  if (!theme) return null;
+
+  return { vertical: version.vertical, draft, theme };
+}
+
+/**
+ * The loader every private rendering page uses. It adds demo fixtures on top of
+ * the editable storage read; live custom-domain requests switch to
+ * `findPublishedSiteView` in the page before this is called.
  */
 export async function findSiteView(slug: string): Promise<SiteView | null> {
   if (!process.env.DATABASE_URL) {
-    const leadDraft = leadSiteDrafts[slug];
-    if (leadDraft) return { vertical: Vertical.RESTAURANT, draft: leadDraft };
-    return slug === sampleSiteDraft.slug
-      ? { vertical: Vertical.RESTAURANT, draft: sampleSiteDraft }
-      : null;
+    const draft =
+      leadSiteDrafts[slug] ??
+      (slug === sampleSiteDraft.slug ? sampleSiteDraft : null);
+    if (!draft) return null;
+    const config = resolveVerticalConfig(Vertical.RESTAURANT);
+    const attributes = config.attributesSchema.parse(draft.attributes);
+    return {
+      vertical: Vertical.RESTAURANT,
+      draft,
+      theme: editableTheme(
+        config,
+        attributes,
+        {},
+        LEGACY_THEME_VERSION,
+      ),
+    };
   }
 
   const site = await findSiteDraft(slug);
   if (!site) return null;
-  // `findSiteDraft` already parsed the draft with the vertical's own schema, and
-  // every vertical draft extends the base shape the view type describes.
-  return { vertical: site.vertical, draft: site.draft as SiteDraftView };
+  return {
+    vertical: site.vertical,
+    draft: site.draft as SiteDraftView,
+    theme: site.theme,
+  };
 }
 
 /**
@@ -133,12 +210,73 @@ export async function findSiteView(slug: string): Promise<SiteView | null> {
  * slug so surfaces that must always render something (the dashboard) have a draft.
  */
 export async function getSiteView(slug: string): Promise<SiteView> {
-  return (
-    (await findSiteView(slug)) ?? {
-      vertical: Vertical.RESTAURANT,
-      draft: { ...sampleSiteDraft, slug },
-    }
-  );
+  const site = await findSiteView(slug);
+  if (site) return site;
+
+  const config = resolveVerticalConfig(Vertical.RESTAURANT);
+  const draft = { ...sampleSiteDraft, slug };
+  const attributes = config.attributesSchema.parse(draft.attributes);
+  return {
+    vertical: Vertical.RESTAURANT,
+    draft,
+    theme: editableTheme(config, attributes, {}, LEGACY_THEME_VERSION),
+  };
+}
+
+function editableTheme(
+  config: ErasedVerticalConfig,
+  attributes: Record<string, unknown>,
+  value: Prisma.JsonValue,
+  version: string,
+): SiteThemeView {
+  const selection = jsonRecord(value);
+  const storedId = typeof selection.id === "string" ? selection.id : null;
+  const resolvedId = config.templates.resolve(attributes).id;
+  const id =
+    storedId && storedId in config.templates.definitions
+      ? storedId
+      : resolvedId;
+  return {
+    id,
+    version: version || LEGACY_THEME_VERSION,
+    selection: { ...selection, id },
+  };
+}
+
+function publishedTheme(
+  config: ErasedVerticalConfig,
+  value: Prisma.JsonValue,
+  version: string,
+): SiteThemeView | null {
+  const selection = jsonRecord(value);
+  const id = typeof selection.id === "string" ? selection.id : null;
+  if (!id || !(id in config.templates.definitions) || !version) return null;
+  return { id, version, selection };
+}
+
+function storedPalette(
+  value: Prisma.JsonValue,
+  fallback: SitePaletteView,
+): SitePaletteView {
+  const palette = jsonRecord(value);
+  if (
+    typeof palette.background !== "string" ||
+    typeof palette.foreground !== "string" ||
+    typeof palette.accent !== "string"
+  ) {
+    return fallback;
+  }
+  return {
+    background: palette.background,
+    foreground: palette.foreground,
+    accent: palette.accent,
+  };
+}
+
+function jsonRecord(value: Prisma.JsonValue): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function fromDatabaseImageProvenance(

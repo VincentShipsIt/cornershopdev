@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
 import {
   buildImportUrls,
   importFailureMessage,
@@ -287,7 +288,6 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 select: { id: true, slug: true },
               });
 
-          await createNextSiteVersion(tx, site.id, draft);
           await tx.auditEvent.create({
             data: {
               type: existing ? "site.import.updated" : "site.import.created",
@@ -398,7 +398,6 @@ export async function createOperatorSiteImport<
             select: { id: true, slug: true },
           });
 
-          await createNextSiteVersion(tx, site.id, draft);
           await tx.auditEvent.create({
             data: {
               type: "site.import.created",
@@ -468,7 +467,7 @@ export async function createOperatorSiteImport<
             itemCount !== expectedItemCount ||
             integrationRows.length !== draft.integrations.length ||
             !integrationOrderMatches ||
-            versionCount !== 1
+            versionCount !== 0
           ) {
             throw new Error(
               "The operator import failed its atomic fidelity check",
@@ -516,15 +515,13 @@ export async function updateSiteDraft(
     try {
       await db.$transaction(
         async (tx) => {
-          const site = await tx.site.update({
-            where: { slug },
+          await tx.site.update({
+            where: { slug, vertical },
             data: {
               ...editableSiteScalarData(parsed, vertical),
               ...siteRelationReplaceData(parsed, vertical),
             },
-            select: { id: true },
           });
-          await createNextSiteVersion(tx, site.id, parsed);
         },
         { isolationLevel: "Serializable" },
       );
@@ -582,6 +579,8 @@ function editableSiteScalarData(
   vertical: VerticalId,
 ) {
   const config = resolveVerticalConfig(vertical);
+  const attributes = config.attributesSchema.parse(draft.attributes);
+  const theme = config.templates.resolve(attributes);
   return {
     name: draft.name,
     eyebrow: draft.eyebrow,
@@ -594,9 +593,10 @@ function editableSiteScalarData(
     // Parsed on the way in as well as on the way out: the attributes bag is the
     // only place vertical-specific data lives, so an unvalidated write here is a
     // read-path crash later.
-    attributes: config.attributesSchema.parse(
-      draft.attributes,
-    ) as Prisma.InputJsonValue,
+    attributes: attributes as Prisma.InputJsonValue,
+    draftTheme: { id: theme.id } as Prisma.InputJsonValue,
+    draftThemeVersion: LEGACY_THEME_VERSION,
+    draftPalette: draft.palette as Prisma.InputJsonValue,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
     translations: draft.translations as Prisma.InputJsonValue,
@@ -612,27 +612,6 @@ function integrationCreateData(draft: PersistableSiteDraft) {
     venueId: integration.venueId ?? null,
     position,
   }));
-}
-
-async function createNextSiteVersion(
-  tx: Prisma.TransactionClient,
-  siteId: string,
-  draft: PersistableSiteDraft,
-): Promise<void> {
-  const latest = await tx.siteVersion.findFirst({
-    where: { siteId },
-    orderBy: { version: "desc" },
-    select: { version: true },
-  });
-
-  await tx.siteVersion.create({
-    data: {
-      siteId,
-      version: (latest?.version ?? 0) + 1,
-      theme: draft.palette as Prisma.InputJsonValue,
-      content: draft as Prisma.InputJsonValue,
-    },
-  });
 }
 
 function catalogSectionCreateData(

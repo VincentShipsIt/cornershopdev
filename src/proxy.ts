@@ -70,9 +70,18 @@ export async function proxy(request: NextRequest) {
 
   const domain = await getDb().domain.findFirst({
     where: { hostname, verified: true },
-    select: { site: { select: { slug: true } } },
+    select: {
+      site: {
+        select: {
+          slug: true,
+          publishedSiteVersionId: true,
+        },
+      },
+    },
   });
-  if (!domain) return new NextResponse("Not found", { status: 404 });
+  if (!domain?.site.publishedSiteVersionId) {
+    return new NextResponse("Not found", { status: 404 });
+  }
 
   const locale = request.nextUrl.pathname.match(/^\/([a-z]{2})\/?$/i)?.[1];
   const destination = locale

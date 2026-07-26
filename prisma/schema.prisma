@@ -100,39 +100,44 @@ model Membership {
 }
 
 model Site {
-  id                   String            @id @default(cuid())
-  slug                 String            @unique
-  name                 String
-  eyebrow              String?
-  description          String?
-  address              String?
-  phone                String?
-  email                String?
-  sourceUrl            String?
-  sourceKey            String?           @unique
-  logoUrl              String?
-  heroImageUrl         String?
-  heroOriginalImageUrl String?
-  heroImageProvenance  ImageProvenance?
-  autoEnhanceImages    Boolean           @default(true)
-  defaultLocale        String            @default("en")
-  translations         Json              @default("[]")
-  vertical             Vertical          @default(RESTAURANT)
-  attributes           Json              @default("{}")
-  status               SiteStatus        @default(PROSPECT)
-  organizationId       String?
-  organization         Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  catalogSections      CatalogSection[]
-  integrations         Integration[]
-  importJobs           ImportJob[]
-  domains              Domain[]
-  siteVersions         SiteVersion[]
-  claimInvitations     ClaimInvitation[]
-  auditEvents          AuditEvent[]
-  bookingRequests      BookingRequest[]
-  analyticsEvents      AnalyticsEvent[]
+  id                     String            @id @default(cuid())
+  slug                   String            @unique
+  name                   String
+  eyebrow                String?
+  description            String?
+  address                String?
+  phone                  String?
+  email                  String?
+  sourceUrl              String?
+  sourceKey              String?           @unique
+  logoUrl                String?
+  heroImageUrl           String?
+  heroOriginalImageUrl   String?
+  heroImageProvenance    ImageProvenance?
+  autoEnhanceImages      Boolean           @default(true)
+  defaultLocale          String            @default("en")
+  translations           Json              @default("[]")
+  draftTheme             Json              @default("{}")
+  draftThemeVersion      String            @default("legacy-v1")
+  draftPalette           Json              @default("{}")
+  vertical               Vertical          @default(RESTAURANT)
+  attributes             Json              @default("{}")
+  status                 SiteStatus        @default(PROSPECT)
+  publishedSiteVersionId String?           @unique
+  publishedSiteVersion   SiteVersion?      @relation("PublishedSiteVersion", fields: [publishedSiteVersionId], references: [id], onDelete: SetNull)
+  organizationId         String?
+  organization           Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  catalogSections        CatalogSection[]
+  integrations           Integration[]
+  importJobs             ImportJob[]
+  domains                Domain[]
+  siteVersions           SiteVersion[]
+  claimInvitations       ClaimInvitation[]
+  auditEvents            AuditEvent[]
+  bookingRequests        BookingRequest[]
+  analyticsEvents        AnalyticsEvent[]
 }
 
 model CatalogSection {
@@ -162,12 +167,12 @@ model CatalogItem {
 }
 
 model Integration {
-  id       String          @id @default(cuid())
-  type     IntegrationType
-  provider String?
-  label    String
-  url      String
-  position Int             @default(0)
+  id        String          @id @default(cuid())
+  type      IntegrationType
+  provider  String?
+  label     String
+  url       String
+  position  Int             @default(0)
   /// Owner's id inside the provider (an OpenTable `rid`). Only consumed after the
   /// provider's own anchored `idPattern` matches it — see `src/lib/booking-embed.ts`.
   venueId   String?
@@ -199,14 +204,22 @@ model ImportJob {
 }
 
 model SiteVersion {
-  id          String    @id @default(cuid())
-  version     Int
-  theme       Json
-  content     Json
-  publishedAt DateTime?
-  siteId      String
-  site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
+  id               String    @id @default(cuid())
+  version          Int
+  vertical         Vertical  @default(RESTAURANT)
+  theme            Json
+  themeVersion     String    @default("legacy-v1")
+  palette          Json      @default("{}")
+  content          Json
+  translations     Json      @default("[]")
+  integrations     Json      @default("[]")
+  publishedAt      DateTime?
+  publishedBy      String?
+  changeSummary    String?
+  siteId           String
+  site             Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  publishedForSite Site?     @relation("PublishedSiteVersion")
+  createdAt        DateTime  @default(now())
 
   @@unique([siteId, version])
 }

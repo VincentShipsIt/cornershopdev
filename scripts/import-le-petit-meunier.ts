@@ -101,7 +101,7 @@ async function main() {
       verified._count.catalogSections !== draft.catalogSections.length ||
       verifiedItemCount !== expectedItemCount ||
       verified._count.integrations !== draft.integrations.length ||
-      verified._count.siteVersions !== 1
+      verified._count.siteVersions !== 0
     ) {
       throw new Error("Imported site failed its database verification");
     }
