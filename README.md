@@ -172,7 +172,7 @@ generation endpoint.
 Configure the webhook endpoint as:
 
 ```text
-https://api.cornershop.dev/api/webhooks/stripe
+https://cornershop.dev/api/webhooks/stripe
 ```
 
 ### Owner sign-in
