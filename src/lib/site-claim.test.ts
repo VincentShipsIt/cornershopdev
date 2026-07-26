@@ -180,6 +180,11 @@ async function expectClaimRejected(
   }
 }
 
+/**
+ * Typed against the exported `CompletedCheckout` rather than inferred from this
+ * fixture, so a field added to the real checkout payload fails to compile here
+ * instead of leaving the tests asserting against a shape Stripe no longer sends.
+ */
 function completedCheckout(
   overrides: Partial<CompletedCheckout> = {},
 ): CompletedCheckout {
