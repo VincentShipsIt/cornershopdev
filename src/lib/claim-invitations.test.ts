@@ -41,6 +41,18 @@ describe("self-serve domain email proof", () => {
     ).toBe(true);
   });
 
+  it("does not strip www from the candidate email domain", () => {
+    expect(
+      hasDomainEmailOwnershipProof(
+        {
+          sourceUrl: "https://example.test/menu",
+          email: null,
+        },
+        "owner@www.example.test",
+      ),
+    ).toBe(false);
+  });
+
   it("does not guess parent, sibling or registrable domains", () => {
     const site = {
       sourceUrl: "https://restaurant.example.co.uk",

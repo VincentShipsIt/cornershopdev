@@ -8,6 +8,7 @@ import { isClaimable } from "@/lib/site-claim";
 import type { VerticalId } from "@/lib/verticals/types";
 
 export const CLAIM_INVITATION_TTL_MS = 48 * 60 * 60_000;
+export const MIN_CLAIM_CHECKOUT_TTL_MS = 31 * 60_000;
 const retryableInvitationCodes = new Set(["P2002", "P2034"]);
 
 export type ClaimProofMethodValue =
@@ -15,6 +16,7 @@ export type ClaimProofMethodValue =
   | "OPERATOR_APPROVAL";
 
 export type ClaimFlowErrorCode =
+  | "checkout_in_progress"
   | "invalid_invitation"
   | "invalid_ownership_proof"
   | "invitation_used"
@@ -67,7 +69,10 @@ export function hasDomainEmailOwnershipProof(
 
   if (!site.sourceUrl) return false;
   try {
-    const sourceDomain = normalizeDomain(new URL(site.sourceUrl).hostname);
+    const sourceDomain = normalizeDomain(
+      new URL(site.sourceUrl).hostname,
+      true,
+    );
     const emailDomain = normalizeDomain(email.slice(email.lastIndexOf("@") + 1));
     return sourceDomain.length > 0 && sourceDomain === emailDomain;
   } catch {
@@ -75,9 +80,9 @@ export function hasDomainEmailOwnershipProof(
   }
 }
 
-function normalizeDomain(value: string): string {
+function normalizeDomain(value: string, stripLeadingWww = false): string {
   const ascii = domainToASCII(value.trim().toLowerCase().replace(/\.$/, ""));
-  return ascii.replace(/^www\./, "");
+  return stripLeadingWww ? ascii.replace(/^www\./, "") : ascii;
 }
 
 export type IssuedClaimInvitation = {
@@ -147,14 +152,40 @@ export async function issueClaimInvitation(input: {
             );
           }
 
+          const checkoutInProgress = await tx.claimInvitation.findFirst({
+            where: {
+              siteId: site.id,
+              acceptedAt: null,
+              revokedAt: null,
+              expiresAt: { gt: now },
+              checkoutSessionId: { not: null },
+            },
+            select: { id: true },
+          });
+          if (checkoutInProgress) {
+            throw new ClaimFlowError(
+              "checkout_in_progress",
+              409,
+              "Checkout already started. Reopen the ownership email to continue or change plans.",
+            );
+          }
+
           // Revoke every earlier unaccepted path, not only invitations for the
           // same email. Combined with the partial unique index, exactly one
-          // bearer token can authorize this site at a time.
+          // bearer token can authorize this site at a time. A checkout-bound
+          // invitation is never silently revoked: the checkout route owns its
+          // Stripe session lifecycle.
           await tx.claimInvitation.updateMany({
             where: {
               siteId: site.id,
               acceptedAt: null,
               revokedAt: null,
+              OR: [
+                { checkoutSessionId: null },
+                // Checkout sessions are explicitly capped at the invitation
+                // expiry, so an expired binding is safe to retire.
+                { expiresAt: { lte: now } },
+              ],
             },
             data: { revokedAt: now },
           });
@@ -209,6 +240,8 @@ export type CheckoutClaimInvitation = {
   email: string;
   siteId: string;
   siteSlug: string;
+  checkoutSessionId: string | null;
+  expiresAt: Date;
 };
 
 /**
@@ -234,6 +267,7 @@ export async function authorizeClaimInvitationForCheckout(input: {
         verifiedAt: true,
         acceptedAt: true,
         revokedAt: true,
+        checkoutSessionId: true,
         siteId: true,
         site: {
           select: {
@@ -256,6 +290,13 @@ export async function authorizeClaimInvitationForCheckout(input: {
       );
     }
     if (invitation.revokedAt || invitation.expiresAt <= now) {
+      throw invalidInvitation();
+    }
+    if (
+      !invitation.checkoutSessionId &&
+      invitation.expiresAt.getTime() - now.getTime() <
+        MIN_CLAIM_CHECKOUT_TTL_MS
+    ) {
       throw invalidInvitation();
     }
 
@@ -286,18 +327,22 @@ export async function authorizeClaimInvitationForCheckout(input: {
       email: invitation.email,
       siteId: invitation.siteId,
       siteSlug: invitation.site.slug,
+      checkoutSessionId: invitation.checkoutSessionId,
+      expiresAt: invitation.expiresAt,
     };
   });
 }
 
 /**
- * Stores the Stripe session ID after the network call. A repeated request may
- * bind the same idempotently-created Stripe session, but no different session
- * can replace it.
+ * Stores the Stripe session ID after the network call. Rebinding is a
+ * compare-and-swap: only the session observed before the Stripe call can be
+ * replaced, while a concurrent request that created the same idempotent Stripe
+ * session remains safe.
  */
 export async function bindClaimInvitationToCheckout(input: {
   invitation: CheckoutClaimInvitation;
   stripeCheckoutSessionId: string;
+  expectedCheckoutSessionId: string | null;
   now?: Date;
 }): Promise<void> {
   const now = input.now ?? new Date();
@@ -311,7 +356,7 @@ export async function bindClaimInvitationToCheckout(input: {
         revokedAt: null,
         expiresAt: { gt: now },
         OR: [
-          { checkoutSessionId: null },
+          { checkoutSessionId: input.expectedCheckoutSessionId },
           { checkoutSessionId: input.stripeCheckoutSessionId },
         ],
       },
@@ -321,7 +366,7 @@ export async function bindClaimInvitationToCheckout(input: {
       throw new ClaimFlowError(
         "invitation_used",
         409,
-        "This invitation is already attached to another checkout.",
+        "Another checkout replaced this one. Reopen the ownership email and try again.",
       );
     }
     await tx.auditEvent.create({

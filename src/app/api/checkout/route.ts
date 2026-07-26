@@ -3,6 +3,7 @@ import {
   authorizeClaimInvitationForCheckout,
   bindClaimInvitationToCheckout,
   ClaimFlowError,
+  MIN_CLAIM_CHECKOUT_TTL_MS,
   recordClaimRejection,
 } from "@/lib/claim-invitations";
 import { limitClaimCheckout } from "@/lib/rate-limit";
@@ -67,9 +68,55 @@ export async function POST(request: Request) {
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
     const stripe = getStripe();
+    const previousSessionId = invitation.checkoutSessionId;
+    if (previousSessionId) {
+      const previousSession =
+        await stripe.checkout.sessions.retrieve(previousSessionId);
+      if (
+        previousSession.status === "open" &&
+        previousSession.metadata?.plan === plan &&
+        previousSession.url
+      ) {
+        return Response.json({ url: previousSession.url });
+      }
+      if (previousSession.status === "complete") {
+        throw new ClaimFlowError(
+          "invitation_used",
+          409,
+          "This checkout is already complete. Refresh to continue to your account.",
+        );
+      }
+      if (
+        invitation.expiresAt.getTime() - Date.now() <
+        MIN_CLAIM_CHECKOUT_TTL_MS
+      ) {
+        throw new ClaimFlowError(
+          "invalid_invitation",
+          403,
+          "This ownership link is near expiry. Continue the existing checkout or request a new email after it expires.",
+        );
+      }
+      if (previousSession.status === "open") {
+        try {
+          await stripe.checkout.sessions.expire(previousSession.id);
+        } catch (error) {
+          // Concurrent retries can both observe an open session. Continue only
+          // when the other request successfully expired it.
+          const refreshed = await stripe.checkout.sessions.retrieve(
+            previousSession.id,
+          );
+          if (refreshed.status !== "expired") throw error;
+        }
+      }
+    }
+
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
+        expires_at: Math.min(
+          Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+          Math.floor(invitation.expiresAt.getTime() / 1000),
+        ),
         line_items: [{ price: priceId, quantity: 1 }],
         allow_promotion_codes: true,
         customer_email: invitation.email,
@@ -92,13 +139,38 @@ export async function POST(request: Request) {
         cancel_url: `${appUrl}/claim/${siteSlug}?checkout=canceled`,
       },
       {
-        idempotencyKey: `claim-${invitation.id}-${plan}`,
+        // Including the previously observed binding yields one Stripe session
+        // per lifecycle step. Retrying a request is idempotent, while an
+        // expired/cancelled session can be replaced without Stripe returning
+        // the old session for its 24-hour idempotency window.
+        idempotencyKey: `claim-${invitation.id}-${plan}-${previousSessionId ?? "initial"}`,
       },
     );
-    await bindClaimInvitationToCheckout({
-      invitation,
-      stripeCheckoutSessionId: session.id,
-    });
+    try {
+      await bindClaimInvitationToCheckout({
+        invitation,
+        stripeCheckoutSessionId: session.id,
+        expectedCheckoutSessionId: previousSessionId,
+      });
+    } catch (error) {
+      // Never leave an unbound payment path open: Stripe could otherwise
+      // collect money for a checkout that claimSite must reject.
+      if (session.status === "open") {
+        try {
+          await stripe.checkout.sessions.expire(session.id);
+        } catch (cleanupError) {
+          console.error("[checkout] failed to expire unbound session", {
+            siteSlug,
+            stripeCheckoutSessionId: session.id,
+            error:
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : "unknown",
+          });
+        }
+      }
+      throw error;
+    }
 
     return Response.json({ url: session.url });
   } catch (error) {
