@@ -21,6 +21,20 @@ export function platformHostnames(
 }
 
 /**
+ * Normalizes the original public hostname at the reverse-proxy boundary.
+ * Caddy supplies `x-forwarded-host`; the first value is authoritative when
+ * multiple proxies have appended entries.
+ */
+export function requestHostname(headers: Headers): string {
+  const forwardedHost = headers.get("x-forwarded-host");
+  return (forwardedHost ?? headers.get("host") ?? "")
+    .split(",")[0]
+    .trim()
+    .split(":")[0]
+    .toLowerCase();
+}
+
+/**
  * Whether a hostname belongs to the factory itself — its own domains, or the
  * marketing domain of a registered niche — as opposed to a customer's.
  *

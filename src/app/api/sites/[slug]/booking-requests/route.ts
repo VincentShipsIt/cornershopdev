@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  LIVE_BOOKING_REQUEST_SOURCE,
+  recordLeadCreatedEvent,
+  resolveAnalyticsSiteForHeaders,
+} from "@/lib/analytics";
 import {
   bookingRequestInputSchema,
   createBookingRequest,
@@ -44,7 +49,8 @@ export async function POST(request: Request, { params }: RouteContext) {
   }
 
   try {
-    const input = bookingRequestInputSchema.parse(await request.json());
+    const parsed = bookingRequestInputSchema.parse(await request.json());
+    const { analyticsVisitId, ...input } = parsed;
 
     if (!process.env.DATABASE_URL) {
       return NextResponse.json(
@@ -68,7 +74,40 @@ export async function POST(request: Request, { params }: RouteContext) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
-    const created = await createBookingRequest(site, input);
+    let liveAnalyticsSiteId: string | null = null;
+    try {
+      const analyticsSite = await resolveAnalyticsSiteForHeaders(
+        request.headers,
+      );
+      if (analyticsSite?.id === site.id) liveAnalyticsSiteId = site.id;
+    } catch (error) {
+      console.error("[booking-request] analytics host check failed", {
+        slug,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+
+    const created = await createBookingRequest(
+      site,
+      input,
+      liveAnalyticsSiteId ? LIVE_BOOKING_REQUEST_SOURCE : "site-form",
+    );
+    if (liveAnalyticsSiteId && analyticsVisitId) {
+      after(async () => {
+        try {
+          await recordLeadCreatedEvent({
+            siteId: liveAnalyticsSiteId,
+            visitId: analyticsVisitId,
+          });
+        } catch (error) {
+          console.error("[booking-request] lead analytics dropped", {
+            slug,
+            bookingRequestId: created.id,
+            error: error instanceof Error ? error.message : "unknown",
+          });
+        }
+      });
+    }
     // Awaited rather than fired and forgotten: a floating promise does not
     // survive the response on serverless. It cannot fail the request — the lead
     // is already committed and the visitor is owed a success either way.

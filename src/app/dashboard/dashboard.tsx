@@ -14,14 +14,20 @@ import {
   LayoutDashboard,
   Link2,
   LoaderCircle,
+  Mail,
   MoreHorizontal,
   Plus,
   RefreshCcw,
   Save,
   Settings,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
+import {
+  ClientAnalyticsPanel,
+  ClientBookingRequestInbox,
+} from "@/components/client-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +37,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { BrandIdentity } from "@/lib/brand";
+import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
+import type { BookingRequestDto } from "@/lib/booking-request-inbox";
 import {
   formatPrice,
   type RestaurantDraft,
@@ -54,12 +62,16 @@ export function Dashboard({
   checkoutComplete,
   demo,
   brand,
+  analyticsSummary,
+  bookingRequests,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
   checkoutComplete: boolean;
   demo: boolean;
   brand: BrandIdentity;
+  analyticsSummary: AnalyticsSummaryDto;
+  bookingRequests: BookingRequestDto[];
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -219,6 +231,8 @@ export function Dashboard({
             <TabsList className="flex h-auto w-full flex-col items-stretch bg-transparent">
               {[
                 ["overview", LayoutDashboard, "Overview"],
+                ["analytics", TrendingUp, "Analytics"],
+                ["leads", Mail, "Leads"],
                 ["menu", BookOpenText, "Menu"],
                 ["imagery", ImageIcon, "Imagery"],
                 ["integrations", Link2, "Integrations"],
@@ -246,6 +260,8 @@ export function Dashboard({
           <div className="min-w-0 flex-1 p-4 md:p-7 lg:p-10">
             <TabsList className="mb-6 w-full justify-start overflow-x-auto lg:hidden">
               <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="leads">Leads</TabsTrigger>
               <TabsTrigger value="menu">Menu</TabsTrigger>
               <TabsTrigger value="imagery">Imagery</TabsTrigger>
               <TabsTrigger value="integrations">Links</TabsTrigger>
@@ -343,6 +359,18 @@ export function Dashboard({
                 <Metric label="Preserved systems" value={`${draft.integrations.length}`} detail="No migrations required" />
                 <Metric label="Last source check" value="Just now" detail="No changes detected" />
               </div>
+            </TabsContent>
+
+            <TabsContent value="analytics" className="mt-0">
+              <ClientAnalyticsPanel summary={analyticsSummary} />
+            </TabsContent>
+
+            <TabsContent value="leads" className="mt-0">
+              <ClientBookingRequestInbox
+                siteSlug={draft.slug}
+                initialRequests={bookingRequests}
+                demo={demo}
+              />
             </TabsContent>
 
             <TabsContent value="menu" className="mt-0">

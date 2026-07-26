@@ -62,6 +62,12 @@ enum PlatformRole {
   SUPERADMIN
 }
 
+enum AnalyticsEventType {
+  SITE_VIEW
+  CTA_CLICK
+  LEAD_CREATED
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -126,6 +132,7 @@ model Site {
   claimInvitations     ClaimInvitation[]
   auditEvents          AuditEvent[]
   bookingRequests      BookingRequest[]
+  analyticsEvents      AnalyticsEvent[]
 }
 
 model CatalogSection {
@@ -273,4 +280,16 @@ model BookingRequest {
   updatedAt   DateTime             @updatedAt
 
   @@index([siteId, status, createdAt])
+}
+
+model AnalyticsEvent {
+  id         String             @id @db.Uuid
+  visitId    String             @db.Uuid
+  type       AnalyticsEventType
+  siteId     String
+  site       Site               @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  occurredAt DateTime           @default(now())
+
+  @@index([siteId, occurredAt, type])
+  @@index([occurredAt])
 }

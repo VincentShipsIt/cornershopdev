@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Dashboard } from "@/app/dashboard/dashboard";
+import { getSiteAnalyticsSummary } from "@/lib/analytics";
+import { buildEmptyAnalyticsSummary } from "@/lib/analytics-contract";
 import { getSiteAccess } from "@/lib/authorization";
+import { getBookingRequestInbox } from "@/lib/booking-request-inbox";
 import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
@@ -26,8 +29,13 @@ export default async function DashboardPage({
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
-  const draft =
-    access?.ok ? await getRestaurantDraft(access.site.slug) : sampleRestaurant;
+  const [draft, analyticsSummary, bookingRequests] = access?.ok
+    ? await Promise.all([
+        getRestaurantDraft(access.site.slug),
+        getSiteAnalyticsSummary(access.site.id),
+        getBookingRequestInbox(access.site.id),
+      ])
+    : [sampleRestaurant, buildEmptyAnalyticsSummary(), []];
 
   return (
     <Dashboard
@@ -36,6 +44,8 @@ export default async function DashboardPage({
       checkoutComplete={query.checkout === "success"}
       demo={!session}
       brand={await resolveRequestBrand()}
+      analyticsSummary={analyticsSummary}
+      bookingRequests={bookingRequests}
     />
   );
 }

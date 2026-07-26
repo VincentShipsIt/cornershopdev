@@ -5,6 +5,11 @@ import type {
   SubscriptionStatus,
   Vertical,
 } from "@/generated/prisma/enums";
+import {
+  getPortfolioAnalytics,
+  type AnalyticsSummaryDto,
+  type SiteAnalyticsRowDto,
+} from "@/lib/analytics";
 import { getDb } from "@/lib/db";
 
 export type OperatorSiteRow = {
@@ -19,8 +24,9 @@ export type OperatorSiteRow = {
   latestImportStatus: ImportStatus | null;
   latestImportAt: Date | null;
   bookingRequestCount: number;
-  newBookingRequestCount: number;
+  pendingBookingRequestCount: number;
   verifiedDomain: string | null;
+  analytics30d: SiteAnalyticsRowDto;
 };
 
 export type OperatorDashboardData = {
@@ -29,8 +35,9 @@ export type OperatorDashboardData = {
     signedUpSites: number;
     activeSubscriptions: number;
     bookingRequests: number;
-    newBookingRequests: number;
+    pendingBookingRequests: number;
   };
+  analytics: AnalyticsSummaryDto;
   sites: OperatorSiteRow[];
 };
 
@@ -45,7 +52,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
     signedUpSiteCount,
     activeSubscriptionCount,
     bookingRequestCount,
-    newBookingRequestCount,
+    pendingBookingRequestCount,
     sites,
   ] = await Promise.all([
     db.site.count(),
@@ -56,7 +63,9 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
     }),
     db.subscription.count({ where: { status: "ACTIVE" } }),
     db.bookingRequest.count(),
-    db.bookingRequest.count({ where: { status: "NEW" } }),
+    db.bookingRequest.count({
+      where: { status: { in: ["NEW", "NOTIFIED"] } },
+    }),
     db.site.findMany({
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -92,16 +101,21 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
       },
     }),
   ]);
-  const newBookingRequestsBySite = await db.bookingRequest.groupBy({
-    by: ["siteId"],
-    where: {
-      status: "NEW",
-      siteId: { in: sites.map((site) => site.id) },
-    },
-    _count: { _all: true },
-  });
-  const newBookingRequestCounts = new Map(
-    newBookingRequestsBySite.map((row) => [row.siteId, row._count._all]),
+  const [pendingBookingRequestsBySite, analytics] = await Promise.all([
+    db.bookingRequest.groupBy({
+      by: ["siteId"],
+      where: {
+        status: { in: ["NEW", "NOTIFIED"] },
+        siteId: { in: sites.map((site) => site.id) },
+      },
+      _count: { _all: true },
+    }),
+    getPortfolioAnalytics({
+      displayedSiteIds: sites.map((site) => site.id),
+    }),
+  ]);
+  const pendingBookingRequestCounts = new Map(
+    pendingBookingRequestsBySite.map((row) => [row.siteId, row._count._all]),
   );
 
   return {
@@ -110,8 +124,9 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
       signedUpSites: signedUpSiteCount,
       activeSubscriptions: activeSubscriptionCount,
       bookingRequests: bookingRequestCount,
-      newBookingRequests: newBookingRequestCount,
+      pendingBookingRequests: pendingBookingRequestCount,
     },
+    analytics: analytics.summary,
     sites: sites.map((site) => ({
       id: site.id,
       slug: site.slug,
@@ -124,8 +139,16 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
       latestImportStatus: site.importJobs[0]?.status ?? null,
       latestImportAt: site.importJobs[0]?.createdAt ?? null,
       bookingRequestCount: site._count.bookingRequests,
-      newBookingRequestCount: newBookingRequestCounts.get(site.id) ?? 0,
+      pendingBookingRequestCount:
+        pendingBookingRequestCounts.get(site.id) ?? 0,
       verifiedDomain: site.domains[0]?.hostname ?? null,
+      analytics30d: analytics.displayedSites30d.get(site.id) ?? {
+        visits: 0,
+        ctaVisitors: 0,
+        bookingLeads: 0,
+        ctaRate: 0,
+        leadRate: 0,
+      },
     })),
   };
 }
