@@ -14,6 +14,14 @@ ENV NODE_ENV=production
 ENV WORKFLOW_TARGET_WORLD=@workflow/world-postgres
 COPY . .
 RUN bun run build
+RUN bun build scripts/grant-superadmin.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/grant-superadmin.ts
+RUN bun build scripts/import-le-petit-meunier.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/import-le-petit-meunier.ts
 
 FROM oven/bun:1.3.14-alpine AS runner
 WORKDIR /app
@@ -35,6 +43,7 @@ COPY --from=builder --chown=bun:bun /app/public ./public
 COPY --from=builder --chown=bun:bun /app/prisma ./prisma
 COPY --from=builder --chown=bun:bun /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=bun:bun /app/package.json ./package.json
+COPY --from=builder --chown=bun:bun /app/.operator-scripts ./scripts
 COPY --chown=bun:bun deploy/aws/container-entrypoint.sh ./deploy/aws/container-entrypoint.sh
 
 USER bun
