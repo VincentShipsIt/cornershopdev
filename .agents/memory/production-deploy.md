@@ -38,6 +38,13 @@ Related: an unhealthy candidate **aborts the deploy and rolls back**
 (`wait_for_health` returns immediately on `unhealthy`), so a readiness
 regression blocks the whole release. Worth pre-flighting before cutting one.
 
+The host does not keep a mutable copy of this deploy logic. GitHub uploads
+`deploy.sh` beside the image under the same immutable commit SHA. The stable
+`/usr/local/bin/deploy-cornershopdev` launcher downloads that exact script,
+checks its workflow-supplied SHA-256 digest, and emits a verification sentinel
+before executing it. The workflow requires that sentinel, so a stale launcher
+or unverified script fails closed instead of producing a false-green deploy.
+
 ## Gotcha 2 — the OIDC trust policy embeds the repo name
 
 `cornershopdev-github-production-deploy` is assumed via GitHub OIDC. GitHub

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-deploy_script_source="${1:-}"
+host_launcher_source="${1:-}"
 caddy_fragment_source="${2:-}"
-if [[ ! -f "$deploy_script_source" || ! -f "$caddy_fragment_source" ]]; then
-  echo "Usage: bootstrap-host.sh <deploy-script> <caddy-fragment>" >&2
+if [[ ! -f "$host_launcher_source" || ! -f "$caddy_fragment_source" ]]; then
+  echo "Usage: bootstrap-host.sh <host-launcher> <caddy-fragment>" >&2
   exit 2
 fi
 
-install -m 755 "$deploy_script_source" /usr/local/bin/deploy-cornershopdev
+install -m 755 "$host_launcher_source" /usr/local/bin/deploy-cornershopdev
 install -d -m 700 /etc/cornershopdev /var/lib/cornershopdev
 
 caddyfile="/etc/caddy/Caddyfile"

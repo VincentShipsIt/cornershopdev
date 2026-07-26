@@ -40,19 +40,33 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.ROLE_ARN }}
 
-      - name: Upload immutable image artifact
+      - name: Upload immutable deployment artifacts
+        id: artifacts
         run: |
+          deploy_script_sha256="$(sha256sum deploy/aws/deploy.sh | awk '{print $1}')"
           aws s3 cp \
             cornershopdev.tar.gz \
             "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.tar.gz" \
             --sse AES256 \
             --only-show-errors
+          aws s3 cp \
+            deploy/aws/deploy.sh \
+            "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.deploy.sh" \
+            --sse AES256 \
+            --only-show-errors
+          aws s3 cp \
+            deploy/aws/host-launcher.sh \
+            "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.host-launcher.sh" \
+            --sse AES256 \
+            --only-show-errors
+          echo "deploy_script_sha256=${deploy_script_sha256}" >>"$GITHUB_OUTPUT"
 
       - name: Deploy through Systems Manager
         id: deploy
         run: |
           artifact_uri="s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.tar.gz"
-          command="sudo /usr/local/bin/deploy-cornershopdev '${artifact_uri}' 'cornershopdev:${GITHUB_SHA}'"
+          deploy_script_sha256="${{ steps.artifacts.outputs.deploy_script_sha256 }}"
+          command="sudo /usr/local/bin/deploy-cornershopdev '${artifact_uri}' 'cornershopdev:${GITHUB_SHA}' '${deploy_script_sha256}'"
           parameters="$(jq -cn --arg command "$command" '{commands: [$command]}')"
           command_id="$(
             aws ssm send-command \
@@ -75,7 +89,7 @@ jobs:
                 --output text
             )"
             case "$status" in
-              Success) exit 0 ;;
+              Success) break ;;
               Cancelled|Cancelling|Failed|TimedOut)
                 echo "Deployment command ended with ${status}" >&2
                 exit 1
@@ -83,8 +97,23 @@ jobs:
             esac
             sleep 10
           done
-          echo "Deployment command did not finish within 15 minutes" >&2
-          exit 1
+          if [[ "$status" != "Success" ]]; then
+            echo "Deployment command did not finish within 15 minutes" >&2
+            exit 1
+          fi
+          output="$(
+            aws ssm get-command-invocation \
+              --region "$AWS_REGION" \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query StandardOutputContent \
+              --output text
+          )"
+          sentinel="deploy-script verified sha256=${deploy_script_sha256}"
+          if ! grep -Fxq "$sentinel" <<<"$output"; then
+            echo "Deployment host did not verify the exact deploy script" >&2
+            exit 1
+          fi
 
       - name: Print deployment result
         if: always() && steps.deploy.outputs.command_id
