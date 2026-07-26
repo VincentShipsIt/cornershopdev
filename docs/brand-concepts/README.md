@@ -1,9 +1,9 @@
 # Brand identity concepts
 
 Generated with the built-in OpenAI image generator on 2026-07-26. These are
-directional review boards, not production logo files. Once a direction is
-selected, redraw the mark as SVG, tune the wordmark, and export the favicon set
-from that controlled vector source.
+directional review boards. Restofront 05 is the selected direction; its chosen
+favicon artwork has been prepared as production raster assets under
+`public/brand/restofront/`.
 
 ## Cornershopdev
 
@@ -93,7 +93,7 @@ Use no more than four interior shapes, no chair legs, and no architecture. The
 mark should read as R first and intimate dining second. Show a standalone mark,
 exact wordmark, and rounded-square favicon.
 
-### 05 — Fork R
+### 05 — Fork R (selected)
 
 ![Fork R concept](./restofront-05-fork-r.png)
 

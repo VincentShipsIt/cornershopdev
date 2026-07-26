@@ -225,6 +225,14 @@ describe("niche routing", () => {
     expect(listed).not.toContain(Vertical.BEAUTY);
   });
 
+  it("registers the selected Restofront mark and favicon assets", () => {
+    expect(restaurantConfig.marketing.brand.mark).toEqual({
+      src: "/brand/restofront/mark.png",
+      faviconSrc: "/brand/restofront/favicon-32.png",
+      appleTouchIconSrc: "/brand/restofront/apple-touch-icon.png",
+    });
+  });
+
   /**
    * The two halves of launching a niche, tied together. A niche with a domain is
    * selling, and a selling niche writes to its customers — if it has no sender of

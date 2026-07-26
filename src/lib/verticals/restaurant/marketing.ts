@@ -9,7 +9,15 @@ import type { VerticalMarketing } from "@/lib/verticals/types";
 export const restaurantMarketing = {
   hostnames: ["restofront.com", "www.restofront.com"],
   domain: "restofront.com",
-  brand: { name: "Restofront", initials: "RF" },
+  brand: {
+    name: "Restofront",
+    initials: "RF",
+    mark: {
+      src: "/brand/restofront/mark.png",
+      faviconSrc: "/brand/restofront/favicon-32.png",
+      appleTouchIconSrc: "/brand/restofront/apple-touch-icon.png",
+    },
+  },
   // send.restofront.com is the verified sending domain; nobody reads it, so
   // replies are pointed at the bare domain instead.
   email: {

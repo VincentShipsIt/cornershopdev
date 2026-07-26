@@ -67,6 +67,7 @@ export async function generateMetadata({
   const id = resolveVerticalBySlug(vertical);
   if (!id) return {};
   const { marketing } = resolveVerticalConfig(id);
+  const { mark } = marketing.brand;
   return {
     // Absolute so the root layout's "| Cornershopdev" template stays off a niche
     // storefront: a visitor on restofront.com should never see the factory's name
@@ -78,6 +79,26 @@ export async function generateMetadata({
     // whichever of the two a crawler happens to reach.
     alternates: marketing.domain
       ? { canonical: `https://${marketing.domain}` }
+      : undefined,
+    // A niche with its own identity also owns its browser chrome. The factory
+    // favicon remains the fallback for verticals that have not selected a mark.
+    icons: mark
+      ? {
+          icon: [
+            {
+              url: mark.faviconSrc,
+              type: "image/png",
+              sizes: "32x32",
+            },
+          ],
+          apple: [
+            {
+              url: mark.appleTouchIconSrc,
+              type: "image/png",
+              sizes: "180x180",
+            },
+          ],
+        }
       : undefined,
   };
 }

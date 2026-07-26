@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Vertical } from "@/generated/prisma/enums";
+import type { BrandIdentity } from "@/lib/brand";
 
 export type VerticalId = Vertical;
 
@@ -121,7 +122,7 @@ export type VerticalMarketing = {
   hostnames: string[];
   /** Bare domain printed as the niche's public identity, or null while unlaunched. */
   domain: string | null;
-  brand: { name: string; initials: string };
+  brand: BrandIdentity;
   /**
    * The address this niche's mail goes out as, and where a reply to it lands.
    * Every customer arrives through a niche storefront, so every customer email

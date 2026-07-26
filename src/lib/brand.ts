@@ -1,10 +1,16 @@
 /**
- * A wordmark: the name a visitor reads and the initials in the badge beside it.
- * Every niche declares one in its `marketing` block; the factory's own is below.
+ * A wordmark: the name a visitor reads and either its production mark or the
+ * initials used before that mark exists. Every niche declares one in its
+ * `marketing` block; the factory's own is below.
  */
 export type BrandIdentity = {
   name: string;
   initials: string;
+  mark?: {
+    src: string;
+    faviconSrc: string;
+    appleTouchIconSrc: string;
+  };
 };
 
 /**

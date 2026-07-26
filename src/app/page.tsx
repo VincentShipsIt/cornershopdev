@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -185,9 +186,19 @@ export default function Home() {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="grid size-9 place-items-center rounded-full border border-primary/25 bg-primary text-[11px] font-bold tracking-[-0.08em] text-primary-foreground">
-                      {marketing.brand.initials}
-                    </span>
+                    {marketing.brand.mark ? (
+                      <Image
+                        src={marketing.brand.mark.src}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="size-9 shrink-0 rounded-xl"
+                      />
+                    ) : (
+                      <span className="grid size-9 place-items-center rounded-full border border-primary/25 bg-primary text-[11px] font-bold tracking-[-0.08em] text-primary-foreground">
+                        {marketing.brand.initials}
+                      </span>
+                    )}
                     <div>
                       <p className="font-semibold">{marketing.brand.name}</p>
                       <p className="font-mono text-[11px] text-muted-foreground">
