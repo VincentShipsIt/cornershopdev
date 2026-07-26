@@ -8,7 +8,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { BookingEmbed } from "@/components/booking-embed";
 import { BookingRequestForm } from "@/components/booking-request-form";
+import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { SiteAnalytics } from "@/components/site-analytics";
+import { Vertical } from "@/generated/prisma/enums";
 import { resolveBookingEmbed } from "@/lib/booking-embed";
 import {
   getSiteDictionary,
@@ -21,6 +23,7 @@ import {
   type SiteDraftView,
   type SiteThemeView,
 } from "@/lib/site-draft";
+import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import { cn } from "@/lib/utils";
@@ -55,6 +58,28 @@ export function SiteRenderer({
   theme,
 }: SiteRendererProps) {
   const config = resolveVerticalConfig(vertical);
+  const dictionary = getSiteDictionary(config, locale);
+
+  if (vertical === Vertical.RESTAURANT) {
+    const selection = parseRestaurantThemeSelection(
+      draft.attributes.themeSelection,
+    );
+    if (selection) {
+      return (
+        <RestaurantThemeRenderer
+          draft={draft}
+          selection={selection}
+          locale={locale}
+          localeBasePath={localeBasePath}
+          availableLocales={availableLocales}
+          dictionary={dictionary}
+          embedded={embedded}
+          analyticsEnabled={analyticsEnabled}
+        />
+      );
+    }
+  }
+
   const booking = draft.integrations.find(
     (integration) => integration.type === "booking",
   );
@@ -77,7 +102,6 @@ export function SiteRenderer({
   // case would change every existing restaurant site for no gain.
   const showBookingSection = Boolean(bookingEmbed) || showRequestForm;
   const copy = getTemplateCopy(template, locale);
-  const dictionary = getSiteDictionary(config, locale);
   const picturedItems = draft.catalogSections
     .flatMap((section) => section.items)
     .filter(

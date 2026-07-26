@@ -99,8 +99,8 @@ export const baseSiteDraftCoreShape = {
   address: z.string().max(220),
   phone: z.string().max(40),
   sourceUrl: z.url().nullable(),
-  heroImageUrl: z.url().nullable(),
-  heroOriginalImageUrl: z.url().nullable().optional(),
+  heroImageUrl: siteImageUrlSchema.nullable(),
+  heroOriginalImageUrl: siteImageUrlSchema.nullable().optional(),
   heroImageProvenance: imageProvenanceSchema.nullable().optional(),
   palette: z.object({
     background: z.string(),

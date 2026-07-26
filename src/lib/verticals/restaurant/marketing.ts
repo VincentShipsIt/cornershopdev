@@ -40,6 +40,10 @@ export const restaurantMarketing = {
     submitLabel: "Show my preview",
     pendingLabel: "Opening your restaurant",
   },
+  themeGallery: {
+    href: "/themes/restaurant",
+    label: "Browse themes",
+  },
   steps: [
     {
       number: "01",
