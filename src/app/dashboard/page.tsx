@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Dashboard } from "@/app/dashboard/dashboard";
+import { getSiteAccess } from "@/lib/authorization";
 import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
@@ -19,15 +20,19 @@ export default async function DashboardPage({
   const query = await searchParams;
   const session = await getCurrentSession();
   if (!session && query.demo !== "1") redirect("/sign-in");
+  if (session && !session.siteSlug) redirect("/admin");
 
-  const draft = session
-    ? await getRestaurantDraft(session.siteSlug)
-    : sampleRestaurant;
+  const access =
+    session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
+  if (session && (!access || !access.ok)) redirect("/sign-in");
+
+  const draft =
+    access?.ok ? await getRestaurantDraft(access.site.slug) : sampleRestaurant;
 
   return (
     <Dashboard
       initialDraft={draft}
-      email={session?.email ?? "demo@cornershop.dev"}
+      email={access?.ok ? access.user.email : "demo@cornershop.dev"}
       checkoutComplete={query.checkout === "success"}
       demo={!session}
       brand={await resolveRequestBrand()}

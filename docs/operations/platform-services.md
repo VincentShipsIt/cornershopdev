@@ -47,11 +47,77 @@ Production.
 1. Confirm the target shell or CI environment contains the reviewed target
    `DATABASE_URL`.
 2. Take or verify a provider backup before any destructive migration.
-3. Check migration state with `bun run db:migrate:status`.
-4. Apply pending migrations with `bun run db:migrate:deploy`.
-5. Redeploy the application and confirm `/api/health/ready` returns `200`.
-6. Record the migration name, target environment, operator, and backup reference
+3. Before the account-email migration, run this read-only duplicate preflight:
+
+   ```sql
+   SELECT LOWER("email"), COUNT(*)
+   FROM "User"
+   GROUP BY LOWER("email")
+   HAVING COUNT(*) > 1;
+   ```
+
+   Resolve any returned rows before deploying; the migration itself also fails
+   closed on this condition.
+4. Check migration state with `bun run db:migrate:status`.
+5. Apply pending migrations with `bun run db:migrate:deploy`.
+6. Redeploy the application and confirm `/api/health/ready` returns `200`.
+7. Record the migration name, target environment, operator, and backup reference
    in the release record.
+
+### Reviewed fixture imports
+
+Approved lead previews must be imported with a dedicated create-only operator
+script. Do not send them back through `/api/import`: that route crawls and
+regenerates content instead of preserving the reviewed fixture.
+
+Le Petit Meunier uses the canonical slug `le-petit-meunier`. Run the dry-run
+inside the healthy production container first:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:import:le-petit-meunier
+```
+
+The preflight stops if the canonical slug, the legacy
+`restaurant-le-petit-meunier` slug, the normalized source identity, or the
+source URL already exists. After confirming the RDS recovery window is healthy,
+execute the same reviewed import:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:import:le-petit-meunier --execute
+```
+
+The importer writes the site, catalog, integrations, version snapshot, import
+job, and audit event in one serializable transaction. It verifies the expected
+relation counts before commit and reads the canonical row back afterward.
+
+### Superadmin bootstrap
+
+The operator console at `/admin` is protected by two independent gates:
+
+1. the user's PostgreSQL `platformRole` is `SUPERADMIN`;
+2. the normalized email is present in the deployment's comma-separated
+   `SUPERADMIN_EMAILS`.
+
+Store `SUPERADMIN_EMAILS` as a SecureString under
+`/shipshit/production/cornershopdev/SUPERADMIN_EMAILS`, deploy it, then preview
+the role change:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:grant-superadmin --email owner@example.com
+```
+
+Apply it only after confirming the target:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:grant-superadmin --email owner@example.com --execute
+```
+
+The script can create a platform-only operator with no customer organization.
+Removing either the database role or the environment entry revokes `/admin`.
 
 The container applies committed Prisma migrations and the idempotent Workflow
 bootstrap before it starts accepting traffic. A candidate must pass its
@@ -106,6 +172,11 @@ The host deployment script:
 3. Loads the exact image artifact and starts a candidate.
 4. Waits for `/api/health/ready`.
 5. Swaps container names, reloads Caddy, and rolls back on failure.
+
+The authorization migration intentionally changes the signed session payload
+from an email address to the immutable database user id. Existing browser
+sessions are invalidated once on rollout; affected customers sign in again by
+requesting a new magic link.
 
 Route53 sends `cornershop.dev`, `www.cornershop.dev`, and
 `domains.cornershop.dev` to the EC2 Elastic IP. Caddy owns TLS termination.

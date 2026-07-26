@@ -10,6 +10,8 @@
     "test": "bun test",
     "db:migrate:status": "bunx --bun prisma migrate status",
     "db:migrate:deploy": "bunx --bun prisma migrate deploy",
+    "operator:grant-superadmin": "bun scripts/grant-superadmin.ts",
+    "operator:import:le-petit-meunier": "bun scripts/import-le-petit-meunier.ts",
     "workflow:migrate": "bun node_modules/@workflow/world-postgres/bin/setup.js",
     "postinstall": "bunx --bun prisma generate"
   },

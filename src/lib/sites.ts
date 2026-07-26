@@ -40,7 +40,9 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   const site = await getDb().site.findUnique({
     where: { slug },
     include: {
-      integrations: { orderBy: { createdAt: "asc" } },
+      integrations: {
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      },
       catalogSections: {
         orderBy: { position: "asc" },
         include: { items: { orderBy: { position: "asc" } } },
@@ -60,9 +62,11 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   const draft = config.draftSchema.parse({
     slug: site.slug,
     name: site.name,
-    eyebrow: config.presentation.buildEyebrow(attributes, {
-      address: site.address,
-    }),
+    eyebrow:
+      site.eyebrow ??
+      config.presentation.buildEyebrow(attributes, {
+        address: site.address,
+      }),
     description: site.description ?? config.presentation.fallbackDescription,
     address: site.address ?? "",
     phone: site.phone ?? "",

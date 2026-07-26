@@ -1,8 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { resolve4, resolveCname } from "node:dns/promises";
 import { z } from "zod";
+import {
+  accessFailureResponse,
+  getSiteAccess,
+} from "@/lib/authorization";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
+import { claimDomainForSite } from "@/lib/domain-claim";
 
 const hostnameSchema = z
   .string()
@@ -33,55 +38,51 @@ function getDomainTarget() {
 
 export async function POST(request: Request) {
   try {
-    const session = await getCurrentSession();
-    if (!session) {
-      return Response.json({ error: "Sign in to connect a domain" }, { status: 401 });
-    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;
     };
     const hostname = hostnameSchema.parse(body.hostname);
-    const siteSlug = body.siteSlug ?? session.siteSlug;
-    if (session.siteSlug !== siteSlug) {
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const session = await getCurrentSession();
+    const siteSlug = z
+      .string()
+      .min(2)
+      .max(80)
+      .parse(body.siteSlug ?? session?.siteSlug);
+    const access = await getSiteAccess(siteSlug);
+    if (!access.ok) return accessFailureResponse(access);
 
-    const db = process.env.DATABASE_URL ? getDb() : null;
-    let siteId: string | null = null;
-    if (db) {
-      const site = await db.site.findUnique({
-        where: { slug: siteSlug },
-        select: { id: true },
-      });
-      if (!site) {
-        return Response.json({ error: "Site not found" }, { status: 404 });
-      }
-      const existingDomain = await db.domain.findUnique({
-        where: { hostname },
-        select: { siteId: true },
-      });
-      if (existingDomain && existingDomain.siteId !== site.id) {
-        return Response.json(
-          { error: "This domain is already connected to another site" },
-          { status: 409 },
-        );
-      }
-      siteId = site.id;
-    }
-
+    const db = getDb();
     const target = getDomainTarget();
     const verificationToken = randomBytes(24).toString("base64url");
-    if (db && siteId) {
-      await db.domain.upsert({
-        where: { hostname },
-        update: { siteId },
-        create: {
-          hostname,
-          siteId,
-          verificationToken,
-        },
-      });
+    const claimed = await claimDomainForSite({
+      runSerializable: (operation) =>
+        db.$transaction(
+          (transaction) =>
+            operation({
+              findOwner: async (candidateHostname) =>
+                (
+                  await transaction.domain.findUnique({
+                    where: { hostname: candidateHostname },
+                    select: { siteId: true },
+                  })
+                )?.siteId ?? null,
+              create: async (data) => {
+                await transaction.domain.create({ data });
+              },
+            }),
+          { isolationLevel: "Serializable" },
+        ),
+    }, {
+      hostname,
+      siteId: access.site.id,
+      verificationToken,
+    });
+    if (!claimed) {
+      return Response.json(
+        { error: "This domain is already connected to another site" },
+        { status: 409 },
+      );
     }
 
     const isApex = hostname.split(".").length === 2;
@@ -113,30 +114,25 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const session = await getCurrentSession();
-    if (!session) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const searchParams = new URL(request.url).searchParams;
     const hostname = hostnameSchema.parse(searchParams.get("hostname"));
-    const siteSlug = searchParams.get("siteSlug");
-    if (siteSlug !== session.siteSlug) {
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const siteSlug = z
+      .string()
+      .min(2)
+      .max(80)
+      .parse(searchParams.get("siteSlug"));
+    const access = await getSiteAccess(siteSlug);
+    if (!access.ok) return accessFailureResponse(access);
 
-    let siteId: string | null = null;
-    if (process.env.DATABASE_URL) {
-      const domain = await getDb().domain.findFirst({
-        where: {
-          hostname,
-          site: { slug: session.siteSlug },
-        },
-        select: { siteId: true },
-      });
-      if (!domain) {
-        return Response.json({ error: "Domain not found" }, { status: 404 });
-      }
-      siteId = domain.siteId;
+    const domain = await getDb().domain.findFirst({
+      where: {
+        hostname,
+        siteId: access.site.id,
+      },
+      select: { siteId: true },
+    });
+    if (!domain) {
+      return Response.json({ error: "Domain not found" }, { status: 404 });
     }
 
     const [aResult, cnameResult] = await Promise.allSettled([
@@ -152,11 +148,11 @@ export async function GET(request: Request) {
         (value) => value.replace(/\.$/, "").toLowerCase() === target.cname,
       );
 
-    if (verified && process.env.DATABASE_URL) {
+    if (verified) {
       await getDb().domain.updateMany({
         where: {
           hostname,
-          ...(siteId ? { siteId } : {}),
+          siteId: access.site.id,
         },
         data: { verified: true, verifiedAt: new Date() },
       });

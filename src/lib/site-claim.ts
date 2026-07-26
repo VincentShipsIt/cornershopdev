@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { SiteStatus } from "@/generated/prisma/enums";
+import { normalizeAccountEmail } from "@/lib/account-email";
 
 /**
  * A site may only be claimed while it is still an unowned prospect. Once it
@@ -80,6 +81,11 @@ export type CompletedCheckout = {
   stripePriceId: string | null;
 };
 
+export type ClaimedSiteAccess = {
+  userId: string;
+  organizationId: string;
+};
+
 /**
  * Turns a completed Stripe checkout into an owned site.
  *
@@ -95,11 +101,12 @@ export type CompletedCheckout = {
 export async function claimSite(
   tx: Prisma.TransactionClient,
   checkout: CompletedCheckout,
-): Promise<void> {
+): Promise<ClaimedSiteAccess> {
+  const email = normalizeAccountEmail(checkout.email);
   const user = await tx.user.upsert({
-    where: { email: checkout.email },
+    where: { email },
     update: {},
-    create: { email: checkout.email },
+    create: { email },
   });
 
   const membership = await tx.membership.findFirst({
@@ -172,4 +179,6 @@ export async function claimSite(
       },
     });
   }
+
+  return { userId: user.id, organizationId };
 }
