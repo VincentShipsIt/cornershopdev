@@ -194,11 +194,16 @@ and belongs to a restaurant.
 
 ### Production routing
 
-The frontend remains on Vercel at `cornershop.dev` and `www.cornershop.dev`.
-Set `CORNERSHOPDEV_API_ORIGIN=https://api.cornershop.dev` in the Vercel production
-environment so same-origin `/api/*` requests are proxied to the API without
-changing browser URLs. Route `api.cornershop.dev` and customer restaurant
-domains through Caddy on the EC2 application host.
+The app is single-origin. Caddy on the EC2 application host terminates TLS for
+every ingress the factory operates — `cornershop.dev`, `www`, `api`, `domains`,
+and each customer storefront via on-demand TLS — and reverse-proxies all of them
+to the one application container. No niche gets its own platform subdomain; a
+niche brings only the storefront domain its customers actually type.
+
+Leave `CORNERSHOPDEV_API_ORIGIN` empty. It exists for a future split deployment,
+where it makes `next.config.ts` proxy `/api/*` to a separate API origin. Setting
+it on a single-origin host proxies `/api/*` to a hostname that resolves back to
+this same container, where the rewrite fires again — an infinite loop.
 
 ## Security boundaries
 
