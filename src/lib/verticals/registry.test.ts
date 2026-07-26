@@ -13,6 +13,7 @@ import {
   resolveVerticalByHostname,
   resolveVerticalBySlug,
   resolveVerticalConfig,
+  verticalAssetNamespace,
   verticalSlug,
 } from "@/lib/verticals/registry";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
@@ -124,7 +125,9 @@ describe("vertical registry", () => {
     );
 
     expect(draft.attributes).toEqual(beautyConfig.attributeDefaults);
-    expect(draft.catalogSections[0]?.name).toBe(beautyConfig.vocabulary.catalog);
+    expect(draft.catalogSections[0]?.name).toBe(
+      beautyConfig.vocabulary.catalog,
+    );
   });
 });
 
@@ -180,6 +183,23 @@ describe("niche routing", () => {
     expect(resolveVerticalByHostname("")).toBeNull();
   });
 
+  /**
+   * Every niche writes into the one `assets.cornershop.dev` bucket, so a
+   * collision here would let two niches overwrite each other's images.
+   */
+  it("gives every niche its own asset folder, named after its domain", () => {
+    expect(verticalAssetNamespace(Vertical.RESTAURANT)).toBe("restofrontcom");
+    expect(verticalAssetNamespace(Vertical.BEAUTY)).toBe(
+      verticalSlug(Vertical.BEAUTY),
+    );
+
+    const namespaces = listVerticalIds().map(verticalAssetNamespace);
+    expect(new Set(namespaces).size).toBe(namespaces.length);
+    for (const namespace of namespaces) {
+      expect(namespace).toMatch(/^[a-z0-9]+$/);
+    }
+  });
+
   it("lets no two verticals register the same hostname", () => {
     const claimed = listVerticalIds().flatMap(
       (id) => resolveVerticalConfig(id).marketing.hostnames,
@@ -199,6 +219,8 @@ describe("niche routing", () => {
     const launched = ordered.map((id) =>
       Boolean(resolveVerticalConfig(id).marketing.domain),
     );
-    expect(launched).toEqual([...launched].sort((a, b) => Number(b) - Number(a)));
+    expect(launched).toEqual(
+      [...launched].sort((a, b) => Number(b) - Number(a)),
+    );
   });
 });

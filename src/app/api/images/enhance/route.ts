@@ -66,6 +66,7 @@ export async function POST(request: Request) {
     const originalImage = await fetchPublicImage(sourceImageUrl);
     const originalUrl = await storeSiteImage({
       siteSlug,
+      vertical,
       data: originalImage.data,
       mediaType: originalImage.mediaType,
       purpose: "original-hero",
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
     );
     const url = await storeSiteImage({
       siteSlug,
+      vertical,
       data: image.data,
       mediaType: image.mediaType,
       purpose: "hero",
