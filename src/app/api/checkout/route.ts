@@ -58,12 +58,23 @@ export async function POST(request: Request) {
 
     return Response.json({ url: session.url });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return Response.json(
+        { error: error.issues[0]?.message ?? "Check your details and retry" },
+        { status: 400 },
+      );
+    }
+
+    // Everything else is ours, not the caller's: an unset price ID, a Stripe
+    // outage, a database that will not answer. Returning `error.message` here
+    // named our own environment variables to anyone who could POST malformed
+    // input, and reported a server fault as a 400 the client could not fix.
+    console.error("[checkout] failed", {
+      error: error instanceof Error ? error.message : "unknown",
+    });
     return Response.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Checkout could not start",
-      },
-      { status: 400 },
+      { error: "Checkout could not start. Try again in a moment." },
+      { status: 500 },
     );
   }
 }
