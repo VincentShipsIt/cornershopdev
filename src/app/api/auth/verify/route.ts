@@ -1,12 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { consumeMagicLink } from "@/lib/magic-links";
+import { auth } from "@/lib/better-auth";
+import { markMagicLinkConsumed } from "@/lib/magic-links";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import {
   PENDING_MAGIC_LINK_COOKIE,
   pendingMagicLinkCookieOptions,
-  SESSION_COOKIE,
-  sessionCookieOptions,
 } from "@/lib/session";
 
 function signInError(request: Request) {
@@ -53,29 +52,46 @@ export async function POST(request: NextRequest) {
     return signInError(request);
   }
 
-  const created = await consumeMagicLink(token).catch(() => null);
-  if (!created) {
+  const verifyUrl = new URL("/api/auth/magic-link/verify", request.url);
+  verifyUrl.searchParams.set("token", token);
+  verifyUrl.searchParams.set("callbackURL", "/api/auth/complete");
+  verifyUrl.searchParams.set(
+    "errorCallbackURL",
+    "/sign-in?error=invalid-link",
+  );
+  const verification = await auth
+    .handler(
+      new Request(verifyUrl, {
+        method: "GET",
+        headers: request.headers,
+        redirect: "manual",
+      }),
+    )
+    .catch(() => null);
+  if (!verification) {
     const response = signInError(request);
     response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
     return response;
   }
 
-  const destination =
-    created.session.purpose === "ADMIN"
-      ? "/admin"
-      : created.session.purpose === "WORKSPACE_SELECTION"
-        ? "/workspace/select"
-        : "/dashboard";
-  const response = NextResponse.redirect(
-    new URL(destination, request.url),
-    303,
-  );
+  const location = verification.headers.get("location");
+  const destination = location ? new URL(location, request.url) : null;
+  const verified =
+    verification.status >= 300 &&
+    verification.status < 400 &&
+    destination?.pathname === "/api/auth/complete";
+  if (!verified) {
+    const response = signInError(request);
+    response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
+    return response;
+  }
+
+  await markMagicLinkConsumed(token).catch(() => undefined);
+  const response = new NextResponse(verification.body, {
+    status: verification.status,
+    headers: verification.headers,
+  });
   response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
-  response.cookies.set(
-    SESSION_COOKIE,
-    created.token,
-    sessionCookieOptions(created.session.expiresAt),
-  );
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }

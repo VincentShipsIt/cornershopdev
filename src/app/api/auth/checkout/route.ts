@@ -2,13 +2,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
-import { createSiteSession } from "@/lib/auth-sessions";
+import { auth } from "@/lib/better-auth";
 import {
   CHECKOUT_RETURN_COOKIE,
   verifyHashedToken,
 } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
-import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
 
 const querySchema = z.object({
   sessionId: z.string().startsWith("cs_").max(256),
@@ -98,36 +97,18 @@ export async function GET(request: Request) {
     );
   }
 
-  await getDb().claimInvitation.updateMany({
-    where: {
-      id: claimInvitationId,
-      checkoutSessionId: sessionId,
-      checkoutReturnTokenHash: invitation.checkoutReturnTokenHash,
-    },
-    data: {
-      checkoutReturnTokenHash: null,
-      checkoutReturnExpiresAt: null,
-    },
-  });
-  cookieStore.delete(CHECKOUT_RETURN_COOKIE);
-  const existingToken = cookieStore.get(SESSION_COOKIE)?.value;
-  const created = await createSiteSession({
-    userId: membership.userId,
-    siteId: invitation.site.id,
-    actor: "checkout-return",
-    previousToken: existingToken,
-  });
-  cookieStore.set(
-    SESSION_COOKIE,
-    created.token,
-    sessionCookieOptions(created.session.expiresAt),
+  const headers = new Headers(request.headers);
+  headers.set("content-type", "application/json");
+  return auth.handler(
+    new Request(new URL("/api/auth/checkout/bootstrap", request.url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        sessionId,
+        claimInvitationId,
+        poll,
+      }),
+      redirect: "manual",
+    }),
   );
-
-  if (poll) {
-    return Response.json(
-      { ready: true, url: "/dashboard?checkout=success" },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  }
-  redirect("/dashboard?checkout=success");
 }

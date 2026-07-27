@@ -127,7 +127,7 @@ export async function claimSite(
   const user = await tx.user.upsert({
     where: { email },
     update: {},
-    create: { email },
+    create: { email, name: accountName(email) },
   });
   const membership = await tx.membership.findFirst({
     where: { userId: user.id },
@@ -197,7 +197,7 @@ async function resolveAcceptedClaim(
   const user = await tx.user.upsert({
     where: { email },
     update: {},
-    create: { email },
+    create: { email, name: accountName(email) },
   });
   const membership = await tx.membership.findFirst({
     where: {
@@ -217,6 +217,10 @@ async function resolveAcceptedClaim(
     userId: user.id,
     organizationId: accepted.site.organizationId,
   };
+}
+
+function accountName(email: string): string {
+  return email.split("@")[0]?.trim() || "Account owner";
 }
 
 async function upsertSubscription(

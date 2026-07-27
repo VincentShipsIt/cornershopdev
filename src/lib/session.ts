@@ -2,7 +2,6 @@ import { createHash, randomBytes } from "node:crypto";
 
 export const SESSION_COOKIE = "cornershopdev_session";
 export const PENDING_MAGIC_LINK_COOKIE = "cornershopdev_pending_magic_link";
-export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 export const MAGIC_LINK_TTL_MS = 20 * 60_000;
 export const MAGIC_LINK_MAX_RETRIES = 2;
 export const MAGIC_LINK_PENDING_RETRY_AFTER_MS = 5 * 60_000;
@@ -19,17 +18,6 @@ export function createOpaqueAuthToken(): OpaqueAuthToken {
 
 export function hashAuthToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
-export function sessionCookieOptions(expiresAt: Date) {
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax" as const,
-    expires: expiresAt,
-    path: "/",
-    priority: "high" as const,
-  };
 }
 
 export function pendingMagicLinkCookieOptions() {

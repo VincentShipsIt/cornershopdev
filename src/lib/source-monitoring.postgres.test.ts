@@ -39,6 +39,7 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
       data: {
         id: userId,
         email: `${userId}@example.test`,
+        name: "Source monitoring owner",
         memberships: {
           create: {
             organization: {

@@ -242,6 +242,8 @@ cannot authorize billing or ownership.
 ### Owner sign-in
 
 - `CLAIM_TOKEN_SECRET` with at least 32 random characters
+- `BETTER_AUTH_SECRET` with at least 32 random characters (preferred; the
+  claim secret is a rollout fallback)
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
 
@@ -295,7 +297,8 @@ this same container, where the rewrite fires again — an infinite loop.
 - Claim invitation requests and checkout attempts use isolated Redis rate-limit
   buckets and fail closed in production. Creation, verification, checkout,
   acceptance, and rejection events are recorded without tokens or contact data.
-- Dashboard sessions are HMAC-signed, HTTP-only, same-site cookies.
+- Better Auth owns revocable, database-backed dashboard sessions behind a
+  signed HTTP-only, same-site cookie.
 - Restaurant mutations require a session matching the restaurant slug.
 - Image enhancement and domain management require that same restaurant-scoped session.
 - Public preview generation is rate limited and fails closed in production.

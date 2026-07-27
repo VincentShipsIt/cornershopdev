@@ -130,13 +130,17 @@ enum SourceMonitorSuggestionStatus {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String?
-  platformRole PlatformRole @default(USER)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  memberships  Membership[]
+  id             String          @id @default(cuid())
+  email          String          @unique
+  emailVerified  Boolean         @default(false)
+  name           String
+  image          String?
+  platformRole   PlatformRole    @default(USER)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  memberships    Membership[]
+  sessions       Session[]
+  accounts       Account[]
   authMagicLinks AuthMagicLink[]
   authSessions   AuthSession[]
 }
@@ -149,7 +153,8 @@ model Organization {
   memberships   Membership[]
   sites         Site[]
   subscriptions Subscription[]
-  authSessions   AuthSession[]
+  sessions      Session[]
+  authSessions  AuthSession[]
 }
 
 model Membership {
@@ -164,61 +169,62 @@ model Membership {
 }
 
 model Site {
-  id                     String             @id @default(cuid())
-  slug                   String             @unique
-  name                   String
-  eyebrow                String?
-  description            String?
-  address                String?
-  phone                  String?
-  email                  String?
-  sourceUrl              String?
-  sourceKey              String?           @unique
-  logoUrl                String?
-  heroImageUrl           String?
-  heroOriginalImageUrl   String?
-  heroImageProvenance    ImageProvenance?
-  autoEnhanceImages      Boolean           @default(true)
-  defaultLocale          String            @default("en")
-  translations           Json              @default("[]")
-  businessHours          Json              @default("[]")
-  draftTheme             Json              @default("{}")
-  draftThemeVersion      String            @default("legacy-v1")
-  draftPalette           Json              @default("{}")
-  vertical               Vertical          @default(RESTAURANT)
-  attributes             Json              @default("{}")
-  draftRevision          Int               @default(0)
-  status                 SiteStatus        @default(PROSPECT)
-  publishedSiteVersionId String?           @unique
-  publishedSiteVersion   SiteVersion?      @relation("PublishedSiteVersion", fields: [publishedSiteVersionId], references: [id], onDelete: SetNull)
-  organizationId         String?
-  organization           Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
-  catalogSections        CatalogSection[]
-  integrations           Integration[]
-  importJobs             ImportJob[]
-  domains                Domain[]
-  siteVersions           SiteVersion[]
-  claimInvitations       ClaimInvitation[]
-  subscription           Subscription?
-  auditEvents            AuditEvent[]
-  bookingRequests        BookingRequest[]
-  analyticsEvents        AnalyticsEvent[]
-  authSessions           AuthSession[]
+  id                       String                    @id @default(cuid())
+  slug                     String                    @unique
+  name                     String
+  eyebrow                  String?
+  description              String?
+  address                  String?
+  phone                    String?
+  email                    String?
+  sourceUrl                String?
+  sourceKey                String?                   @unique
+  logoUrl                  String?
+  heroImageUrl             String?
+  heroOriginalImageUrl     String?
+  heroImageProvenance      ImageProvenance?
+  autoEnhanceImages        Boolean                   @default(true)
+  defaultLocale            String                    @default("en")
+  translations             Json                      @default("[]")
+  businessHours            Json                      @default("[]")
+  draftTheme               Json                      @default("{}")
+  draftThemeVersion        String                    @default("legacy-v1")
+  draftPalette             Json                      @default("{}")
+  vertical                 Vertical                  @default(RESTAURANT)
+  attributes               Json                      @default("{}")
+  draftRevision            Int                       @default(0)
+  status                   SiteStatus                @default(PROSPECT)
+  publishedSiteVersionId   String?                   @unique
+  publishedSiteVersion     SiteVersion?              @relation("PublishedSiteVersion", fields: [publishedSiteVersionId], references: [id], onDelete: SetNull)
+  organizationId           String?
+  organization             Organization?             @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  catalogSections          CatalogSection[]
+  integrations             Integration[]
+  importJobs               ImportJob[]
+  domains                  Domain[]
+  siteVersions             SiteVersion[]
+  claimInvitations         ClaimInvitation[]
+  subscription             Subscription?
+  auditEvents              AuditEvent[]
+  bookingRequests          BookingRequest[]
+  analyticsEvents          AnalyticsEvent[]
+  sessions                 Session[]
+  authSessions             AuthSession[]
   sourceMonitorState       SourceMonitorState?
   sourceMonitorRuns        SourceMonitorRun[]
   sourceMonitorSuggestions SourceMonitorSuggestion[]
 }
 
 model AuthMagicLink {
-  id                String             @id @default(cuid())
-  tokenHash         String             @unique
+  id                String              @id @default(cuid())
+  tokenHash         String              @unique
   destination       AuthLinkDestination
   brandVertical     Vertical?
-  deliveryStatus    AuthDeliveryStatus @default(PENDING)
-  deliveryAttempts  Int                @default(0)
-  retryCount        Int                @default(0)
+  deliveryStatus    AuthDeliveryStatus  @default(PENDING)
+  deliveryAttempts  Int                 @default(0)
+  retryCount        Int                 @default(0)
   providerMessageId String?
   failureCode       String?
   expiresAt         DateTime
@@ -227,9 +233,9 @@ model AuthMagicLink {
   consumedAt        DateTime?
   revokedAt         DateTime?
   userId            String
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@index([userId, createdAt])
   @@index([deliveryStatus, createdAt])
@@ -268,6 +274,58 @@ model AuthEvent {
   @@index([subjectUserId, createdAt])
   @@index([magicLinkId, createdAt])
   @@index([sessionId, createdAt])
+}
+
+model Session {
+  id             String        @id
+  expiresAt      DateTime
+  token          String        @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  ipAddress      String?
+  userAgent      String?
+  purpose        String        @default("WORKSPACE_SELECTION")
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteId         String?
+  site           Site?         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([siteId, expiresAt])
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@index([expiresAt])
 }
 
 model CatalogSection {

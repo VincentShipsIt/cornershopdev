@@ -1,144 +1,95 @@
 import "server-only";
-import type { Prisma } from "@/generated/prisma/client";
-import type { AuthSessionPurpose } from "@/generated/prisma/enums";
-import { getDb } from "@/lib/db";
+import { auth } from "@/lib/better-auth";
 import {
-  createOpaqueAuthToken,
-  hashAuthToken,
-  SESSION_TTL_MS,
-} from "@/lib/session";
+  isSessionPurpose,
+  type SessionPurpose,
+} from "@/lib/auth-session-binding";
+import { getDb } from "@/lib/db";
 
 export type CurrentSession = {
   id: string;
   userId: string;
-  purpose: AuthSessionPurpose;
+  purpose: SessionPurpose;
   organizationId: string | null;
   siteId: string | null;
   siteSlug: string | null;
   expiresAt: Date;
 };
 
-export type CreatedSession = {
-  token: string;
-  session: CurrentSession;
-};
-
-type CreateSessionInput = {
-  userId: string;
-  purpose: AuthSessionPurpose;
-  organizationId?: string | null;
-  site?: { id: string; slug: string } | null;
-  actor: string;
-  eventType?: "auth.session.created" | "auth.session.rotated";
-  previousSessionId?: string;
-  now?: Date;
-};
-
-export async function createSessionInTransaction(
-  tx: Prisma.TransactionClient,
-  input: CreateSessionInput,
-): Promise<CreatedSession> {
-  const now = input.now ?? new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-  const credential = createOpaqueAuthToken();
-  const organizationId = input.organizationId ?? null;
-  const site = input.site ?? null;
-  assertSessionBinding(input.purpose, organizationId, site);
-
-  const row = await tx.authSession.create({
-    data: {
-      tokenHash: credential.tokenHash,
-      purpose: input.purpose,
-      expiresAt,
-      userId: input.userId,
-      organizationId,
-      siteId: site?.id ?? null,
-    },
-    select: { id: true },
-  });
-  await tx.authEvent.create({
-    data: {
-      type: input.eventType ?? "auth.session.created",
-      actor: input.actor,
-      subjectUserId: input.userId,
-      sessionId: row.id,
-      siteId: site?.id ?? null,
-      metadata: {
-        purpose: input.purpose,
-        previousSessionId: input.previousSessionId ?? null,
-        expiresAt: expiresAt.toISOString(),
-      },
-    },
-  });
-  return {
-    token: credential.token,
-    session: {
-      id: row.id,
-      userId: input.userId,
-      purpose: input.purpose,
-      organizationId,
-      siteId: site?.id ?? null,
-      siteSlug: site?.slug ?? null,
-      expiresAt,
-    },
-  };
-}
-
-export async function resolveSessionToken(
-  token: string,
-  now = new Date(),
+export async function resolveBetterAuthSession(
+  requestHeaders: Headers,
 ): Promise<CurrentSession | null> {
   if (!process.env.DATABASE_URL) return null;
-  const row = await getDb().authSession.findUnique({
-    where: { tokenHash: hashAuthToken(token) },
-    select: {
-      id: true,
-      userId: true,
-      purpose: true,
-      organizationId: true,
-      siteId: true,
-      expiresAt: true,
-      revokedAt: true,
-      site: { select: { slug: true, organizationId: true } },
-    },
-  });
-  if (!row || row.revokedAt || row.expiresAt <= now) return null;
-  if (
-    row.purpose === "SITE" &&
-    (!row.siteId ||
-      !row.organizationId ||
-      !row.site ||
-      row.site.organizationId !== row.organizationId)
-  ) {
-    return null;
-  }
-  if (
-    row.purpose !== "SITE" &&
-    (row.siteId || row.organizationId || row.site)
-  ) {
+  const result = await auth.api
+    .getSession({
+      headers: requestHeaders,
+      query: { disableCookieCache: true },
+    })
+    .catch(() => null);
+  if (!result) return null;
+
+  const raw = result.session as typeof result.session & {
+    purpose?: unknown;
+    organizationId?: unknown;
+    siteId?: unknown;
+  };
+  if (!isSessionPurpose(raw.purpose)) return null;
+  const organizationId =
+    typeof raw.organizationId === "string" ? raw.organizationId : null;
+  const siteId = typeof raw.siteId === "string" ? raw.siteId : null;
+  const expiresAt = new Date(raw.expiresAt);
+  if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) {
     return null;
   }
 
+  if (raw.purpose !== "SITE") {
+    if (organizationId || siteId) return null;
+    return {
+      id: raw.id,
+      userId: raw.userId,
+      purpose: raw.purpose,
+      organizationId: null,
+      siteId: null,
+      siteSlug: null,
+      expiresAt,
+    };
+  }
+  if (!organizationId || !siteId) return null;
+
+  const site = await getDb().site.findFirst({
+    where: { id: siteId, organizationId },
+    select: { slug: true },
+  });
+  if (!site) return null;
   return {
-    id: row.id,
-    userId: row.userId,
-    purpose: row.purpose,
-    organizationId: row.organizationId,
-    siteId: row.siteId,
-    siteSlug: row.site?.slug ?? null,
-    expiresAt: row.expiresAt,
+    id: raw.id,
+    userId: raw.userId,
+    purpose: raw.purpose,
+    organizationId,
+    siteId,
+    siteSlug: site.slug,
+    expiresAt,
   };
 }
 
-export async function createSiteSession(input: {
+export async function rotateSessionToWorkspace(input: {
+  sessionId: string;
   userId: string;
   siteId: string;
-  actor: string;
-  previousToken?: string | null;
-}): Promise<CreatedSession> {
+}): Promise<CurrentSession> {
   const now = new Date();
   return getDb().$transaction(
     async (tx) => {
+      const current = await tx.session.findFirst({
+        where: {
+          id: input.sessionId,
+          userId: input.userId,
+          expiresAt: { gt: now },
+        },
+        select: { id: true, expiresAt: true },
+      });
+      if (!current) throw new AuthSessionError("Your session has expired.");
+
       const site = await tx.site.findFirst({
         where: {
           id: input.siteId,
@@ -151,167 +102,63 @@ export async function createSiteSession(input: {
       if (!site?.organizationId) {
         throw new AuthSessionError("Workspace access is no longer available.");
       }
-      const previous = input.previousToken
-        ? await revokeSessionInTransaction(tx, {
-            tokenHash: hashAuthToken(input.previousToken),
-            userId: input.userId,
-            actor: input.actor,
-            now,
-            audit: false,
-          })
-        : null;
-      return createSessionInTransaction(tx, {
+
+      const updated = await tx.session.updateMany({
+        where: {
+          id: current.id,
+          userId: input.userId,
+          expiresAt: { gt: now },
+        },
+        data: {
+          purpose: "SITE",
+          organizationId: site.organizationId,
+          siteId: site.id,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new AuthSessionError("Your session changed. Sign in again.");
+      }
+      await tx.authEvent.create({
+        data: {
+          type: "auth.session.context_changed",
+          actor: `user:${input.userId}`,
+          subjectUserId: input.userId,
+          sessionId: current.id,
+          siteId: site.id,
+          metadata: {
+            provider: "better-auth",
+            purpose: "SITE",
+            organizationId: site.organizationId,
+          },
+        },
+      });
+      return {
+        id: current.id,
         userId: input.userId,
         purpose: "SITE",
         organizationId: site.organizationId,
-        site: { id: site.id, slug: site.slug },
-        actor: input.actor,
-        eventType: previous ? "auth.session.rotated" : "auth.session.created",
-        previousSessionId: previous?.id,
-        now,
-      });
+        siteId: site.id,
+        siteSlug: site.slug,
+        expiresAt: current.expiresAt,
+      };
     },
     { isolationLevel: "Serializable" },
   );
 }
 
-export async function rotateSessionToWorkspace(input: {
-  currentToken: string;
-  siteId: string;
-}): Promise<CreatedSession> {
-  const now = new Date();
-  return getDb().$transaction(
-    async (tx) => {
-      const current = await tx.authSession.findUnique({
-        where: { tokenHash: hashAuthToken(input.currentToken) },
-        select: {
-          id: true,
-          userId: true,
-          expiresAt: true,
-          revokedAt: true,
-        },
-      });
-      if (!current || current.revokedAt || current.expiresAt <= now) {
-        throw new AuthSessionError("Your session has expired.");
-      }
-      const site = await tx.site.findFirst({
-        where: {
-          id: input.siteId,
-          organization: {
-            memberships: { some: { userId: current.userId } },
-          },
-        },
-        select: { id: true, slug: true, organizationId: true },
-      });
-      if (!site?.organizationId) {
-        throw new AuthSessionError("Workspace access is no longer available.");
-      }
-      const revoked = await tx.authSession.updateMany({
-        where: {
-          id: current.id,
-          revokedAt: null,
-          expiresAt: { gt: now },
-        },
-        data: { revokedAt: now },
-      });
-      if (revoked.count !== 1) {
-        throw new AuthSessionError("Your session changed. Sign in again.");
-      }
-      return createSessionInTransaction(tx, {
-        userId: current.userId,
-        purpose: "SITE",
-        organizationId: site.organizationId,
-        site: { id: site.id, slug: site.slug },
-        actor: `user:${current.userId}`,
-        eventType: "auth.session.rotated",
-        previousSessionId: current.id,
-        now,
-      });
-    },
-    { isolationLevel: "Serializable" },
-  );
-}
-
-export async function revokeCurrentSession(
-  token: string,
-): Promise<boolean> {
-  const now = new Date();
-  return getDb().$transaction(async (tx) => {
-    const revoked = await revokeSessionInTransaction(tx, {
-      tokenHash: hashAuthToken(token),
+export async function recordSessionRevocation(
+  session: CurrentSession,
+): Promise<void> {
+  await getDb().authEvent.create({
+    data: {
+      type: "auth.session.revoked",
       actor: "user:self",
-      now,
-      audit: true,
-    });
-    return Boolean(revoked);
-  });
-}
-
-async function revokeSessionInTransaction(
-  tx: Prisma.TransactionClient,
-  input: {
-    tokenHash: string;
-    userId?: string;
-    actor: string;
-    now: Date;
-    audit: boolean;
-  },
-): Promise<{ id: string; userId: string; siteId: string | null } | null> {
-  const session = await tx.authSession.findUnique({
-    where: { tokenHash: input.tokenHash },
-    select: {
-      id: true,
-      userId: true,
-      siteId: true,
-      revokedAt: true,
-      expiresAt: true,
+      subjectUserId: session.userId,
+      sessionId: session.id,
+      siteId: session.siteId,
+      metadata: { provider: "better-auth" },
     },
   });
-  if (
-    !session ||
-    session.revokedAt ||
-    session.expiresAt <= input.now ||
-    (input.userId && session.userId !== input.userId)
-  ) {
-    return null;
-  }
-  const revoked = await tx.authSession.updateMany({
-    where: {
-      id: session.id,
-      revokedAt: null,
-      expiresAt: { gt: input.now },
-    },
-    data: { revokedAt: input.now },
-  });
-  if (revoked.count !== 1) return null;
-  if (input.audit) {
-    await tx.authEvent.create({
-      data: {
-        type: "auth.session.revoked",
-        actor: input.actor,
-        subjectUserId: session.userId,
-        sessionId: session.id,
-        siteId: session.siteId,
-      },
-    });
-  }
-  return session;
-}
-
-function assertSessionBinding(
-  purpose: AuthSessionPurpose,
-  organizationId: string | null,
-  site: { id: string; slug: string } | null,
-): void {
-  if (purpose === "SITE") {
-    if (!organizationId || !site) {
-      throw new Error("A site session requires organization and site binding.");
-    }
-    return;
-  }
-  if (organizationId || site) {
-    throw new Error("An unbound session cannot carry tenant identifiers.");
-  }
 }
 
 export class AuthSessionError extends Error {
