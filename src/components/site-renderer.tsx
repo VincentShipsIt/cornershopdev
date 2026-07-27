@@ -81,10 +81,13 @@ export function SiteRenderer({
   }
 
   const booking = draft.integrations.find(
-    (integration) => integration.type === "booking",
+    (integration) =>
+      integration.enabled && integration.type === "booking",
   );
-  const ordering = draft.integrations.find((integration) =>
-    ["ordering", "delivery"].includes(integration.type),
+  const ordering = draft.integrations.find(
+    (integration) =>
+      integration.enabled &&
+      ["ordering", "delivery"].includes(integration.type),
   );
   const resolvedTemplate = config.templates.resolve(draft.attributes);
   const template = theme

@@ -23,10 +23,12 @@ export function TerroirEditorialTheme({
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
   const booking = draft.integrations.find(
-    (integration) => integration.type === "booking",
+    (integration) =>
+      integration.enabled && integration.type === "booking",
   );
   const supportingLinks = draft.integrations.filter(
-    (integration) => integration !== booking,
+    (integration) =>
+      integration.enabled && integration !== booking,
   );
   const tokens = selection.tokens;
 

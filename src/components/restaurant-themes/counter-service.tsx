@@ -22,8 +22,10 @@ export function CounterServiceTheme({
   embedded = false,
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
-  const ordering = draft.integrations.find((integration) =>
-    ["ordering", "delivery"].includes(integration.type),
+  const ordering = draft.integrations.find(
+    (integration) =>
+      integration.enabled &&
+      ["ordering", "delivery"].includes(integration.type),
   );
   const tokens = selection.tokens;
 

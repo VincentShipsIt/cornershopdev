@@ -23,6 +23,7 @@ function bookingIntegration(
     label: "Reserve a table",
     provider: "OpenTable",
     url: "https://www.opentable.com/r/le-petit-meunier?rid=123456",
+    enabled: true,
     venueId: null,
     ...overrides,
   };
@@ -138,19 +139,16 @@ describe("booking embed — degrades to a link-out", () => {
   });
 
   /**
-   * The inverse of the above, and the reason `buildSrc` is a literal template
-   * rather than anything derived from the input URL. A hostile URL *can* satisfy
-   * the loose `/opentable/i` provider pattern by containing the word; what it
-   * cannot do is move the frame off the origin the descriptor declared.
+   * Provider matching is hostname-anchored. A hostile URL cannot select an
+   * embed merely by placing a trusted provider name in its path.
    */
-  it("keeps the frame on the declared origin even when the URL only looks like the provider", () => {
+  it("does not frame a hostname whose path only looks like the provider", () => {
     const embed = resolveBookingEmbed(
       Vertical.RESTAURANT,
       bookingIntegration({ url: "https://evil.example.com/opentable?rid=7" }),
     );
 
-    expect(new URL(embed!.src).origin).toBe("https://www.opentable.com");
-    expect(embed!.src).not.toContain("evil.example.com");
+    expect(embed).toBeNull();
   });
 
   /**

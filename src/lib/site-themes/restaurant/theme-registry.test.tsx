@@ -389,4 +389,25 @@ describe("restaurant theme renderers", () => {
 
     expect(html).not.toContain(unavailableName);
   });
+
+  it("keeps disabled integrations out of public theme output", () => {
+    const fixture = restaurantThemeFixtures["counter-service"];
+    const hiddenLabel = fixture.integrations[0].label;
+    const selection = restaurantThemeSelectionSchema.parse(
+      fixture.attributes.themeSelection,
+    );
+    const draft = {
+      ...fixture,
+      integrations: fixture.integrations.map((integration, index) => ({
+        ...integration,
+        enabled: index !== 0,
+      })),
+    };
+    const html = renderToStaticMarkup(
+      <RestaurantThemeRenderer draft={draft} selection={selection} />,
+    );
+
+    expect(html).not.toContain(hiddenLabel);
+    expect(html).toContain(fixture.integrations[1].label);
+  });
 });

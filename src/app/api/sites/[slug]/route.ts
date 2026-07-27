@@ -4,12 +4,16 @@ import {
   getSiteAccess,
 } from "@/lib/authorization";
 import { fromRestaurantDraft, restaurantDraftSchema } from "@/lib/restaurant";
+import { isSameOriginMutation } from "@/lib/request-origin";
 import { updateSiteDraft } from "@/lib/site-persistence";
 
 export async function PUT(
   request: Request,
   { params }: RouteContext<"/api/sites/[slug]">,
 ) {
+  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
@@ -18,12 +22,17 @@ export async function PUT(
     const draft = restaurantDraftSchema.parse(await request.json());
     // Same column and relation mapping as the import path, so an owner edit can
     // never write a shape the read path refuses to parse.
-    await updateSiteDraft(
+    const saved = await updateSiteDraft(
       slug,
       fromRestaurantDraft(draft),
       Vertical.RESTAURANT,
+      { actor: access.user },
     );
-    return Response.json({ ok: true, persisted: true });
+    return Response.json({
+      ok: true,
+      persisted: true,
+      revision: saved.revision,
+    });
   } catch (error) {
     return Response.json(
       {

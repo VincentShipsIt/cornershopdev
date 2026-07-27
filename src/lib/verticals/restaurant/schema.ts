@@ -5,6 +5,7 @@ import {
   baseSiteTranslationSchema,
   catalogItemSchema,
   catalogSectionSchema,
+  integrationSchema,
   localeSchema,
   translatedCatalogItemSchema,
   translatedCatalogSectionSchema,
@@ -13,6 +14,10 @@ import {
   safeOptionalRestaurantDesignProfileSchema,
   safeOptionalRestaurantThemeSelectionSchema,
 } from "@/lib/site-themes/restaurant/contracts";
+import {
+  findRestaurantProviderByUrl,
+  restaurantProviders,
+} from "@/lib/verticals/restaurant/providers";
 
 /**
  * The engine primitives live in `@/lib/verticals/schema` so a second vertical can
@@ -49,6 +54,55 @@ export const menuItemSchema = catalogItemSchema
 export const menuSectionSchema = catalogSectionSchema.extend({
   items: z.array(menuItemSchema).max(40),
 });
+
+export const restaurantIntegrationSchema = integrationSchema
+  .superRefine((integration, context) => {
+    const provider = findRestaurantProviderByUrl(integration.url);
+    if (provider && provider.type !== integration.type) {
+      context.addIssue({
+        code: "custom",
+        path: ["type"],
+        message: `${provider.name} links must use the ${provider.type} type`,
+      });
+    }
+    if (
+      provider &&
+      integration.provider &&
+      integration.provider !== provider.name
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["provider"],
+        message: `Provider must remain ${provider.name} for this URL`,
+      });
+    }
+    if (!provider && integration.type === "social") {
+      context.addIssue({
+        code: "custom",
+        path: ["url"],
+        message: "Use an approved social provider URL",
+      });
+    }
+    if (
+      !provider &&
+      integration.provider &&
+      restaurantProviders.some(
+        (candidate) => candidate.name === integration.provider,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["provider"],
+        message: `${integration.provider} does not match this URL`,
+      });
+    }
+  })
+  .transform((integration) => ({
+    ...integration,
+    provider:
+      findRestaurantProviderByUrl(integration.url)?.name ??
+      integration.provider,
+  }));
 
 export const restaurantTranslationStatusSchema = z.enum([
   "current",
@@ -102,6 +156,7 @@ export const restaurantSiteDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     attributes: restaurantAttributesSchema,
+    integrations: z.array(restaurantIntegrationSchema).max(12),
     translations: z
       .array(restaurantSiteTranslationSchema)
       .max(8)
@@ -127,6 +182,7 @@ export const restaurantDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     ...restaurantAttributesSchema.shape,
+    integrations: z.array(restaurantIntegrationSchema).max(12),
     translations: z.array(restaurantTranslationSchema).max(8).default([]),
     menuSections: z.array(menuSectionSchema).min(1).max(12),
   })

@@ -341,6 +341,82 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     });
   });
 
+  test("versions and audits authorized integration saves without publishing", async () => {
+    const before = await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: {
+        draftRevision: true,
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true } },
+      },
+    });
+    const first = sampleSiteDraft.integrations[0];
+    const second = sampleSiteDraft.integrations[1];
+    const editedDraft = {
+      ...sampleSiteDraft,
+      slug,
+      integrations: [
+        { ...second, enabled: false },
+        {
+          ...first,
+          label: "Reserve securely",
+          enabled: true,
+        },
+      ],
+    };
+
+    const saved = await updateSiteDraft(
+      slug,
+      editedDraft,
+      Vertical.RESTAURANT,
+      { actor },
+    );
+    const [reloaded, after, audit] = await Promise.all([
+      findSiteView(slug),
+      db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: {
+          draftRevision: true,
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true } },
+        },
+      }),
+      db.auditEvent.findFirst({
+        where: {
+          siteId,
+          type: "site.draft.saved",
+          actor: actor.id,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { metadata: true },
+      }),
+    ]);
+
+    expect(saved.revision).toBe(before.draftRevision + 1);
+    expect(after).toEqual({
+      draftRevision: saved.revision,
+      publishedSiteVersionId: before.publishedSiteVersionId,
+      _count: before._count,
+    });
+    expect(reloaded?.draft.integrations).toEqual([
+      expect.objectContaining({
+        label: second.label,
+        enabled: false,
+      }),
+      expect.objectContaining({
+        label: "Reserve securely",
+        provider: first.provider,
+        enabled: true,
+      }),
+    ]);
+    expect(audit?.metadata).toMatchObject({
+      revision: saved.revision,
+      actorEmail: actor.email,
+      integrationCount: 2,
+      enabledIntegrationCount: 1,
+    });
+  });
+
   test("refuses to publish stale translated copy without moving the live pointer", async () => {
     const current = await findSiteView(slug);
     if (!current) throw new Error("Expected the persisted restaurant draft");

@@ -101,6 +101,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
       label: integration.label,
       provider: integration.provider,
       url: integration.url,
+      enabled: integration.enabled,
       venueId: integration.venueId,
     })),
   });

@@ -127,6 +127,7 @@ model Site {
   draftPalette           Json              @default("{}")
   vertical               Vertical          @default(RESTAURANT)
   attributes             Json              @default("{}")
+  draftRevision          Int               @default(0)
   status                 SiteStatus        @default(PROSPECT)
   publishedSiteVersionId String?           @unique
   publishedSiteVersion   SiteVersion?      @relation("PublishedSiteVersion", fields: [publishedSiteVersionId], references: [id], onDelete: SetNull)

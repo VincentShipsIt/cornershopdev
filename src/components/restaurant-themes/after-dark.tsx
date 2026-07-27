@@ -24,10 +24,12 @@ export function AfterDarkTheme({
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
   const booking = draft.integrations.find(
-    (integration) => integration.type === "booking",
+    (integration) =>
+      integration.enabled && integration.type === "booking",
   );
   const eventLink = draft.integrations.find(
-    (integration) => integration.type === "social",
+    (integration) =>
+      integration.enabled && integration.type === "social",
   );
   const tokens = selection.tokens;
 

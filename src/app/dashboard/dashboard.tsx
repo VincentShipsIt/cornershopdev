@@ -17,7 +17,6 @@ import {
   LoaderCircle,
   Mail,
   MoreHorizontal,
-  Plus,
   RefreshCcw,
   Rocket,
   Save,
@@ -30,6 +29,7 @@ import {
   ClientAnalyticsPanel,
   ClientBookingRequestInbox,
 } from "@/components/client-workspace";
+import { RestaurantIntegrationEditor } from "@/components/restaurant-integration-editor";
 import { RestaurantMenuEditor } from "@/components/restaurant-menu-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,11 @@ import {
   restaurantDraftSchema,
   type RestaurantDraft,
 } from "@/lib/restaurant";
+import {
+  applyRestaurantIntegrationMutation,
+  validateRestaurantIntegrations,
+  type RestaurantIntegrationMutation,
+} from "@/lib/restaurant-integration-editor";
 import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
@@ -90,6 +95,7 @@ export function Dashboard({
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedRevision, setSavedRevision] = useState<number | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -105,21 +111,42 @@ export function Dashboard({
     ReturnType<typeof validateRestaurantMenuDraft>
   >([]);
   const [menuUndoStack, setMenuUndoStack] = useState<RestaurantDraft[]>([]);
+  const [integrationDirty, setIntegrationDirty] = useState(false);
+  const [integrationSaveError, setIntegrationSaveError] = useState<
+    string | null
+  >(null);
+  const [integrationValidationIssues, setIntegrationValidationIssues] =
+    useState<ReturnType<typeof validateRestaurantIntegrations>>([]);
+  const [integrationUndoStack, setIntegrationUndoStack] = useState<
+    RestaurantDraft[]
+  >([]);
   const [regeneratingLocale, setRegeneratingLocale] = useState<string | null>(
     null,
   );
 
   async function save(): Promise<boolean> {
     const validationIssues = validateRestaurantMenuDraft(draft);
+    const integrationIssues = validateRestaurantIntegrations(draft);
     setMenuValidationIssues(validationIssues);
-    if (validationIssues.length > 0) {
-      setMenuSaveError("The menu contains invalid or incomplete fields");
+    setIntegrationValidationIssues(integrationIssues);
+    if (validationIssues.length > 0 || integrationIssues.length > 0) {
+      setMenuSaveError(
+        validationIssues.length > 0
+          ? "The menu contains invalid or incomplete fields"
+          : "Fix the integration labels before saving this draft",
+      );
+      setIntegrationSaveError(
+        integrationIssues.length > 0
+          ? "One or more external links are invalid or incomplete"
+          : "Fix the invalid menu fields before saving these links",
+      );
       return false;
     }
     setSaving(true);
     setSaved(false);
     setPublishError(null);
     setMenuSaveError(null);
+    setIntegrationSaveError(null);
     try {
       if (!demo) {
         const response = await fetch(`/api/sites/${draft.slug}`, {
@@ -129,20 +156,25 @@ export function Dashboard({
         });
         const result = (await response.json()) as {
           error?: string;
+          revision?: number;
         };
         if (!response.ok) {
           throw new Error(result.error ?? "Save failed");
         }
+        setSavedRevision(result.revision ?? null);
       }
       setSaved(true);
       setMenuDirty(false);
+      setIntegrationDirty(false);
       setMenuValidationIssues([]);
+      setIntegrationValidationIssues([]);
       setPublishedVersion(null);
       return true;
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Save failed";
       setPublishError(message);
       setMenuSaveError(message);
+      setIntegrationSaveError(message);
       return false;
     } finally {
       setSaving(false);
@@ -182,6 +214,7 @@ export function Dashboard({
       if (demo) {
         setPublishedVersion(1);
         setMenuUndoStack([]);
+        setIntegrationUndoStack([]);
         return;
       }
 
@@ -199,6 +232,7 @@ export function Dashboard({
       }
       setPublishedVersion(result.published.version);
       setMenuUndoStack([]);
+      setIntegrationUndoStack([]);
     } catch (caught) {
       setPublishError(
         caught instanceof Error ? caught.message : "Publish failed",
@@ -260,9 +294,9 @@ export function Dashboard({
   }
 
   async function regenerateTranslation(locale: string) {
-    if (menuDirty) {
+    if (menuDirty || integrationDirty) {
       setMenuSaveError(
-        "Save canonical changes before regenerating a translation",
+        "Save canonical menu and integration changes before regenerating a translation",
       );
       return;
     }
@@ -287,7 +321,9 @@ export function Dashboard({
       }));
       setSaved(true);
       setMenuDirty(false);
+      setIntegrationDirty(false);
       setMenuValidationIssues([]);
+      setIntegrationValidationIssues([]);
     } catch (error) {
       setMenuSaveError(
         error instanceof Error
@@ -308,6 +344,81 @@ export function Dashboard({
     setSaved(false);
     setMenuSaveError(null);
     setMenuValidationIssues([]);
+  }
+
+  function mutateIntegration(
+    mutation: RestaurantIntegrationMutation,
+    destructive = false,
+  ) {
+    try {
+      if (destructive) {
+        setIntegrationUndoStack((current) => [
+          ...current,
+          structuredClone(draft),
+        ]);
+      }
+      const next = applyRestaurantIntegrationMutation(draft, mutation);
+      setDraft(next);
+      setIntegrationDirty(true);
+      setSaved(false);
+      setIntegrationSaveError(null);
+      setIntegrationValidationIssues(
+        validateRestaurantIntegrations(next),
+      );
+    } catch (error) {
+      setIntegrationSaveError(
+        error instanceof Error
+          ? error.message
+          : "Integration change failed",
+      );
+    }
+  }
+
+  function changeIntegrationTranslationLabel(
+    locale: string,
+    integrationIndex: number,
+    label: string,
+  ) {
+    const next = updateRestaurantTranslation(
+      draft,
+      locale,
+      (translation) => {
+        translation.integrationLabels[integrationIndex] = label;
+      },
+    );
+    setDraft(next);
+    setIntegrationDirty(true);
+    setSaved(false);
+    setIntegrationSaveError(null);
+    setIntegrationValidationIssues(
+      validateRestaurantIntegrations(next),
+    );
+  }
+
+  function reviewIntegrationTranslation(locale: string) {
+    try {
+      const next = markRestaurantTranslationReviewed(draft, locale);
+      setDraft(next);
+      setIntegrationDirty(true);
+      setSaved(false);
+      setIntegrationSaveError(null);
+      setIntegrationValidationIssues([]);
+    } catch {
+      setIntegrationSaveError(
+        "Fix every translated label before marking this locale reviewed",
+      );
+    }
+  }
+
+  function undoIntegrationRemoval() {
+    const previous = integrationUndoStack.at(-1);
+    if (!previous) return;
+    setDraft(previous);
+    setIntegrationUndoStack((current) => current.slice(0, -1));
+    setIntegrationDirty(true);
+    setSaved(false);
+    setIntegrationSaveError(null);
+    setIntegrationValidationIssues([]);
   }
 
   async function connectDomain() {
@@ -782,47 +893,22 @@ export function Dashboard({
             </TabsContent>
 
             <TabsContent value="integrations" className="mt-0">
-              <PageHeading
-                eyebrow="Existing systems"
-                title="Keep what already works."
-                copy="Cornershopdev sends guests to the restaurant's current booking, ordering and delivery providers."
+              <RestaurantIntegrationEditor
+                draft={draft}
+                dirty={integrationDirty}
+                saving={saving}
+                saveError={integrationSaveError}
+                validationIssues={integrationValidationIssues}
+                savedRevision={savedRevision}
+                canUndo={integrationUndoStack.length > 0}
+                onMutation={mutateIntegration}
+                onTranslationLabelChange={
+                  changeIntegrationTranslationLabel
+                }
+                onReviewTranslation={reviewIntegrationTranslation}
+                onUndo={undoIntegrationRemoval}
+                onSave={() => void save()}
               />
-              <div className="mt-8 grid gap-4">
-                {draft.integrations.map((integration) => (
-                  <Card key={integration.url}>
-                    <CardContent className="flex items-center gap-4 pt-6">
-                      <span className="grid size-10 place-items-center rounded-xl bg-muted">
-                        <Link2 className="size-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{integration.label}</p>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {integration.type}
-                          </Badge>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {integration.provider ?? "External provider"} ·{" "}
-                          {integration.url}
-                        </p>
-                      </div>
-                      <Switch defaultChecked />
-                      <Button
-                        render={
-                          <Link href={integration.url} target="_blank" />
-                        }
-                        variant="ghost"
-                        size="icon-sm"
-                      >
-                        <ExternalLink />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-                <Button variant="outline" className="h-14 border-dashed">
-                  <Plus /> Add another link
-                </Button>
-              </div>
             </TabsContent>
 
             <TabsContent value="domain" className="mt-0">

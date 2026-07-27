@@ -1,9 +1,9 @@
 import { accessFailureResponse, getSiteAccess } from "@/lib/authorization";
 import { regenerateRestaurantTranslation } from "@/lib/ai/site-generation";
 import { fromRestaurantDraft, localeSchema } from "@/lib/restaurant";
+import { isSameOriginMutation } from "@/lib/request-origin";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { limitTranslationRegeneration } from "@/lib/rate-limit";
-import { isSameOriginMutation } from "@/lib/request-origin";
 import { updateSiteDraft } from "@/lib/site-persistence";
 
 export const runtime = "nodejs";
@@ -55,6 +55,10 @@ export async function POST(
       access.site.slug,
       fromRestaurantDraft(regenerated),
       access.site.vertical,
+      {
+        actor: access.user,
+        auditType: "site.translation.regenerated",
+      },
     );
     return Response.json({ ok: true, draft: regenerated });
   } catch (error) {

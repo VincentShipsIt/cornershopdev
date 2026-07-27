@@ -236,7 +236,8 @@ export function validateRestaurantMenuDraft(
     .filter(
       (issue) =>
         issue.path[0] === "menuSections" ||
-        issue.path[0] === "translations",
+        (issue.path[0] === "translations" &&
+          issue.path.includes("menuSections")),
     )
     .map((issue) => ({
       path: issue.path.join("."),

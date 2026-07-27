@@ -62,6 +62,7 @@ export type PersistableSiteDraft = {
     label: string;
     provider: string | null;
     url: string;
+    enabled: boolean;
     venueId?: string | null;
   }>;
 };
@@ -71,6 +72,18 @@ export type PersistedSiteImport<TDraft extends PersistableSiteDraft> = {
   importJobId: string;
   urls: ImportUrls;
   created: boolean;
+};
+
+export type OwnerDraftSaveOptions = {
+  actor?: {
+    id: string;
+    email: string;
+  };
+  auditType?: "site.draft.saved" | "site.translation.regenerated";
+};
+
+export type OwnerDraftSaveResult = {
+  revision: number;
 };
 
 export class ImportDatabaseUnavailableError extends Error {
@@ -507,31 +520,53 @@ export async function updateSiteDraft(
   slug: string,
   draft: PersistableSiteDraft,
   vertical: VerticalId,
-): Promise<void> {
+  options: OwnerDraftSaveOptions = {},
+): Promise<OwnerDraftSaveResult> {
   const config = resolveVerticalConfig(vertical);
   const parsed = config.draftSchema.parse(draft) as PersistableSiteDraft;
   const db = requireImportDatabase();
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await db.$transaction(
+      return await db.$transaction(
         async (tx) => {
-          await tx.site.update({
+          const updated = await tx.site.update({
             where: { slug, vertical },
             data: {
               ...editableSiteScalarData(parsed, vertical),
               ...siteRelationReplaceData(parsed, vertical),
+              draftRevision: { increment: 1 },
             },
+            select: { id: true, draftRevision: true },
           });
+          if (options.actor) {
+            await tx.auditEvent.create({
+              data: {
+                type: options.auditType ?? "site.draft.saved",
+                actor: options.actor.id,
+                siteId: updated.id,
+                metadata: {
+                  revision: updated.draftRevision,
+                  actorEmail: options.actor.email,
+                  integrationCount: parsed.integrations.length,
+                  enabledIntegrationCount: parsed.integrations.filter(
+                    (integration) => integration.enabled,
+                  ).length,
+                },
+              },
+            });
+          }
+          return { revision: updated.draftRevision };
         },
         { isolationLevel: "Serializable" },
       );
-      return;
     } catch (error) {
       if (attempt < 2 && isRetryablePrismaError(error)) continue;
       throw error;
     }
   }
+
+  throw new Error("The site draft could not be saved");
 }
 
 function requireImportDatabase() {
@@ -610,6 +645,7 @@ function integrationCreateData(draft: PersistableSiteDraft) {
     label: integration.label,
     provider: integration.provider,
     url: integration.url,
+    enabled: integration.enabled,
     venueId: integration.venueId ?? null,
     position,
   }));
