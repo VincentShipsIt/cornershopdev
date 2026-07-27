@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
 import { markMagicLinkConsumed } from "@/lib/magic-links";
 import { isSameOriginMutation } from "@/lib/request-origin";
@@ -10,7 +11,7 @@ import {
 
 function signInError(request: Request) {
   return NextResponse.redirect(
-    new URL("/sign-in?error=invalid-link", request.url),
+    authRequestUrl("/sign-in?error=invalid-link", request),
     303,
   );
 }
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(
-    new URL("/sign-in/verify", request.url),
+    authRequestUrl("/sign-in/verify", request),
     303,
   );
   response.cookies.set(
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     return signInError(request);
   }
 
-  const verifyUrl = new URL("/api/auth/magic-link/verify", request.url);
+  const verifyUrl = authRequestUrl("/api/auth/magic-link/verify", request);
   verifyUrl.searchParams.set("token", token);
   verifyUrl.searchParams.set("callbackURL", "/api/auth/complete");
   verifyUrl.searchParams.set(
@@ -75,7 +76,9 @@ export async function POST(request: NextRequest) {
   }
 
   const location = verification.headers.get("location");
-  const destination = location ? new URL(location, request.url) : null;
+  const destination = location
+    ? new URL(location, authRequestUrl("/", request))
+    : null;
   const verified =
     verification.status >= 300 &&
     verification.status < 400 &&

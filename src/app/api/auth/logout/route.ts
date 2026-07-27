@@ -1,4 +1,5 @@
 import { recordSessionRevocation } from "@/lib/auth-sessions";
+import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
 import { getCurrentSession } from "@/lib/current-session";
 import { isSameOriginMutation } from "@/lib/request-origin";
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   const headers = new Headers(request.headers);
   headers.set("content-type", "application/json");
   const response = await auth.handler(
-    new Request(new URL("/api/auth/sign-out", request.url), {
+    new Request(authRequestUrl("/api/auth/sign-out", request), {
       method: "POST",
       headers,
       body: "{}",
