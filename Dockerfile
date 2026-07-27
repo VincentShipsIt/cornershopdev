@@ -13,7 +13,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV WORKFLOW_TARGET_WORLD=@workflow/world-postgres
 COPY . .
-RUN bun run build
+# Runtime secrets are injected by the host environment. Next evaluates auth
+# routes while collecting page data, so the builder gets a non-production
+# placeholder that is not inherited by the runner stage.
+RUN BETTER_AUTH_SECRET=build-only-better-auth-secret-32-bytes bun run build
 RUN bun build scripts/grant-superadmin.ts \
   --target=bun \
   --packages=external \
