@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { ArrowRight, Check, ShieldCheck } from "lucide-react";
-import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  ShieldCheck,
+} from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { restaurantThemeGallerySurface } from "@/lib/theme-gallery-surface";
-import { restaurantThemeFixtures } from "@/lib/site-themes/restaurant/fixtures";
 import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
-import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
 import { resolveRequestOrigin } from "@/lib/verticals/request-site";
 import styles from "./theme-gallery.module.css";
 
@@ -74,71 +75,113 @@ export default async function RestaurantThemeGalleryPage() {
 
         <section
           id="themes"
-          className="mx-auto max-w-[1500px] space-y-24 px-4 py-16 md:px-6 lg:py-24"
+          className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-24"
         >
-          {manifests.map((manifest, index) => {
-            const fixture = restaurantThemeFixtures[manifest.id];
-            const selection = parseRestaurantThemeSelection(
-              fixture.attributes.themeSelection,
-            );
-            if (!selection) notFound();
+          <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                Theme library
+              </p>
+              <h2 className="font-display mt-3 text-5xl leading-[0.9] tracking-[-0.045em] md:text-6xl">
+                Compare the starting points.
+              </h2>
+            </div>
+            <p className="max-w-md text-sm leading-6 text-muted-foreground">
+              Open any theme as a complete fictional restaurant website before
+              you build your own preview.
+            </p>
+          </div>
 
-            return (
-              <article key={manifest.id}>
-                <div className="mx-auto mb-7 grid max-w-7xl gap-7 px-1 lg:grid-cols-[0.7fr_1.3fr] lg:items-end">
-                  <div>
-                    <p className="font-mono text-xs text-primary">
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {manifests.map((manifest, index) => {
+              const detailHref = `/themes/restaurant/${manifest.id}`;
+              const previewHref = `${detailHref}/preview`;
+
+              return (
+                <article
+                  key={manifest.id}
+                  className="flex min-w-0 flex-col overflow-hidden rounded-3xl border bg-card shadow-sm"
+                >
+                  <div className={styles.previewViewport}>
+                    <iframe
+                      src={previewHref}
+                      title={`${manifest.name} restaurant website preview`}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      loading="lazy"
+                      className={styles.previewFrame}
+                    />
+                    <div className={styles.previewShade} />
+                    <span className={styles.previewDisclosure}>
+                      Fictional preview
+                    </span>
+                    <Link
+                      href={previewHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open the full ${manifest.name} website preview`}
+                      className={styles.previewLink}
+                    >
+                      <span>
+                        Open full preview
+                        <ArrowUpRight className="size-4" />
+                      </span>
+                    </Link>
+                  </div>
+
+                  <div className="flex flex-1 flex-col p-6">
+                    <p className="font-mono text-[11px] text-primary">
                       0{index + 1} · {manifest.id} · v
                       {manifest.rendererVersion}
                     </p>
-                    <h2 className="font-display mt-3 text-5xl leading-[0.9] tracking-[-0.045em] md:text-6xl">
+                    <h3 className="font-display mt-3 text-4xl leading-[0.9] tracking-[-0.04em]">
                       {manifest.name}
-                    </h2>
-                  </div>
-                  <div className="lg:justify-self-end">
-                    <p className="max-w-xl text-sm leading-7 text-muted-foreground">
+                    </h3>
+                    <p className="mt-4 text-sm leading-6 text-muted-foreground">
                       {manifest.description}
                     </p>
-                    <ul className="mt-4 flex flex-wrap gap-2">
-                      {manifest.bestFor.slice(0, 3).map((fit) => (
+
+                    <ul className="mt-5 space-y-2">
+                      {manifest.bestFor.slice(0, 2).map((fit) => (
                         <li
                           key={fit}
-                          className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs"
+                          className="flex items-start gap-2 text-xs leading-5"
                         >
-                          <Check className="size-3 text-primary" />
+                          <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
                           {fit}
                         </li>
                       ))}
                     </ul>
-                  </div>
-                </div>
 
-                <div className="relative mx-auto max-w-[1450px] rounded-[1.8rem] border bg-[#2b2b2b] p-2 shadow-2xl md:p-3">
-                  <div className="absolute left-5 top-5 z-30 rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white backdrop-blur">
-                    Fictional preview · AI-created image
+                    <div className="mt-auto grid grid-cols-2 gap-2 pt-6">
+                      <Button
+                        render={<Link href={detailHref} />}
+                        nativeButton={false}
+                        variant="outline"
+                        className="min-w-0"
+                      >
+                        Theme details
+                      </Button>
+                      <Button
+                        render={
+                          <Link
+                            href={previewHref}
+                            target="_blank"
+                            rel="noreferrer"
+                          />
+                        }
+                        nativeButton={false}
+                        className="min-w-0"
+                      >
+                        Full preview
+                        <ArrowUpRight className="size-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <RestaurantThemeRenderer
-                    draft={fixture}
-                    selection={selection}
-                    embedded
-                  />
-                </div>
-
-                <div className="mx-auto mt-6 flex max-w-7xl justify-end">
-                  <Button
-                    render={
-                      <Link href={`/themes/restaurant/${manifest.id}`} />
-                    }
-                    nativeButton={false}
-                    variant="outline"
-                  >
-                    Inspect this theme
-                    <ArrowRight className="size-4" />
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            })}
+          </div>
         </section>
 
         <section
