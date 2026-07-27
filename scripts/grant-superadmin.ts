@@ -37,7 +37,12 @@ async function main() {
     const promoted = await db.user.upsert({
       where: { email },
       update: { platformRole: "SUPERADMIN" },
-      create: { email, platformRole: "SUPERADMIN" },
+      create: {
+        email,
+        name: email.split("@")[0] || "Platform operator",
+        emailVerified: true,
+        platformRole: "SUPERADMIN",
+      },
       select: { id: true, email: true, platformRole: true },
     });
     console.log(

@@ -31,7 +31,10 @@ export async function POST(request: Request) {
 
   // Delivery failures and unknown accounts deliberately share the same response.
   // Durable outcomes are visible only in the operator console.
-  await requestMagicLink(normalizeAccountEmail(parsed.data.email)).catch(() => undefined);
+  await requestMagicLink(
+    normalizeAccountEmail(parsed.data.email),
+    request.headers,
+  ).catch(() => undefined);
   return Response.json(
     { ok: true },
     { headers: { "Cache-Control": "no-store" } },

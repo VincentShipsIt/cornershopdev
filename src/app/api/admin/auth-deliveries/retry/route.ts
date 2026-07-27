@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid delivery" }, { status: 400 });
   }
   try {
-    await retryMagicLink(parsed.data.id, operator.id);
+    await retryMagicLink(parsed.data.id, operator.id, request.headers);
     return Response.json({ ok: true });
   } catch {
     return Response.json({ error: "Delivery cannot be retried" }, { status: 409 });

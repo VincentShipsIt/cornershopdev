@@ -1,20 +1,29 @@
-import { cookies } from "next/headers";
-import { revokeCurrentSession } from "@/lib/auth-sessions";
+import { recordSessionRevocation } from "@/lib/auth-sessions";
+import { auth } from "@/lib/better-auth";
+import { getCurrentSession } from "@/lib/current-session";
 import { isSameOriginMutation } from "@/lib/request-origin";
-import { SESSION_COOKIE } from "@/lib/session";
 
 export async function POST(request: Request) {
   if (!isSameOriginMutation(request, { requireOrigin: true })) {
     return Response.json({ error: "Invalid request origin" }, { status: 403 });
   }
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  if (token && process.env.DATABASE_URL) {
-    await revokeCurrentSession(token);
-  }
-  cookieStore.delete(SESSION_COOKIE);
-  return Response.json(
-    { ok: true, url: "/sign-in" },
-    { headers: { "Cache-Control": "no-store" } },
+  const current = await getCurrentSession();
+  const headers = new Headers(request.headers);
+  headers.set("content-type", "application/json");
+  const response = await auth.handler(
+    new Request(new URL("/api/auth/sign-out", request.url), {
+      method: "POST",
+      headers,
+      body: "{}",
+    }),
   );
+  const result = new Response(response.body, {
+    status: response.status,
+    headers: response.headers,
+  });
+  if (response.ok && current) {
+    await recordSessionRevocation(current).catch(() => undefined);
+  }
+  result.headers.set("Cache-Control", "no-store");
+  return result;
 }

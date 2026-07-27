@@ -18,6 +18,7 @@ jobs:
       # Prisma Client generation validates that DATABASE_URL exists but does not
       # connect to this placeholder. Runtime readiness is checked separately.
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/cornershopdev_ci
+      BETTER_AUTH_SECRET: ci-only-better-auth-secret-32-bytes
       WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
     steps:
       - uses: actions/checkout@v6

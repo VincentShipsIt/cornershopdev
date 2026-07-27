@@ -63,6 +63,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       data: {
         id: userId,
         email: actor.email,
+        name: "Publication owner",
         memberships: {
           create: {
             organization: {
