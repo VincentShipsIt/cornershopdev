@@ -2,7 +2,7 @@
 api.cornershop.dev {
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy cornershopdev:3000
+	reverse_proxy api-cornershop-dev:3000
 }
 
 domains.cornershop.dev {
@@ -31,6 +31,6 @@ https:// {
 	}
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy cornershopdev:3000
+	reverse_proxy api-cornershop-dev:3000
 }
 # END CORNERSHOPDEV

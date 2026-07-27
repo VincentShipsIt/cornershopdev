@@ -11,6 +11,9 @@ if [[ ! "$image_name" =~ ^cornershopdev:[0-9a-f]{40}$ ]]; then
   echo "Invalid deployment image name" >&2
   exit 2
 fi
+readonly container="api-cornershop-dev"
+readonly candidate="${container}-candidate"
+readonly previous="${container}-previous"
 
 install -d -m 700 /etc/cornershopdev /var/lib/cornershopdev
 environment_file="/etc/cornershopdev/production.env"
@@ -107,9 +110,9 @@ aws s3 cp "$artifact_uri" "$artifact_file" --region us-west-1 --only-show-errors
 gzip -dc "$artifact_file" | docker load >/dev/null
 docker image inspect "$image_name" >/dev/null
 
-docker rm -f cornershopdev-candidate >/dev/null 2>&1 || true
+docker rm -f "$candidate" >/dev/null 2>&1 || true
 docker run -d \
-  --name cornershopdev-candidate \
+  --name "$candidate" \
   --network shipshit \
   --env-file "$environment_file" \
   --restart no \
@@ -132,31 +135,31 @@ wait_for_health() {
   return 1
 }
 
-wait_for_health cornershopdev-candidate
-docker rm -f cornershopdev-previous >/dev/null 2>&1 || true
-if docker inspect cornershopdev >/dev/null 2>&1; then
-  docker stop cornershopdev >/dev/null
-  docker rename cornershopdev cornershopdev-previous
+wait_for_health "$candidate"
+docker rm -f "$previous" >/dev/null 2>&1 || true
+if docker inspect "$container" >/dev/null 2>&1; then
+  docker stop "$container" >/dev/null
+  docker rename "$container" "$previous"
 fi
-docker rename cornershopdev-candidate cornershopdev
-docker update --restart unless-stopped cornershopdev >/dev/null
+docker rename "$candidate" "$container"
+docker update --restart unless-stopped "$container" >/dev/null
 
 reload_caddy() {
   docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null
 }
 
-if ! reload_caddy || ! wait_for_health cornershopdev; then
+if ! reload_caddy || ! wait_for_health "$container"; then
   echo "Deployment failed after cutover; rolling back" >&2
-  docker rm -f cornershopdev >/dev/null 2>&1 || true
-  if docker inspect cornershopdev-previous >/dev/null 2>&1; then
-    docker rename cornershopdev-previous cornershopdev
-    docker start cornershopdev >/dev/null
+  docker rm -f "$container" >/dev/null 2>&1 || true
+  if docker inspect "$previous" >/dev/null 2>&1; then
+    docker rename "$previous" "$container"
+    docker start "$container" >/dev/null
     reload_caddy
   fi
   exit 1
 fi
 
-docker rm -f cornershopdev-previous >/dev/null 2>&1 || true
+docker rm -f "$previous" >/dev/null 2>&1 || true
 
 monitor_service="/etc/systemd/system/cornershopdev-public-health.service"
 monitor_timer="/etc/systemd/system/cornershopdev-public-health.timer"

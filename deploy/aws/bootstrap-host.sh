@@ -36,14 +36,15 @@ awk '
 # which would cost each customer domain its issuance and renewal. Retarget only
 # the exact line the old bootstrap wrote and leave operator edits untouched.
 sed -i \
-  's#ask http://restofront:3000/api/domains/authorize#ask http://cornershopdev:3000/api/domains/authorize#' \
+  -e 's#ask http://restofront:3000/api/domains/authorize#ask http://api-cornershop-dev:3000/api/domains/authorize#' \
+  -e 's#ask http://cornershopdev:3000/api/domains/authorize#ask http://api-cornershop-dev:3000/api/domains/authorize#' \
   "$temporary_body"
 
 {
   if ! grep -q "on_demand_tls" "$temporary_body"; then
     printf '%s\n' '{'
     printf '%s\n' '	on_demand_tls {'
-    printf '%s\n' '		ask http://cornershopdev:3000/api/domains/authorize'
+    printf '%s\n' '		ask http://api-cornershop-dev:3000/api/domains/authorize'
     printf '%s\n' '	}'
     printf '%s\n\n' '}'
   fi
