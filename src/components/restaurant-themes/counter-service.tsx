@@ -22,8 +22,10 @@ export function CounterServiceTheme({
   embedded = false,
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
-  const ordering = draft.integrations.find((integration) =>
-    ["ordering", "delivery"].includes(integration.type),
+  const ordering = draft.integrations.find(
+    (integration) =>
+      integration.enabled &&
+      ["ordering", "delivery"].includes(integration.type),
   );
   const tokens = selection.tokens;
 
@@ -158,7 +160,7 @@ export function CounterServiceTheme({
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {section.items.map((item) => (
+                  {section.items.filter((item) => item.available).map((item) => (
                     <article
                       key={item.name}
                       className="grid min-h-44 grid-cols-[1fr_auto] gap-5 rounded-[1.4rem] border-2 border-current bg-[var(--theme-surface)] p-5"

@@ -6,6 +6,7 @@ import {
 import {
   publishSiteDraft,
   SitePublicationStateError,
+  SitePublicationTranslationError,
 } from "@/lib/site-publication";
 
 const publishRequestSchema = z.object({
@@ -51,6 +52,9 @@ export async function POST(
       );
     }
     if (error instanceof SitePublicationStateError) {
+      return Response.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof SitePublicationTranslationError) {
       return Response.json({ error: error.message }, { status: 409 });
     }
 

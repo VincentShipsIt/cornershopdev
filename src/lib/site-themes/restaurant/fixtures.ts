@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import {
   restaurantDesignProfileSchema,
   type RestaurantDesignProfile,
@@ -15,7 +16,7 @@ export type RestaurantThemeFixture = RestaurantSiteDraft & {
 
 function fixture(
   draft: Omit<
-    RestaurantSiteDraft,
+    z.input<typeof restaurantSiteDraftSchema>,
     "attributes" | "autoEnhanceImages"
   > & {
     cuisine: string;

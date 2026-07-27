@@ -35,6 +35,7 @@ export type SiteCatalogItemView = {
   description: string;
   price: number | null;
   currency: string;
+  available: boolean;
   imageUrl: string | null;
   attributes: Record<string, unknown>;
 };
@@ -50,6 +51,7 @@ export type SiteIntegrationView = {
   label: string;
   provider: string | null;
   url: string;
+  enabled: boolean;
   /**
    * The owner's id inside the provider (an OpenTable `rid`, a Fresha venue).
    * Only meaningful for providers that publish an embeddable widget, and only

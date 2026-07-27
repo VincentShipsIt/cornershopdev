@@ -33,6 +33,8 @@ import {
   ClientAnalyticsPanel,
   ClientBookingRequestInbox,
 } from "@/components/client-workspace";
+import { RestaurantIntegrationEditor } from "@/components/restaurant-integration-editor";
+import { RestaurantMenuEditor } from "@/components/restaurant-menu-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,9 +55,22 @@ import {
   selectOwnerRestaurantTheme,
 } from "@/lib/site-themes/restaurant/selection";
 import {
-  formatPrice,
+  restaurantDraftSchema,
   type RestaurantDraft,
 } from "@/lib/restaurant";
+import {
+  applyRestaurantIntegrationMutation,
+  validateRestaurantIntegrations,
+  type RestaurantIntegrationMutation,
+} from "@/lib/restaurant-integration-editor";
+import {
+  applyRestaurantMenuMutation,
+  hasUnreviewedRestaurantTranslations,
+  markRestaurantTranslationReviewed,
+  updateRestaurantTranslation,
+  validateRestaurantMenuDraft,
+  type RestaurantMenuMutation,
+} from "@/lib/restaurant-menu-editor";
 
 type DomainSetup = {
   hostname: string;
@@ -100,6 +115,7 @@ export function Dashboard({
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedRevision, setSavedRevision] = useState<number | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -122,11 +138,48 @@ export function Dashboard({
   const automaticThemeSelection = restoreAutomaticRestaurantTheme(
     draft.designProfile,
   );
+  const [menuDirty, setMenuDirty] = useState(false);
+  const [menuSaveError, setMenuSaveError] = useState<string | null>(null);
+  const [menuValidationIssues, setMenuValidationIssues] = useState<
+    ReturnType<typeof validateRestaurantMenuDraft>
+  >([]);
+  const [menuUndoStack, setMenuUndoStack] = useState<RestaurantDraft[]>([]);
+  const [integrationDirty, setIntegrationDirty] = useState(false);
+  const [integrationSaveError, setIntegrationSaveError] = useState<
+    string | null
+  >(null);
+  const [integrationValidationIssues, setIntegrationValidationIssues] =
+    useState<ReturnType<typeof validateRestaurantIntegrations>>([]);
+  const [integrationUndoStack, setIntegrationUndoStack] = useState<
+    RestaurantDraft[]
+  >([]);
+  const [regeneratingLocale, setRegeneratingLocale] = useState<string | null>(
+    null,
+  );
 
   async function save(): Promise<boolean> {
+    const validationIssues = validateRestaurantMenuDraft(draft);
+    const integrationIssues = validateRestaurantIntegrations(draft);
+    setMenuValidationIssues(validationIssues);
+    setIntegrationValidationIssues(integrationIssues);
+    if (validationIssues.length > 0 || integrationIssues.length > 0) {
+      setMenuSaveError(
+        validationIssues.length > 0
+          ? "The menu contains invalid or incomplete fields"
+          : "Fix the integration labels before saving this draft",
+      );
+      setIntegrationSaveError(
+        integrationIssues.length > 0
+          ? "One or more external links are invalid or incomplete"
+          : "Fix the invalid menu fields before saving these links",
+      );
+      return false;
+    }
     setSaving(true);
     setSaved(false);
     setPublishError(null);
+    setMenuSaveError(null);
+    setIntegrationSaveError(null);
     try {
       if (!demo) {
         const response = await fetch(`/api/sites/${draft.slug}`, {
@@ -134,16 +187,28 @@ export function Dashboard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
         });
-        if (!response.ok) throw new Error("Save failed");
+        const result = (await response.json()) as {
+          error?: string;
+          revision?: number;
+        };
+        if (!response.ok) {
+          throw new Error(result.error ?? "Save failed");
+        }
+        setSavedRevision(result.revision ?? null);
       }
       setSaved(true);
       setThemeDirty(false);
+      setMenuDirty(false);
+      setIntegrationDirty(false);
+      setMenuValidationIssues([]);
+      setIntegrationValidationIssues([]);
       setPublishedVersion(null);
       return true;
     } catch (caught) {
-      setPublishError(
-        caught instanceof Error ? caught.message : "Save failed",
-      );
+      const message = caught instanceof Error ? caught.message : "Save failed";
+      setPublishError(message);
+      setMenuSaveError(message);
+      setIntegrationSaveError(message);
       return false;
     } finally {
       setSaving(false);
@@ -151,6 +216,12 @@ export function Dashboard({
   }
 
   async function publish() {
+    if (hasUnreviewedRestaurantTranslations(draft)) {
+      setPublishError(
+        "Review every stale or regenerated translation before publishing",
+      );
+      return;
+    }
     const changeSummary = window
       .prompt(
         "Summarize what will change on the public site:",
@@ -176,6 +247,8 @@ export function Dashboard({
       if (!(await save())) return;
       if (demo) {
         setPublishedVersion(1);
+        setMenuUndoStack([]);
+        setIntegrationUndoStack([]);
         return;
       }
 
@@ -208,6 +281,8 @@ export function Dashboard({
         },
         ...current.map((item) => ({ ...item, current: false })),
       ]);
+      setMenuUndoStack([]);
+      setIntegrationUndoStack([]);
     } catch (caught) {
       setPublishError(
         caught instanceof Error ? caught.message : "Publish failed",
@@ -294,6 +369,185 @@ export function Dashboard({
     } finally {
       setRollbackLoading(null);
     }
+  }
+
+  function mutateMenu(
+    mutation: RestaurantMenuMutation,
+    destructive = false,
+  ) {
+    try {
+      if (destructive) {
+        setMenuUndoStack((current) => [
+          ...current,
+          structuredClone(draft),
+        ]);
+      }
+      const next = applyRestaurantMenuMutation(draft, mutation);
+      setDraft(next);
+      setMenuDirty(true);
+      setSaved(false);
+      setMenuSaveError(null);
+      setMenuValidationIssues(validateRestaurantMenuDraft(next));
+    } catch (error) {
+      setMenuSaveError(
+        error instanceof Error ? error.message : "Menu change failed",
+      );
+    }
+  }
+
+  function changeTranslation(
+    locale: string,
+    updater: Parameters<typeof updateRestaurantTranslation>[2],
+  ) {
+    const next = updateRestaurantTranslation(draft, locale, updater);
+    setDraft(next);
+    setMenuDirty(true);
+    setSaved(false);
+    setMenuSaveError(null);
+    setMenuValidationIssues(validateRestaurantMenuDraft(next));
+  }
+
+  function reviewTranslation(locale: string) {
+    try {
+      const next = markRestaurantTranslationReviewed(draft, locale);
+      setDraft(next);
+      setMenuDirty(true);
+      setSaved(false);
+      setMenuSaveError(null);
+      setMenuValidationIssues([]);
+    } catch {
+      setMenuSaveError(
+        "Fix the translated menu fields before marking this locale reviewed",
+      );
+    }
+  }
+
+  async function regenerateTranslation(locale: string) {
+    if (menuDirty || integrationDirty) {
+      setMenuSaveError(
+        "Save canonical menu and integration changes before regenerating a translation",
+      );
+      return;
+    }
+    setRegeneratingLocale(locale);
+    setMenuSaveError(null);
+    try {
+      const response = await fetch(
+        `/api/sites/${draft.slug}/translations/${locale}/regenerate`,
+        { method: "POST" },
+      );
+      const result = (await response.json()) as {
+        error?: string;
+        draft?: unknown;
+      };
+      if (!response.ok || !result.draft) {
+        throw new Error(result.error ?? "Translation regeneration failed");
+      }
+      const regenerated = restaurantDraftSchema.parse(result.draft);
+      setDraft((current) => ({
+        ...current,
+        translations: regenerated.translations,
+      }));
+      setSaved(true);
+      setMenuDirty(false);
+      setIntegrationDirty(false);
+      setMenuValidationIssues([]);
+      setIntegrationValidationIssues([]);
+    } catch (error) {
+      setMenuSaveError(
+        error instanceof Error
+          ? error.message
+          : "Translation regeneration failed",
+      );
+    } finally {
+      setRegeneratingLocale(null);
+    }
+  }
+
+  function undoMenuDeletion() {
+    const previous = menuUndoStack.at(-1);
+    if (!previous) return;
+    setDraft(previous);
+    setMenuUndoStack((current) => current.slice(0, -1));
+    setMenuDirty(true);
+    setSaved(false);
+    setMenuSaveError(null);
+    setMenuValidationIssues([]);
+  }
+
+  function mutateIntegration(
+    mutation: RestaurantIntegrationMutation,
+    destructive = false,
+  ) {
+    try {
+      if (destructive) {
+        setIntegrationUndoStack((current) => [
+          ...current,
+          structuredClone(draft),
+        ]);
+      }
+      const next = applyRestaurantIntegrationMutation(draft, mutation);
+      setDraft(next);
+      setIntegrationDirty(true);
+      setSaved(false);
+      setIntegrationSaveError(null);
+      setIntegrationValidationIssues(
+        validateRestaurantIntegrations(next),
+      );
+    } catch (error) {
+      setIntegrationSaveError(
+        error instanceof Error
+          ? error.message
+          : "Integration change failed",
+      );
+    }
+  }
+
+  function changeIntegrationTranslationLabel(
+    locale: string,
+    integrationIndex: number,
+    label: string,
+  ) {
+    const next = updateRestaurantTranslation(
+      draft,
+      locale,
+      (translation) => {
+        translation.integrationLabels[integrationIndex] = label;
+      },
+    );
+    setDraft(next);
+    setIntegrationDirty(true);
+    setSaved(false);
+    setIntegrationSaveError(null);
+    setIntegrationValidationIssues(
+      validateRestaurantIntegrations(next),
+    );
+  }
+
+  function reviewIntegrationTranslation(locale: string) {
+    try {
+      const next = markRestaurantTranslationReviewed(draft, locale);
+      setDraft(next);
+      setIntegrationDirty(true);
+      setSaved(false);
+      setIntegrationSaveError(null);
+      setIntegrationValidationIssues([]);
+    } catch {
+      setIntegrationSaveError(
+        "Fix every translated label before marking this locale reviewed",
+      );
+    }
+  }
+
+  function undoIntegrationRemoval() {
+    const previous = integrationUndoStack.at(-1);
+    if (!previous) return;
+    setDraft(previous);
+    setIntegrationUndoStack((current) => current.slice(0, -1));
+    setIntegrationDirty(true);
+    setSaved(false);
+    setIntegrationSaveError(null);
+    setIntegrationValidationIssues([]);
   }
 
   async function connectDomain() {
@@ -858,91 +1112,23 @@ export function Dashboard({
             </TabsContent>
 
             <TabsContent value="menu" className="mt-0">
-              <PageHeading
-                eyebrow="Menu editor"
-                title="The menu, structured."
-                copy="Edit what guests see. Prices and dietary labels stay machine-readable."
-                action={
-                  <Button size="sm">
-                    <Plus /> Add item
-                  </Button>
+              <RestaurantMenuEditor
+                draft={draft}
+                dirty={menuDirty}
+                saving={saving}
+                saveError={menuSaveError}
+                validationIssues={menuValidationIssues}
+                canUndo={menuUndoStack.length > 0}
+                regeneratingLocale={regeneratingLocale}
+                onMutation={mutateMenu}
+                onTranslationChange={changeTranslation}
+                onReviewTranslation={reviewTranslation}
+                onRegenerateTranslation={(locale) =>
+                  void regenerateTranslation(locale)
                 }
+                onUndo={undoMenuDeletion}
+                onSave={() => void save()}
               />
-              <div className="mt-8 space-y-5">
-                {draft.menuSections.map((section, sectionIndex) => (
-                  <Card key={section.name}>
-                    <CardHeader className="flex-row items-center justify-between">
-                      <div>
-                        <CardTitle>{section.name}</CardTitle>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {section.description}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="icon-sm">
-                        <MoreHorizontal />
-                      </Button>
-                    </CardHeader>
-                    <CardContent className="divide-y">
-                      {section.items.map((item, itemIndex) => (
-                        <div
-                          key={`${sectionIndex}-${itemIndex}`}
-                          className="grid gap-4 py-5 md:grid-cols-[1fr_1.5fr_110px_auto]"
-                        >
-                          <Input
-                            value={item.name}
-                            onChange={(event) =>
-                              setDraft((current) => {
-                                const menuSections = structuredClone(
-                                  current.menuSections,
-                                );
-                                menuSections[sectionIndex].items[
-                                  itemIndex
-                                ].name = event.target.value;
-                                return { ...current, menuSections };
-                              })
-                            }
-                          />
-                          <Input
-                            value={item.description}
-                            onChange={(event) =>
-                              setDraft((current) => {
-                                const menuSections = structuredClone(
-                                  current.menuSections,
-                                );
-                                menuSections[sectionIndex].items[
-                                  itemIndex
-                                ].description = event.target.value;
-                                return { ...current, menuSections };
-                              })
-                            }
-                          />
-                          <Input
-                            type="number"
-                            value={item.price ?? ""}
-                            onChange={(event) =>
-                              setDraft((current) => {
-                                const menuSections = structuredClone(
-                                  current.menuSections,
-                                );
-                                menuSections[sectionIndex].items[
-                                  itemIndex
-                                ].price = event.target.value
-                                  ? Number(event.target.value)
-                                  : null;
-                                return { ...current, menuSections };
-                              })
-                            }
-                            aria-label={`Price for ${item.name}`}
-                          />
-                          <span className="self-center font-mono text-xs text-muted-foreground">
-                            {formatPrice(item.price, item.currency)}
-                          </span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
             </TabsContent>
 
             <TabsContent value="imagery" className="mt-0">
@@ -1048,47 +1234,22 @@ export function Dashboard({
             </TabsContent>
 
             <TabsContent value="integrations" className="mt-0">
-              <PageHeading
-                eyebrow="Existing systems"
-                title="Keep what already works."
-                copy="Cornershopdev sends guests to the restaurant's current booking, ordering and delivery providers."
+              <RestaurantIntegrationEditor
+                draft={draft}
+                dirty={integrationDirty}
+                saving={saving}
+                saveError={integrationSaveError}
+                validationIssues={integrationValidationIssues}
+                savedRevision={savedRevision}
+                canUndo={integrationUndoStack.length > 0}
+                onMutation={mutateIntegration}
+                onTranslationLabelChange={
+                  changeIntegrationTranslationLabel
+                }
+                onReviewTranslation={reviewIntegrationTranslation}
+                onUndo={undoIntegrationRemoval}
+                onSave={() => void save()}
               />
-              <div className="mt-8 grid gap-4">
-                {draft.integrations.map((integration) => (
-                  <Card key={integration.url}>
-                    <CardContent className="flex items-center gap-4 pt-6">
-                      <span className="grid size-10 place-items-center rounded-xl bg-muted">
-                        <Link2 className="size-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{integration.label}</p>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {integration.type}
-                          </Badge>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {integration.provider ?? "External provider"} ·{" "}
-                          {integration.url}
-                        </p>
-                      </div>
-                      <Switch defaultChecked />
-                      <Button
-                        render={
-                          <Link href={integration.url} target="_blank" />
-                        }
-                        variant="ghost"
-                        size="icon-sm"
-                      >
-                        <ExternalLink />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-                <Button variant="outline" className="h-14 border-dashed">
-                  <Plus /> Add another link
-                </Button>
-              </div>
             </TabsContent>
 
             <TabsContent value="domain" className="mt-0">

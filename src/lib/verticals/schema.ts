@@ -30,11 +30,27 @@ export const siteImageUrlSchema = z.union([
   z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
 ]);
 
+export const supportedCurrencySchema = z.enum([
+  "EUR",
+  "USD",
+  "GBP",
+  "CHF",
+  "CAD",
+  "AUD",
+  "NZD",
+  "JPY",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+]);
+
 export const catalogItemSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(320).default(""),
   price: z.number().nonnegative().nullable().default(null),
-  currency: z.string().length(3).default("EUR"),
+  currency: supportedCurrencySchema.default("EUR"),
+  available: z.boolean().default(true),
   imageUrl: siteImageUrlSchema.nullable().default(null),
   originalImageUrl: siteImageUrlSchema.nullable().optional(),
   imageProvenance: imageProvenanceSchema.nullable().optional(),
@@ -47,11 +63,40 @@ export const catalogSectionSchema = z.object({
   items: z.array(catalogItemSchema).max(40),
 });
 
+export const safeExternalHttpsUrlSchema = z.url().superRefine((value, context) => {
+  const url = new URL(value);
+  if (url.protocol !== "https:") {
+    context.addIssue({
+      code: "custom",
+      message: "Integration links must use HTTPS",
+    });
+  }
+  if (url.username || url.password) {
+    context.addIssue({
+      code: "custom",
+      message: "Integration links cannot contain credentials",
+    });
+  }
+  if (url.port && url.port !== "443") {
+    context.addIssue({
+      code: "custom",
+      message: "Integration links cannot use a custom port",
+    });
+  }
+  if (isPrivateIntegrationHostname(url.hostname)) {
+    context.addIssue({
+      code: "custom",
+      message: "Integration links must use a public hostname",
+    });
+  }
+});
+
 export const integrationSchema = z.object({
   type: z.enum(["booking", "ordering", "delivery", "social"]),
-  label: z.string().min(1).max(60),
-  provider: z.string().max(60).nullable().default(null),
-  url: z.url(),
+  label: z.string().trim().min(1).max(60),
+  provider: z.string().trim().min(1).max(60).nullable().default(null),
+  url: safeExternalHttpsUrlSchema,
+  enabled: z.boolean().default(true),
   /**
    * The owner's id inside the provider, used to build an embedded booking
    * widget. Bounded here only for storage sanity — the value is never trusted
@@ -60,6 +105,35 @@ export const integrationSchema = z.object({
    */
   venueId: z.string().max(120).nullable().default(null),
 });
+
+function isPrivateIntegrationHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const ipv6 = normalized.includes(":");
+  if (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    ipv6
+  ) {
+    return true;
+  }
+
+  const octets = normalized.split(".").map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
+    return false;
+  }
+  return (
+    octets[0] === 10 ||
+    octets[0] === 127 ||
+    octets[0] === 0 ||
+    (octets[0] === 169 && octets[1] === 254) ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  );
+}
 
 export const localeSchema = z
   .string()

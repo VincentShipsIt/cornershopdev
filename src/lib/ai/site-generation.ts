@@ -2,6 +2,9 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, Output } from "ai";
 import type { ExtractedSite } from "@/lib/importer";
 import { slugify } from "@/lib/restaurant";
+import type { RestaurantDraft } from "@/lib/restaurant";
+import { applyRegeneratedRestaurantTranslation } from "@/lib/restaurant-menu-editor";
+import { restaurantTranslationCandidateSchema } from "@/lib/verticals/restaurant/schema";
 import type {
   VerticalConfig,
   VerticalTemplateDefinition,
@@ -107,6 +110,52 @@ function getTextModel() {
       usage: { include: true },
     },
   );
+}
+
+export async function regenerateRestaurantTranslation(
+  draft: RestaurantDraft,
+  locale: string,
+): Promise<RestaurantDraft> {
+  if (!aiIsConfigured()) {
+    throw new Error("Translation regeneration is not configured");
+  }
+  const source = {
+    locale: draft.defaultLocale,
+    cuisine: draft.cuisine,
+    eyebrow: draft.eyebrow,
+    description: draft.description,
+    menuSections: draft.menuSections.map((section) => ({
+      name: section.name,
+      description: section.description,
+      items: section.items.map((item) => ({
+        name: item.name,
+        description: item.description,
+        dietaryLabels: item.dietaryLabels,
+      })),
+    })),
+    integrationLabels: draft.integrations.map(
+      (integration) => integration.label,
+    ),
+  };
+  const { output } = await generateText({
+    model: getTextModel(),
+    output: Output.object({
+      schema: restaurantTranslationCandidateSchema,
+      name: "restaurant_menu_translation",
+      description:
+        "A text-only restaurant translation with exactly the source structure.",
+    }),
+    maxRetries: 2,
+    timeout: { totalMs: 45_000, stepMs: 35_000 },
+    prompt: `Translate this restaurant copy from ${draft.defaultLocale} to ${locale}.
+Return exactly the same number and order of menu sections, items, dietary-label arrays and integration labels.
+Translate text only. Never add, remove, merge, split or reorder a section or item. Never invent facts.
+Prices, currencies, availability and images are deliberately absent from the output contract and must remain untouched.
+
+Canonical source:
+${JSON.stringify(source)}`,
+  });
+  return applyRegeneratedRestaurantTranslation(draft, locale, output);
 }
 
 /**

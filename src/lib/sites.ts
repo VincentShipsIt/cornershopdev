@@ -105,6 +105,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
         description: item.description ?? "",
         price: item.price === null ? null : Number(item.price),
         currency: item.currency,
+        available: item.available,
         attributes: config.itemAttributesSchema.parse(item.attributes),
         imageUrl: item.imageUrl,
         originalImageUrl: item.originalImageUrl,
@@ -116,6 +117,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
       label: integration.label,
       provider: integration.provider,
       url: integration.url,
+      enabled: integration.enabled,
       venueId: integration.venueId,
     })),
   });

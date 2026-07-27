@@ -81,10 +81,13 @@ export function SiteRenderer({
   }
 
   const booking = draft.integrations.find(
-    (integration) => integration.type === "booking",
+    (integration) =>
+      integration.enabled && integration.type === "booking",
   );
-  const ordering = draft.integrations.find((integration) =>
-    ["ordering", "delivery"].includes(integration.type),
+  const ordering = draft.integrations.find(
+    (integration) =>
+      integration.enabled &&
+      ["ordering", "delivery"].includes(integration.type),
   );
   const resolvedTemplate = config.templates.resolve(draft.attributes);
   const template = theme
@@ -106,7 +109,7 @@ export function SiteRenderer({
     .flatMap((section) => section.items)
     .filter(
       (item): item is typeof item & { imageUrl: string } =>
-        Boolean(item.imageUrl),
+        item.available && Boolean(item.imageUrl),
     )
     .slice(0, 4);
   const immersiveHero = template.heroLayout === "immersive";
@@ -432,7 +435,7 @@ export function SiteRenderer({
                 ) : null}
               </div>
               <div className="space-y-6">
-                {section.items.map((item) => (
+                {section.items.filter((item) => item.available).map((item) => (
                   <div
                     key={item.name}
                     className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"

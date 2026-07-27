@@ -45,6 +45,8 @@ export type ProviderEmbedDefinition = {
 export type ProviderDefinition = {
   name: string;
   pattern: RegExp;
+  /** Anchored allow-list used for owner-edited URLs; never match free-form paths. */
+  hostnamePattern?: RegExp;
   type: IntegrationLinkType;
   classificationPattern?: RegExp;
   embed?: ProviderEmbedDefinition;
