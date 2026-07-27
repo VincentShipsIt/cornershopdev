@@ -10,6 +10,7 @@ import {
   Copy,
   CreditCard,
   ExternalLink,
+  Eye,
   Globe2,
   ImageIcon,
   LayoutDashboard,
@@ -18,7 +19,9 @@ import {
   Mail,
   MoreHorizontal,
   Plus,
+  Palette,
   RefreshCcw,
+  RotateCcw,
   Rocket,
   Save,
   Settings,
@@ -42,6 +45,13 @@ import type { BrandIdentity } from "@/lib/brand";
 import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
 import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
 import type { BillingAccess } from "@/lib/billing-access";
+import type { SitePublicationHistoryItem } from "@/lib/site-publication";
+import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
+import {
+  parseRestaurantThemeSelection,
+  restoreAutomaticRestaurantTheme,
+  selectOwnerRestaurantTheme,
+} from "@/lib/site-themes/restaurant/selection";
 import {
   formatPrice,
   type RestaurantDraft,
@@ -52,6 +62,13 @@ type DomainSetup = {
   attached: boolean;
   verified: boolean;
   records: Array<{ type: string; name: string; value: string }>;
+};
+
+type ClientPublicationHistoryItem = Omit<
+  SitePublicationHistoryItem,
+  "publishedAt"
+> & {
+  publishedAt: string;
 };
 
 /**
@@ -68,6 +85,7 @@ export function Dashboard({
   analyticsSummary,
   bookingInbox,
   billingAccess,
+  publicationHistory: initialPublicationHistory,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -77,6 +95,7 @@ export function Dashboard({
   analyticsSummary: AnalyticsSummaryDto;
   bookingInbox: BookingRequestInboxDto;
   billingAccess: BillingAccess | null;
+  publicationHistory: ClientPublicationHistoryItem[];
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -90,6 +109,19 @@ export function Dashboard({
   const [domainLoading, setDomainLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [themeDirty, setThemeDirty] = useState(false);
+  const [rollbackLoading, setRollbackLoading] = useState<string | null>(null);
+  const [publicationHistory, setPublicationHistory] = useState(
+    initialPublicationHistory,
+  );
+
+  const themeManifests = listRestaurantThemeManifests();
+  const currentThemeSelection = parseRestaurantThemeSelection(
+    draft.themeSelection,
+  );
+  const automaticThemeSelection = restoreAutomaticRestaurantTheme(
+    draft.designProfile,
+  );
 
   async function save(): Promise<boolean> {
     setSaving(true);
@@ -105,6 +137,7 @@ export function Dashboard({
         if (!response.ok) throw new Error("Save failed");
       }
       setSaved(true);
+      setThemeDirty(false);
       setPublishedVersion(null);
       return true;
     } catch (caught) {
@@ -153,18 +186,113 @@ export function Dashboard({
       });
       const result = (await response.json()) as {
         error?: string;
-        published?: { version: number };
+        published?: {
+          id: string;
+          version: number;
+          publishedAt: string;
+          theme: { id: string; version: string };
+        };
       };
       if (!response.ok || !result.published) {
         throw new Error(result.error ?? "Publish failed");
       }
       setPublishedVersion(result.published.version);
+      setPublicationHistory((current) => [
+        {
+          id: result.published!.id,
+          version: result.published!.version,
+          publishedAt: result.published!.publishedAt,
+          changeSummary,
+          current: true,
+          theme: result.published!.theme,
+        },
+        ...current.map((item) => ({ ...item, current: false })),
+      ]);
     } catch (caught) {
       setPublishError(
         caught instanceof Error ? caught.message : "Publish failed",
       );
     } finally {
       setPublishing(false);
+    }
+  }
+
+  function selectTheme(themeId: Parameters<typeof selectOwnerRestaurantTheme>[1]) {
+    const selection = selectOwnerRestaurantTheme(
+      draft.designProfile,
+      themeId,
+    );
+    setDraft((current) => ({ ...current, themeSelection: selection }));
+    setSaved(false);
+    setThemeDirty(true);
+    setPublishedVersion(null);
+    setPublishError(null);
+  }
+
+  function restoreAutomaticTheme() {
+    setDraft((current) => ({
+      ...current,
+      themeSelection: restoreAutomaticRestaurantTheme(
+        current.designProfile,
+      ),
+    }));
+    setSaved(false);
+    setThemeDirty(true);
+    setPublishedVersion(null);
+    setPublishError(null);
+  }
+
+  async function rollback(siteVersionId: string) {
+    const target = publicationHistory.find(
+      (item) => item.id === siteVersionId,
+    );
+    if (!target || target.current) return;
+    if (
+      !window.confirm(
+        `Restore the public site to version ${target.version}? Your private draft will not change.`,
+      )
+    ) {
+      return;
+    }
+
+    setRollbackLoading(siteVersionId);
+    setPublishError(null);
+    try {
+      const response = await fetch(`/api/sites/${draft.slug}/rollback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteVersionId }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        published?: {
+          id: string;
+          version: number;
+          publishedAt: string;
+          theme: { id: string; version: string };
+        };
+      };
+      if (!response.ok || !result.published) {
+        throw new Error(result.error ?? "Rollback failed");
+      }
+      setPublishedVersion(result.published.version);
+      setPublicationHistory((current) => [
+        {
+          id: result.published!.id,
+          version: result.published!.version,
+          publishedAt: result.published!.publishedAt,
+          changeSummary: `Rollback to v${target.version}: ${target.changeSummary}`,
+          current: true,
+          theme: result.published!.theme,
+        },
+        ...current.map((item) => ({ ...item, current: false })),
+      ]);
+    } catch (caught) {
+      setPublishError(
+        caught instanceof Error ? caught.message : "Rollback failed",
+      );
+    } finally {
+      setRollbackLoading(null);
     }
   }
 
@@ -377,6 +505,7 @@ export function Dashboard({
                 ["overview", LayoutDashboard, "Overview"],
                 ["analytics", TrendingUp, "Analytics"],
                 ["leads", Mail, "Leads"],
+                ["design", Palette, "Design"],
                 ["menu", BookOpenText, "Menu"],
                 ["imagery", ImageIcon, "Imagery"],
                 ["integrations", Link2, "Integrations"],
@@ -406,6 +535,7 @@ export function Dashboard({
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="leads">Leads</TabsTrigger>
+              <TabsTrigger value="design">Design</TabsTrigger>
               <TabsTrigger value="menu">Menu</TabsTrigger>
               <TabsTrigger value="imagery">Imagery</TabsTrigger>
               <TabsTrigger value="integrations">Links</TabsTrigger>
@@ -515,6 +645,216 @@ export function Dashboard({
                 initialInbox={bookingInbox}
                 demo={demo}
               />
+            </TabsContent>
+
+            <TabsContent value="design" className="mt-0">
+              <PageHeading
+                eyebrow="Website design"
+                title="Choose the right service experience."
+                copy="Preview every compatible renderer with your restaurant content. A choice changes only the private draft until you Save and Publish."
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={restoreAutomaticTheme}
+                    disabled={
+                      currentThemeSelection !== null &&
+                      currentThemeSelection.source !== "owner"
+                    }
+                  >
+                    <RotateCcw />
+                    {currentThemeSelection
+                      ? "Restore automatic"
+                      : "Use automatic match"}
+                  </Button>
+                }
+              />
+
+              <Card className="mt-8">
+                <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Current private draft
+                    </p>
+                    <p className="mt-2 text-lg font-semibold">
+                      {currentThemeSelection
+                        ? themeManifests.find(
+                            (theme) =>
+                              theme.id === currentThemeSelection.themeId,
+                          )?.name
+                        : "Legacy restaurant design"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {currentThemeSelection
+                        ? `${currentThemeSelection.source === "owner" ? "Owner selected" : "Automatically matched"} · immutable renderer v${currentThemeSelection.rendererVersion}`
+                        : `Automatic match available: ${
+                            themeManifests.find(
+                              (theme) =>
+                                theme.id === automaticThemeSelection.themeId,
+                            )?.name
+                          }`}
+                    </p>
+                  </div>
+                  {themeDirty ? (
+                    <Badge variant="outline">Save to keep this choice</Badge>
+                  ) : (
+                    <Badge className="bg-emerald-600 text-white">
+                      Stored private draft
+                    </Badge>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="mt-5 grid gap-5 xl:grid-cols-3">
+                {themeManifests.map((manifest) => {
+                  const selected =
+                    currentThemeSelection?.themeId === manifest.id;
+                  const automatic =
+                    automaticThemeSelection.themeId === manifest.id;
+                  return (
+                    <Card
+                      key={manifest.id}
+                      className={
+                        selected
+                          ? "overflow-hidden border-primary ring-2 ring-primary/15"
+                          : "overflow-hidden"
+                      }
+                    >
+                      <div
+                        className="relative aspect-[16/9] border-b bg-cover bg-center"
+                        style={{
+                          backgroundColor:
+                            manifest.safeDefaultTokens.colors.background,
+                          backgroundImage: `url("/themes/restaurant/${manifest.id}.webp")`,
+                        }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-transparent" />
+                        <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3 text-white">
+                          <div>
+                            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/70">
+                              renderer v{manifest.rendererVersion}
+                            </p>
+                            <h2 className="mt-1 text-xl font-semibold">
+                              {manifest.name}
+                            </h2>
+                          </div>
+                          {selected ? <Badge>Selected</Badge> : null}
+                        </div>
+                      </div>
+                      <CardContent className="space-y-5 pt-6">
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          {manifest.description}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">
+                            {manifest.experience.primaryIntent}-led
+                          </Badge>
+                          <Badge variant="secondary">
+                            {manifest.experience.menuExperience} menu
+                          </Badge>
+                          {automatic ? (
+                            <Badge variant="outline">Automatic match</Badge>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            render={
+                              <Link
+                                href={`/dashboard/themes/${manifest.id}`}
+                                target="_blank"
+                              />
+                            }
+                            nativeButton={false}
+                            variant="outline"
+                            size="sm"
+                          >
+                            <Eye /> Preview
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => selectTheme(manifest.id)}
+                            disabled={
+                              selected &&
+                              currentThemeSelection?.source === "owner"
+                            }
+                          >
+                            <Check />
+                            {selected ? "Selected" : "Use theme"}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              <Card className="mt-8">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Published history
+                  </CardTitle>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Rollback creates a new immutable version from a previous
+                    snapshot. Your private draft remains untouched.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {publicationHistory.length > 0 ? (
+                    <div className="divide-y">
+                      {publicationHistory.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold">
+                                Version {item.version}
+                              </p>
+                              {item.current ? (
+                                <Badge className="bg-emerald-600 text-white">
+                                  Live
+                                </Badge>
+                              ) : null}
+                              <Badge variant="outline">
+                                {item.theme.id} · {item.theme.version}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.changeSummary} ·{" "}
+                              {new Intl.DateTimeFormat(undefined, {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              }).format(new Date(item.publishedAt))}
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              item.current ||
+                              rollbackLoading !== null ||
+                              demo
+                            }
+                            onClick={() => void rollback(item.id)}
+                          >
+                            {rollbackLoading === item.id ? (
+                              <LoaderCircle className="animate-spin" />
+                            ) : (
+                              <RotateCcw />
+                            )}
+                            {item.current ? "Currently live" : "Rollback"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Publish the site once to start immutable version history.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="menu" className="mt-0">

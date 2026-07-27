@@ -20,9 +20,13 @@ const actor = { id: userId, email: `${userId}@example.test` };
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let sampleSiteDraft: typeof import("@/lib/restaurant").sampleSiteDraft;
 let publishSiteDraft: typeof import("@/lib/site-publication").publishSiteDraft;
+let rollbackPublishedSiteVersion: typeof import("@/lib/site-publication").rollbackPublishedSiteVersion;
 let updateSiteDraft: typeof import("@/lib/site-persistence").updateSiteDraft;
 let findPublishedSiteView: typeof import("@/lib/sites").findPublishedSiteView;
 let findSiteView: typeof import("@/lib/sites").findSiteView;
+let localizeSiteDraft: typeof import("@/lib/site-draft").localizeSiteDraft;
+let restaurantThemeFixtures: typeof import("@/lib/site-themes/restaurant/fixtures").restaurantThemeFixtures;
+let selectOwnerRestaurantTheme: typeof import("@/lib/site-themes/restaurant/selection").selectOwnerRestaurantTheme;
 let Vertical: typeof import("@/generated/prisma/enums").Vertical;
 
 describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () => {
@@ -32,14 +36,27 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     const publication = await import("@/lib/site-publication");
     const persistence = await import("@/lib/site-persistence");
     const sites = await import("@/lib/sites");
+    const siteDraft = await import("@/lib/site-draft");
+    const themeFixtures = await import(
+      "@/lib/site-themes/restaurant/fixtures"
+    );
+    const themeSelection = await import(
+      "@/lib/site-themes/restaurant/selection"
+    );
     const enums = await import("@/generated/prisma/enums");
 
     db = database.getDb();
     sampleSiteDraft = restaurant.sampleSiteDraft;
     publishSiteDraft = publication.publishSiteDraft;
+    rollbackPublishedSiteVersion =
+      publication.rollbackPublishedSiteVersion;
     updateSiteDraft = persistence.updateSiteDraft;
     findPublishedSiteView = sites.findPublishedSiteView;
     findSiteView = sites.findSiteView;
+    localizeSiteDraft = siteDraft.localizeSiteDraft;
+    restaurantThemeFixtures = themeFixtures.restaurantThemeFixtures;
+    selectOwnerRestaurantTheme =
+      themeSelection.selectOwnerRestaurantTheme;
     Vertical = enums.Vertical;
 
     await db.user.create({
@@ -377,5 +394,132 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         }),
       ),
     ).rejects.toThrow("Published site versions are immutable");
+  });
+
+  test("preserves an owner theme through save, reload, locale, publish and rollback", async () => {
+    const fixture = restaurantThemeFixtures["counter-service"];
+    const ownerSelection = selectOwnerRestaurantTheme(
+      fixture.profile,
+      "after-dark",
+    );
+    const ownerDraft = {
+      ...fixture,
+      slug,
+      attributes: {
+        ...fixture.attributes,
+        themeSelection: ownerSelection,
+      },
+      translations: [
+        {
+          locale: "fr",
+          attributes: { cuisine: "Comptoir italien" },
+          eyebrow: "Des parts, des pizzas entières, sans détour",
+          description:
+            "Un comptoir de quartier pour des pizzas au levain, des boissons fraîches et une collecte rapide.",
+          catalogSections: fixture.catalogSections.map((section) => ({
+            name: section.name,
+            description: section.description,
+            items: section.items.map((item) => ({
+              name: item.name,
+              description: item.description,
+              attributes: item.attributes,
+            })),
+          })),
+          integrationLabels: fixture.integrations.map(
+            (integration) => integration.label,
+          ),
+        },
+      ],
+    };
+
+    await updateSiteDraft(slug, ownerDraft, Vertical.RESTAURANT);
+    const reloaded = await findSiteView(slug);
+    expect(reloaded?.theme).toEqual({
+      id: "after-dark",
+      version: "restaurant-renderer-v1",
+      selection: ownerSelection,
+    });
+    expect(reloaded?.draft.attributes.themeSelection).toEqual(ownerSelection);
+    expect(
+      localizeSiteDraft(reloaded!.draft, "fr").attributes.themeSelection,
+    ).toEqual(ownerSelection);
+
+    const ownerPublished = await publishSiteDraft({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      actor,
+      changeSummary: "Publish owner-selected after-dark theme",
+    });
+    expect(ownerPublished.theme).toEqual({
+      id: "after-dark",
+      version: "restaurant-renderer-v1",
+    });
+    const storedOwnerVersion = await db.siteVersion.findUniqueOrThrow({
+      where: { id: ownerPublished.id },
+      select: {
+        theme: true,
+        themeVersion: true,
+        translations: true,
+      },
+    });
+    expect(storedOwnerVersion).toMatchObject({
+      theme: ownerSelection,
+      themeVersion: "restaurant-renderer-v1",
+      translations: ownerDraft.translations,
+    });
+
+    const nextSelection = selectOwnerRestaurantTheme(
+      fixture.profile,
+      "terroir-editorial",
+    );
+    await updateSiteDraft(
+      slug,
+      {
+        ...ownerDraft,
+        attributes: {
+          ...ownerDraft.attributes,
+          themeSelection: nextSelection,
+        },
+      },
+      Vertical.RESTAURANT,
+    );
+    await publishSiteDraft({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      actor,
+      changeSummary: "Publish a later owner theme",
+    });
+
+    const rolledBack = await rollbackPublishedSiteVersion({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      targetSiteVersionId: ownerPublished.id,
+      actor,
+    });
+    expect(rolledBack.id).not.toBe(ownerPublished.id);
+    expect(rolledBack.theme).toEqual(ownerPublished.theme);
+    expect((await findPublishedSiteView(slug))?.draft.attributes.themeSelection)
+      .toEqual(ownerSelection);
+    expect(
+      localizeSiteDraft((await findPublishedSiteView(slug))!.draft, "fr")
+        .attributes.themeSelection,
+    ).toEqual(ownerSelection);
+    // Rollback moves only the public pointer; the owner's later private draft
+    // remains available for another edit or publish.
+    expect((await findSiteView(slug))?.draft.attributes.themeSelection).toEqual(
+      nextSelection,
+    );
+    expect(
+      await db.auditEvent.count({
+        where: {
+          siteId,
+          type: "site.rolled_back",
+          actor: actor.id,
+        },
+      }),
+    ).toBe(1);
   });
 });

@@ -135,7 +135,7 @@ export const restaurantThemeSelectionSchema = z
     schemaVersion: z.literal(RESTAURANT_THEME_SCHEMA_VERSION),
     themeId: restaurantThemeIdSchema,
     rendererVersion: z.literal(RESTAURANT_THEME_RENDERER_VERSION),
-    source: z.enum(["ai", "deterministic"]),
+    source: z.enum(["ai", "deterministic", "owner"]),
     confidence: z.number().min(0).max(1),
     reasons: z.array(selectionReasonSchema).min(1).max(4),
     alternatives: z.array(restaurantThemeIdSchema).length(2),

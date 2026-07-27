@@ -8,6 +8,11 @@ import type {
   SiteThemeView,
 } from "@/lib/site-draft";
 import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
+import {
+  restaurantRendererVersionId,
+  restaurantSiteTheme,
+} from "@/lib/site-themes/restaurant/configuration";
+import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 import {
   resolveVerticalConfig,
@@ -44,6 +49,17 @@ export type SiteView = {
   vertical: VerticalId;
   draft: SiteDraftView;
   theme: SiteThemeView;
+};
+
+export type PublishedSiteVersionRecord = {
+  vertical: VerticalId;
+  theme: Prisma.JsonValue;
+  themeVersion: string;
+  palette: Prisma.JsonValue;
+  content: Prisma.JsonValue;
+  translations: Prisma.JsonValue;
+  integrations: Prisma.JsonValue;
+  publishedAt: Date | null;
 };
 
 /**
@@ -108,7 +124,13 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     vertical: site.vertical,
     config,
     draft,
-    theme: editableTheme(config, attributes, site.draftTheme, site.draftThemeVersion),
+    theme: editableTheme(
+      site.vertical,
+      config,
+      attributes,
+      site.draftTheme,
+      site.draftThemeVersion,
+    ),
   };
 }
 
@@ -155,8 +177,13 @@ export async function findPublishedSiteView(
     },
   });
   const version = site?.publishedSiteVersion;
-  if (!version?.publishedAt) return null;
+  return version ? projectPublishedSiteVersion(version) : null;
+}
 
+export function projectPublishedSiteVersion(
+  version: PublishedSiteVersionRecord,
+): SiteView | null {
+  if (!version.publishedAt) return null;
   const config = resolveVerticalConfig(version.vertical);
   const content = jsonRecord(version.content);
   const draft = config.draftSchema.parse({
@@ -165,7 +192,13 @@ export async function findPublishedSiteView(
     translations: version.translations,
     integrations: version.integrations,
   }) as SiteDraftView;
-  const theme = publishedTheme(config, version.theme, version.themeVersion);
+  const theme = publishedTheme(
+    version.vertical,
+    config,
+    version.theme,
+    version.themeVersion,
+    draft.attributes,
+  );
   if (!theme) return null;
 
   return { vertical: version.vertical, draft, theme };
@@ -188,6 +221,7 @@ export async function findSiteView(slug: string): Promise<SiteView | null> {
       vertical: Vertical.RESTAURANT,
       draft,
       theme: editableTheme(
+        Vertical.RESTAURANT,
         config,
         attributes,
         {},
@@ -219,16 +253,26 @@ export async function getSiteView(slug: string): Promise<SiteView> {
   return {
     vertical: Vertical.RESTAURANT,
     draft,
-    theme: editableTheme(config, attributes, {}, LEGACY_THEME_VERSION),
+    theme: editableTheme(
+      Vertical.RESTAURANT,
+      config,
+      attributes,
+      {},
+      LEGACY_THEME_VERSION,
+    ),
   };
 }
 
 function editableTheme(
+  vertical: VerticalId,
   config: ErasedVerticalConfig,
   attributes: Record<string, unknown>,
   value: Prisma.JsonValue,
   version: string,
 ): SiteThemeView {
+  const registeredTheme = restaurantSiteTheme(vertical, attributes);
+  if (registeredTheme) return registeredTheme;
+
   const selection = jsonRecord(value);
   const storedId = typeof selection.id === "string" ? selection.id : null;
   const resolvedId = config.templates.resolve(attributes).id;
@@ -244,10 +288,34 @@ function editableTheme(
 }
 
 function publishedTheme(
+  vertical: VerticalId,
   config: ErasedVerticalConfig,
   value: Prisma.JsonValue,
   version: string,
+  attributes: Record<string, unknown>,
 ): SiteThemeView | null {
+  if (vertical === Vertical.RESTAURANT) {
+    const storedSelection = parseRestaurantThemeSelection(value);
+    if (storedSelection) {
+      const expectedVersion = restaurantRendererVersionId(
+        storedSelection.rendererVersion,
+      );
+      if (version !== expectedVersion) return null;
+      return {
+        id: storedSelection.themeId,
+        version,
+        selection: storedSelection,
+      };
+    }
+
+    // PR #64 stored the structured selection inside the immutable content
+    // snapshot before the dedicated theme column was wired to the registry.
+    // Read those snapshots compatibly; the next owner Save/Publish promotes the
+    // same validated selection into the dedicated versioned theme fields.
+    const contentTheme = restaurantSiteTheme(vertical, attributes);
+    if (contentTheme) return contentTheme;
+  }
+
   const selection = jsonRecord(value);
   const id = typeof selection.id === "string" ? selection.id : null;
   if (!id || !(id in config.templates.definitions) || !version) return null;

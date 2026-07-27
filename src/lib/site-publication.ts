@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db";
 import {
+  projectPublishedSiteVersion,
   projectSiteDraft,
   siteDraftRelations,
 } from "@/lib/sites";
@@ -25,6 +26,18 @@ export type PublishedSiteVersion = {
   id: string;
   version: number;
   publishedAt: Date;
+  theme: {
+    id: string;
+    version: string;
+  };
+};
+
+export type SitePublicationHistoryItem = {
+  id: string;
+  version: number;
+  publishedAt: Date;
+  changeSummary: string;
+  current: boolean;
   theme: {
     id: string;
     version: string;
@@ -162,6 +175,205 @@ export async function publishSiteDraft(
   }
 
   throw new Error("Site could not be published");
+}
+
+export async function getSitePublicationHistory(
+  siteId: string,
+): Promise<SitePublicationHistoryItem[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const site = await getDb().site.findUnique({
+    where: { id: siteId },
+    select: {
+      publishedSiteVersionId: true,
+      siteVersions: {
+        where: { publishedAt: { not: null } },
+        orderBy: { version: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          version: true,
+          vertical: true,
+          theme: true,
+          themeVersion: true,
+          palette: true,
+          content: true,
+          translations: true,
+          integrations: true,
+          publishedAt: true,
+          changeSummary: true,
+        },
+      },
+    },
+  });
+  if (!site) return [];
+
+  return site.siteVersions.flatMap((version) => {
+    try {
+      const projected = projectPublishedSiteVersion(version);
+      if (!projected || !version.publishedAt) return [];
+      return [
+        {
+          id: version.id,
+          version: version.version,
+          publishedAt: version.publishedAt,
+          changeSummary: version.changeSummary ?? "Published site",
+          current: version.id === site.publishedSiteVersionId,
+          theme: {
+            id: projected.theme.id,
+            version: projected.theme.version,
+          },
+        },
+      ];
+    } catch {
+      // An adopted legacy database can contain incomplete historical rows.
+      // They remain immutable, but must not make the owner's whole dashboard
+      // unavailable or become rollback candidates.
+      return [];
+    }
+  });
+}
+
+export async function rollbackPublishedSiteVersion(input: {
+  siteId: string;
+  slug: string;
+  vertical: VerticalId;
+  targetSiteVersionId: string;
+  actor: {
+    id: string;
+    email: string;
+  };
+  now?: Date;
+}): Promise<PublishedSiteVersion> {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("Site publishing is temporarily unavailable");
+  }
+
+  const db = getDb();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await db.$transaction(
+        async (tx) => {
+          const site = await tx.site.findFirst({
+            where: {
+              id: input.siteId,
+              slug: input.slug,
+              vertical: input.vertical,
+            },
+            select: {
+              status: true,
+              publishedSiteVersionId: true,
+              siteVersions: {
+                where: {
+                  id: input.targetSiteVersionId,
+                  publishedAt: { not: null },
+                },
+                take: 1,
+                select: {
+                  id: true,
+                  version: true,
+                  vertical: true,
+                  theme: true,
+                  themeVersion: true,
+                  palette: true,
+                  content: true,
+                  translations: true,
+                  integrations: true,
+                  publishedAt: true,
+                  changeSummary: true,
+                },
+              },
+            },
+          });
+          if (!site) throw new Error("Site not found");
+          if (site.status !== "CLAIMED" && site.status !== "LIVE") {
+            throw new SitePublicationStateError();
+          }
+          const target = site.siteVersions[0];
+          if (!target) throw new Error("Published site version not found");
+          const projected = projectPublishedSiteVersion(target);
+          if (!projected || target.vertical !== input.vertical) {
+            throw new Error("Published site version is invalid");
+          }
+
+          const latest = await tx.siteVersion.findFirst({
+            where: { siteId: input.siteId },
+            orderBy: { version: "desc" },
+            select: { version: true },
+          });
+          const publishedAt = input.now ?? new Date();
+          const version = await tx.siteVersion.create({
+            data: {
+              siteId: input.siteId,
+              version: (latest?.version ?? 0) + 1,
+              vertical: target.vertical,
+              theme: projected.theme.selection as Prisma.InputJsonValue,
+              themeVersion: projected.theme.version,
+              palette: target.palette as Prisma.InputJsonValue,
+              content: target.content as Prisma.InputJsonValue,
+              translations: target.translations as Prisma.InputJsonValue,
+              integrations: target.integrations as Prisma.InputJsonValue,
+              publishedAt,
+              publishedBy: input.actor.id,
+              changeSummary: `Rollback to v${target.version}: ${target.changeSummary ?? "Published site"}`.slice(
+                0,
+                280,
+              ),
+            },
+            select: { id: true, version: true },
+          });
+
+          const moved = await tx.site.updateMany({
+            where: {
+              id: input.siteId,
+              slug: input.slug,
+              vertical: input.vertical,
+            },
+            data: {
+              publishedSiteVersionId: version.id,
+              status: "LIVE",
+            },
+          });
+          if (moved.count !== 1) {
+            throw new Error("Site could not be rolled back");
+          }
+
+          await tx.auditEvent.create({
+            data: {
+              type: "site.rolled_back",
+              actor: input.actor.id,
+              siteId: input.siteId,
+              metadata: {
+                siteVersionId: version.id,
+                version: version.version,
+                targetSiteVersionId: target.id,
+                targetVersion: target.version,
+                previousSiteVersionId: site.publishedSiteVersionId,
+                actorEmail: input.actor.email,
+                themeId: projected.theme.id,
+                themeVersion: projected.theme.version,
+              },
+            },
+          });
+
+          return {
+            id: version.id,
+            version: version.version,
+            publishedAt,
+            theme: {
+              id: projected.theme.id,
+              version: projected.theme.version,
+            },
+          };
+        },
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (attempt < 2 && isRetryablePublishError(error)) continue;
+      throw error;
+    }
+  }
+
+  throw new Error("Site could not be rolled back");
 }
 
 function isRetryablePublishError(error: unknown): boolean {
