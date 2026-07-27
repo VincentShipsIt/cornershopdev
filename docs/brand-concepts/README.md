@@ -1,11 +1,12 @@
 # Brand identity concepts
 
-Generated with the built-in OpenAI image generator on 2026-07-26. These are
-directional review boards. Cornershopdev 02 and Restofrontapp 05 are the selected
-directions. Their chosen artwork has been rebuilt as flat, transparent production
-assets under `public/brand/cornershopdev/` and `public/brand/restofrontapp/`.
-Each identity has a 1024 × 1024 master plus favicon derivatives and a linted
-DESIGN.md specification.
+Generated with the built-in OpenAI image generator on 2026-07-26 and refined on
+2026-07-27. These are directional review boards. Cornershopdev 04 and
+Restofrontapp 05 are the selected directions. Their chosen artwork has been
+rebuilt as flat, transparent production assets under
+`public/brand/cornershopdev/` and `public/brand/restofrontapp/`. Each identity
+has a 1024 × 1024 master plus favicon derivatives and a linted DESIGN.md
+specification.
 
 ## Cornershopdev
 
@@ -20,7 +21,7 @@ space. Show a standalone mark, horizontal wordmark, and favicon tile. Use
 charcoal, warm cream, and burnt orange. Keep the silhouette bold and avoid
 shopping carts, globes, gears, clip art, gradients, slogans, and extra text.
 
-### 02 — Folded corner (selected)
+### 02 — Folded corner
 
 ![Folded corner concept](./cornershopdev-02-folded-corner.png)
 
@@ -42,6 +43,15 @@ letter C, expressing one system creating many storefronts. Show a standalone
 mark, exact wordmark, and favicon tile. Use near-black, warm stone, and cobalt.
 Avoid generic cubes, blockchain aesthetics, corporate SaaS symbols, gradients,
 slogans, and extra text.
+
+### 04 — C dot (selected)
+
+![Selected C dot mark](./cornershopdev-04-c-dot.png)
+
+Prompt: Reduce Cornershopdev to one custom forest-green C and one coral point.
+Keep the point detached and optically centered in the C's open-right gap. Make
+the silhouette clear at 16px, preserve transparent square padding and avoid
+storefronts, awnings, pages, tiles, arrows, gradients, shadows and SaaS loops.
 
 ## Restofrontapp
 
