@@ -5,6 +5,7 @@ import {
   itemBadges,
   themeStyle,
   ThemeAnalytics,
+  ThemeBusinessHours,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -225,9 +226,10 @@ export function AfterDarkTheme({
         </div>
       </section>
 
-      <footer className="flex flex-col gap-3 border-t border-current/15 px-6 py-8 text-xs opacity-55 sm:flex-row sm:justify-between md:px-10">
+      <footer className="grid gap-3 border-t border-current/15 px-6 py-8 text-xs opacity-55 sm:grid-cols-3 md:px-10">
         <span>{draft.name}</span>
-        <span>{draft.address}</span>
+        <ThemeBusinessHours draft={draft} />
+        <span className="sm:text-right">{draft.address}</span>
       </footer>
     </article>
   );

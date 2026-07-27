@@ -29,6 +29,7 @@ type SiteDraftShape<
   attributes: TAttributes;
   autoEnhanceImages: boolean;
   defaultLocale: string;
+  businessHours: Array<{ days: string; hours: string }>;
   translations: Array<{
     integrationLabels: string[];
   }>;
@@ -54,6 +55,7 @@ export const SHARED_SKELETON = `Rules:
 - Never invent booking, ordering, delivery, address, phone, opening-hour, availability, allergen, service, or price facts.
 - Existing booking, ordering, and delivery systems must remain external links; do not rename their providers.
 - Preserve all factual catalog entries and prices that can be recovered.
+- Put only explicitly stated opening times in businessHours; use [] when none are stated.
 - Set defaultLocale to the canonical source locale using a two-letter language code.
 - When the canonical locale is not English, include one complete "en" translation. When it is English, do not duplicate it in translations.
 - A translation is a linguistic overlay only: its catalog sections, items and integrationLabels must have exactly the same order and counts as the canonical data.
@@ -167,6 +169,7 @@ export function deterministicDraft<
       vertical.deterministicAttributes ?? vertical.attributeDefaults,
     autoEnhanceImages: false,
     defaultLocale: source.sourceLocale ?? "en",
+    businessHours: [],
     translations: [],
     catalogSections: [
       {

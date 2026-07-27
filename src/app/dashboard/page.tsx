@@ -9,6 +9,7 @@ import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
+import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 
 export const metadata: Metadata = {
@@ -30,12 +31,19 @@ export default async function DashboardPage({
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
-  const [draft, analyticsSummary, bookingInbox, billingAccess] = access?.ok
+  const [
+    draft,
+    analyticsSummary,
+    bookingInbox,
+    billingAccess,
+    sourceMonitoring,
+  ] = access?.ok
     ? await Promise.all([
         getRestaurantDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
         getSiteBillingAccess(access.site.id),
+        getSourceMonitoringDashboard(access.site.id),
       ])
     : [
         sampleRestaurant,
@@ -47,6 +55,16 @@ export default async function DashboardPage({
           truncated: false,
         },
         null,
+        {
+          cadenceDays: null,
+          nextRunAt: null,
+          lastRunAt: null,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastFailureCode: null,
+          latestRun: null,
+          suggestions: [],
+        },
       ];
 
   return (
@@ -59,6 +77,7 @@ export default async function DashboardPage({
       analyticsSummary={analyticsSummary}
       bookingInbox={bookingInbox}
       billingAccess={billingAccess}
+      sourceMonitoring={sourceMonitoring}
     />
   );
 }

@@ -65,6 +65,16 @@ export const localeSchema = z
   .string()
   .regex(/^[a-z]{2}(?:-[A-Z]{2})?$/, "Use a BCP 47 language code");
 
+export const businessHoursSchema = z
+  .array(
+    z.object({
+      days: z.string().trim().min(1).max(80),
+      hours: z.string().trim().min(1).max(120),
+    }),
+  )
+  .max(14)
+  .default([]);
+
 export const translatedCatalogItemSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(320).default(""),
@@ -109,6 +119,7 @@ export const baseSiteDraftCoreShape = {
   }),
   autoEnhanceImages: z.boolean().default(true),
   defaultLocale: localeSchema.default("en"),
+  businessHours: businessHoursSchema,
   integrations: z.array(integrationSchema).max(12),
 };
 

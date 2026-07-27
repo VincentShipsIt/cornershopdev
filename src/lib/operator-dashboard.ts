@@ -27,6 +27,8 @@ export type OperatorSiteRow = {
   pendingBookingRequestCount: number;
   verifiedDomain: string | null;
   analytics30d: SiteAnalyticsRowDto;
+  pendingSourceSuggestionCount: number;
+  sourceMonitorLastSuccessAt: Date | null;
 };
 
 export type OperatorDashboardData = {
@@ -91,7 +93,17 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           take: 1,
           select: { status: true, createdAt: true },
         },
-        _count: { select: { bookingRequests: true } },
+        _count: {
+          select: {
+            bookingRequests: true,
+            sourceMonitorSuggestions: {
+              where: { status: "PENDING" },
+            },
+          },
+        },
+        sourceMonitorState: {
+          select: { lastSuccessAt: true },
+        },
         domains: {
           where: { verified: true },
           orderBy: { verifiedAt: "desc" },
@@ -149,6 +161,10 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         ctaRate: 0,
         leadRate: 0,
       },
+      pendingSourceSuggestionCount:
+        site._count.sourceMonitorSuggestions,
+      sourceMonitorLastSuccessAt:
+        site.sourceMonitorState?.lastSuccessAt ?? null,
     })),
   };
 }

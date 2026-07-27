@@ -521,11 +521,26 @@ export function SiteRenderer({
         </section>
       ) : null}
 
-      <footer className="flex flex-col gap-5 border-t border-current/15 px-6 py-8 text-sm opacity-75 sm:flex-row sm:items-center sm:justify-between md:px-10">
+      <footer className="grid gap-5 border-t border-current/15 px-6 py-8 text-sm opacity-75 sm:grid-cols-3 sm:items-start md:px-10">
         <span>
           {draft.name} · {draft.address}
         </span>
-        <span>{dictionary.seasonalNotice}</span>
+        {draft.businessHours.length > 0 ? (
+          <dl className="grid gap-1">
+            {draft.businessHours.map((row) => (
+              <div
+                key={`${row.days}-${row.hours}`}
+                className="flex justify-between gap-4"
+              >
+                <dt>{row.days}</dt>
+                <dd>{row.hours}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <span />
+        )}
+        <span className="sm:text-right">{dictionary.seasonalNotice}</span>
       </footer>
     </article>
   );

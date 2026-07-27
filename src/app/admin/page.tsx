@@ -155,6 +155,7 @@ export default async function AdminPage() {
                   <th scope="col" className="px-5 py-3 font-medium">Lifecycle</th>
                   <th scope="col" className="px-5 py-3 font-medium">Signup</th>
                   <th scope="col" className="px-5 py-3 font-medium">Subscription</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Source monitoring</th>
                   <th scope="col" className="px-5 py-3 font-medium">Import</th>
                   <th scope="col" className="px-5 py-3 font-medium">Booking leads</th>
                   <th scope="col" className="px-5 py-3 font-medium">Visits · 30d</th>
@@ -248,6 +249,22 @@ function SiteRow({ site }: { site: OperatorSiteRow }) {
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
+      </td>
+      <td className="px-5 py-4">
+        <Button
+          render={<Link href={`/admin/source-monitoring/${site.slug}`} />}
+          variant="outline"
+          size="sm"
+        >
+          {site.pendingSourceSuggestionCount > 0
+            ? `${site.pendingSourceSuggestionCount} to review`
+            : "Review"}
+        </Button>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {site.sourceMonitorLastSuccessAt
+            ? `Last success ${formatDate(site.sourceMonitorLastSuccessAt)}`
+            : "No successful run"}
+        </p>
       </td>
       <td className="px-5 py-4">
         <p>{site.latestImportStatus ? humanize(site.latestImportStatus) : "—"}</p>

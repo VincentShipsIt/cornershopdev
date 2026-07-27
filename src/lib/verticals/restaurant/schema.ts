@@ -266,6 +266,7 @@ export function toRestaurantDraft(
     showMenuImages: draft.attributes.showMenuImages,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
+    businessHours: draft.businessHours,
     translations: draft.translations.map((translation) => ({
       locale: translation.locale,
       cuisine: translation.attributes.cuisine,
@@ -323,6 +324,7 @@ export function fromRestaurantDraft(
     palette: draft.palette,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
+    businessHours: draft.businessHours,
     translations: draft.translations.map((translation) => ({
       locale: translation.locale,
       attributes: {

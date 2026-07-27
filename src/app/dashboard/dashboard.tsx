@@ -30,6 +30,7 @@ import {
   ClientAnalyticsPanel,
   ClientBookingRequestInbox,
 } from "@/components/client-workspace";
+import { SourceMonitoringPanel } from "@/components/source-monitoring-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +43,7 @@ import type { BrandIdentity } from "@/lib/brand";
 import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
 import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
 import type { BillingAccess } from "@/lib/billing-access";
+import type { SourceMonitoringDashboardDto } from "@/lib/source-monitoring";
 import {
   formatPrice,
   type RestaurantDraft,
@@ -68,6 +70,7 @@ export function Dashboard({
   analyticsSummary,
   bookingInbox,
   billingAccess,
+  sourceMonitoring,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -77,6 +80,7 @@ export function Dashboard({
   analyticsSummary: AnalyticsSummaryDto;
   bookingInbox: BookingRequestInboxDto;
   billingAccess: BillingAccess | null;
+  sourceMonitoring: SourceMonitoringDashboardDto;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -377,6 +381,7 @@ export function Dashboard({
                 ["overview", LayoutDashboard, "Overview"],
                 ["analytics", TrendingUp, "Analytics"],
                 ["leads", Mail, "Leads"],
+                ["monitoring", RefreshCcw, "Monitoring"],
                 ["menu", BookOpenText, "Menu"],
                 ["imagery", ImageIcon, "Imagery"],
                 ["integrations", Link2, "Integrations"],
@@ -406,6 +411,7 @@ export function Dashboard({
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="leads">Leads</TabsTrigger>
+              <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
               <TabsTrigger value="menu">Menu</TabsTrigger>
               <TabsTrigger value="imagery">Imagery</TabsTrigger>
               <TabsTrigger value="integrations">Links</TabsTrigger>
@@ -501,7 +507,17 @@ export function Dashboard({
               <div className="mt-5 grid gap-5 md:grid-cols-3">
                 <Metric label="Menu items" value={`${draft.menuSections.reduce((sum, section) => sum + section.items.length, 0)}`} detail={`${draft.menuSections.length} sections`} />
                 <Metric label="Preserved systems" value={`${draft.integrations.length}`} detail="No migrations required" />
-                <Metric label="Last source check" value="Just now" detail="No changes detected" />
+                <Metric
+                  label="Last source check"
+                  value={sourceMonitoring.lastSuccessAt ? "Completed" : "Pending"}
+                  detail={
+                    sourceMonitoring.lastSuccessAt
+                      ? new Date(
+                          sourceMonitoring.lastSuccessAt,
+                        ).toLocaleDateString("en", { dateStyle: "medium" })
+                      : "No successful run yet"
+                  }
+                />
               </div>
             </TabsContent>
 
@@ -513,6 +529,14 @@ export function Dashboard({
               <ClientBookingRequestInbox
                 siteSlug={draft.slug}
                 initialInbox={bookingInbox}
+                demo={demo}
+              />
+            </TabsContent>
+
+            <TabsContent value="monitoring" className="mt-0">
+              <SourceMonitoringPanel
+                siteSlug={draft.slug}
+                initial={sourceMonitoring}
                 demo={demo}
               />
             </TabsContent>

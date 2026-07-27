@@ -41,6 +41,7 @@ export type PersistableSiteDraft = {
   attributes: Record<string, unknown>;
   autoEnhanceImages: boolean;
   defaultLocale: string;
+  businessHours: Array<{ days: string; hours: string }>;
   translations: unknown[];
   catalogSections: Array<{
     name: string;
@@ -599,6 +600,7 @@ function editableSiteScalarData(
     draftPalette: draft.palette as Prisma.InputJsonValue,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
+    businessHours: draft.businessHours as Prisma.InputJsonValue,
     translations: draft.translations as Prisma.InputJsonValue,
   };
 }

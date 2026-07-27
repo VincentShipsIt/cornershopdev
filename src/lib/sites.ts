@@ -80,6 +80,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     attributes,
     autoEnhanceImages: site.autoEnhanceImages,
     defaultLocale: site.defaultLocale,
+    businessHours: site.businessHours,
     translations: site.translations,
     catalogSections: site.catalogSections.map((section) => ({
       name: section.name,

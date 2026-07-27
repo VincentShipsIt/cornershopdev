@@ -107,6 +107,29 @@ export function ThemeLocation({
   );
 }
 
+export function ThemeBusinessHours({
+  draft,
+  className,
+}: {
+  draft: Pick<SiteDraftView, "businessHours">;
+  className?: string;
+}) {
+  if (draft.businessHours.length === 0) return null;
+  return (
+    <dl className={cn("grid gap-1", className)}>
+      {draft.businessHours.map((row) => (
+        <div
+          key={`${row.days}-${row.hours}`}
+          className="flex flex-wrap justify-between gap-x-4"
+        >
+          <dt>{row.days}</dt>
+          <dd>{row.hours}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function ThemeExternalAction({
   integration,
   locale,

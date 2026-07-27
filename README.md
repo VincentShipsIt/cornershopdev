@@ -179,6 +179,14 @@ the deterministic composer and hero enhancement is skipped.
 - `WORKFLOW_TARGET_WORLD=@workflow/world-postgres`
 - `WORKFLOW_POSTGRES_URL`
 
+With workflow execution enabled, each server instance participates in a
+database-backed due dispatcher. Active Starter subscriptions are checked every
+30 days and Growth subscriptions every 7 days. The due slot and run state are
+persisted before a bounded Workflow run starts, so restarts and duplicate
+dispatchers are safe. Past-due/canceled subscriptions and paused sites perform
+no source fetches. Findings enter the owner/operator review queue and never
+mutate a draft or published version automatically.
+
 ### Authentic image enhancement
 
 Configure the private production S3 bucket and its CloudFront public origin:
