@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
+import { restaurantSiteTheme } from "@/lib/site-themes/restaurant/configuration";
 import {
   buildImportUrls,
   importFailureMessage,
@@ -581,6 +582,7 @@ function editableSiteScalarData(
   const config = resolveVerticalConfig(vertical);
   const attributes = config.attributesSchema.parse(draft.attributes);
   const theme = config.templates.resolve(attributes);
+  const registeredTheme = restaurantSiteTheme(vertical, attributes);
   return {
     name: draft.name,
     eyebrow: draft.eyebrow,
@@ -594,8 +596,11 @@ function editableSiteScalarData(
     // only place vertical-specific data lives, so an unvalidated write here is a
     // read-path crash later.
     attributes: attributes as Prisma.InputJsonValue,
-    draftTheme: { id: theme.id } as Prisma.InputJsonValue,
-    draftThemeVersion: LEGACY_THEME_VERSION,
+    draftTheme: (registeredTheme?.selection ?? {
+      id: theme.id,
+    }) as Prisma.InputJsonValue,
+    draftThemeVersion:
+      registeredTheme?.version ?? LEGACY_THEME_VERSION,
     draftPalette: draft.palette as Prisma.InputJsonValue,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,

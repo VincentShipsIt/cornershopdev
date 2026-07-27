@@ -11,12 +11,15 @@ import {
 import { restaurantThemeFixtures } from "@/lib/site-themes/restaurant/fixtures";
 import {
   findRestaurantThemeManifest,
+  getRestaurantThemeManifest,
   listRestaurantThemeManifests,
 } from "@/lib/site-themes/restaurant/registry";
 import {
   normalizeGeneratedRestaurantThemeSelection,
   parseRestaurantThemeSelection,
+  restoreAutomaticRestaurantTheme,
   scoreRestaurantThemes,
+  selectOwnerRestaurantTheme,
   selectRestaurantTheme,
 } from "@/lib/site-themes/restaurant/selection";
 import { colorContrast } from "@/lib/site-themes/restaurant/tokens";
@@ -162,6 +165,34 @@ describe("bounded restaurant theme selection", () => {
     expect(unknown).toEqual(absent);
     expect(injected).toEqual(absent);
     expect(absent.source).toBe("deterministic");
+  });
+
+  it("lets an owner override automatic selection and restore the bounded match", () => {
+    const automatic = restoreAutomaticRestaurantTheme(takeaway);
+    const selected = selectOwnerRestaurantTheme(
+      takeaway,
+      "terroir-editorial",
+    );
+
+    expect(automatic).toMatchObject({
+      themeId: "counter-service",
+      source: "deterministic",
+      rendererVersion: 1,
+    });
+    expect(selected).toMatchObject({
+      themeId: "terroir-editorial",
+      source: "owner",
+      confidence: 1,
+      rendererVersion: 1,
+    });
+    expect(selected.alternatives).toEqual([
+      "counter-service",
+      "after-dark",
+    ]);
+    expect(selected.tokens).toEqual(
+      getRestaurantThemeManifest("terroir-editorial").safeDefaultTokens,
+    );
+    expect(restoreAutomaticRestaurantTheme(takeaway)).toEqual(automatic);
   });
 
   it("does not upgrade bare or version-incompatible model output", () => {
