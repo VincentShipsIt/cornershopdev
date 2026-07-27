@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  X,
+} from "lucide-react";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
@@ -160,9 +166,25 @@ export default async function RestaurantThemeDetailPage({
                 Fictional restaurant fixture · AI-created preview image
               </p>
             </div>
-            <Badge className="w-fit bg-white/10 text-white">
-              No third-party theme code or assets
-            </Badge>
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge className="w-fit bg-white/10 text-white">
+                No third-party theme code or assets
+              </Badge>
+              <Button
+                render={
+                  <Link
+                    href={`/themes/restaurant/${manifest.id}/preview`}
+                    target="_blank"
+                    rel="noreferrer"
+                  />
+                }
+                nativeButton={false}
+                variant="secondary"
+              >
+                Open full website preview
+                <ArrowUpRight className="size-4" />
+              </Button>
+            </div>
           </div>
           <div className="mx-auto max-w-[1450px] rounded-[1.8rem] border border-white/15 p-2 md:p-3">
             <RestaurantThemeRenderer
