@@ -190,6 +190,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
   vertical: VerticalId;
   source: string;
   importJobId: string;
+  actor?: string;
 }): Promise<PersistedSiteImport<TDraft>> {
   const db = requireImportDatabase();
   const config = resolveVerticalConfig(input.vertical);
@@ -291,7 +292,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
           await tx.auditEvent.create({
             data: {
               type: existing ? "site.import.updated" : "site.import.created",
-              actor: "system:import",
+              actor: input.actor ?? "system:import",
               metadata: {
                 importJobId: input.importJobId,
                 vertical: input.vertical,

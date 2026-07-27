@@ -9,6 +9,8 @@ import {
   Users,
 } from "lucide-react";
 import { ClaimInvitationForm } from "@/app/admin/claim-invitation-form";
+import { OperatorLeadForm } from "@/app/admin/operator-lead-form";
+import { OperatorReviewPanel } from "@/app/admin/operator-review-panel";
 import { Brand } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,6 +109,20 @@ export default async function AdminPage() {
           />
         </section>
 
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Create or reopen a lead</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Authorized operator imports persist directly into the private
+              preview workflow. Existing unclaimed leads reopen without
+              replacing reviewed content.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <OperatorLeadForm />
+          </CardContent>
+        </Card>
+
         <Card className="mt-6 overflow-hidden py-0">
           <CardHeader className="border-b py-5">
             <CardTitle>Live-site performance</CardTitle>
@@ -148,7 +164,7 @@ export default async function AdminPage() {
             <CardTitle>All sites</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
-            <table className="w-full min-w-[1500px] text-left text-sm">
+            <table className="w-full min-w-[2200px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-5 py-3 font-medium">Business</th>
@@ -160,6 +176,8 @@ export default async function AdminPage() {
                   <th scope="col" className="px-5 py-3 font-medium">Visits · 30d</th>
                   <th scope="col" className="px-5 py-3 font-medium">Lead conv. · 30d</th>
                   <th scope="col" className="px-5 py-3 font-medium">Created</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Blocker rollup</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Content review</th>
                   <th scope="col" className="px-5 py-3 font-medium">Concierge claim</th>
                   <th scope="col" className="px-5 py-3 text-right font-medium">Site</th>
                 </tr>
@@ -222,6 +240,9 @@ function SiteRow({ site }: { site: OperatorSiteRow }) {
           {site.vertical.toLowerCase()}
           {site.verifiedDomain ? ` · ${site.verifiedDomain}` : ""}
         </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          TLS: {humanize(site.tlsReadiness)}
+        </p>
       </td>
       <td className="px-5 py-4">
         <Badge variant="outline">{humanize(site.status)}</Badge>
@@ -276,8 +297,43 @@ function SiteRow({ site }: { site: OperatorSiteRow }) {
         {formatDate(site.createdAt)}
       </td>
       <td className="px-5 py-4">
+        <div className="grid min-w-64 gap-1.5">
+          {site.blockers.map((blocker) => (
+            <div
+              key={blocker.stage}
+              className="flex items-start justify-between gap-3"
+              title={blocker.detail}
+            >
+              <span className="text-xs">{blocker.label}</span>
+              <Badge
+                variant={
+                  blocker.status === "complete"
+                    ? "secondary"
+                    : blocker.status === "ready"
+                      ? "outline"
+                      : "destructive"
+                }
+              >
+                {blocker.status}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </td>
+      <td className="px-5 py-4">
+        <OperatorReviewPanel
+          slug={site.slug}
+          reviewedAt={site.reviewedAt}
+          notes={site.notes}
+          contentReview={site.contentReview}
+        />
+      </td>
+      <td className="px-5 py-4">
         {site.ownerCount === 0 ? (
-          <ClaimInvitationForm siteSlug={site.slug} />
+          <ClaimInvitationForm
+            siteSlug={site.slug}
+            invitation={site.invitation}
+          />
         ) : (
           <span className="text-muted-foreground">Owned</span>
         )}
