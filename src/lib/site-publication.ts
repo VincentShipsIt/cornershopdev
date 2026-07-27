@@ -145,6 +145,9 @@ export async function publishSiteDraft(
             },
             select: { id: true, version: true },
           });
+          const verifiedDomainCount = await tx.domain.count({
+            where: { siteId: input.siteId, verified: true },
+          });
 
           const moved = await tx.site.updateMany({
             where: {
@@ -154,7 +157,9 @@ export async function publishSiteDraft(
             },
             data: {
               publishedSiteVersionId: version.id,
-              status: "LIVE",
+              // A snapshot can be published before DNS is connected, but it is
+              // only live after at least one verified hostname routes to it.
+              status: verifiedDomainCount > 0 ? "LIVE" : "CLAIMED",
             },
           });
           if (moved.count !== 1) {
@@ -173,6 +178,7 @@ export async function publishSiteDraft(
                 actorEmail: input.actor.email,
                 themeId: loaded.theme.id,
                 themeVersion: loaded.theme.version,
+                live: verifiedDomainCount > 0,
               },
             },
           });

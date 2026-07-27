@@ -141,6 +141,15 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         },
       },
     });
+    await db.domain.create({
+      data: {
+        hostname: `${randomUUID()}.example.test`,
+        siteId,
+        verificationToken: randomUUID(),
+        verified: true,
+        verifiedAt: new Date(),
+      },
+    });
   });
 
   afterAll(async () => {

@@ -158,13 +158,21 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
  */
 export async function findPublishedSiteView(
   slug: string,
+  versionId?: string,
 ): Promise<SiteView | null> {
   if (!process.env.DATABASE_URL) return null;
 
-  const site = await getDb().site.findUnique({
-    where: { slug },
-    select: {
-      publishedSiteVersion: {
+  const version = versionId
+    ? await getDb().siteVersion.findFirst({
+        where: {
+          id: versionId,
+          publishedAt: { not: null },
+          site: {
+            slug,
+            status: "LIVE",
+            publishedSiteVersionId: versionId,
+          },
+        },
         select: {
           vertical: true,
           theme: true,
@@ -175,10 +183,26 @@ export async function findPublishedSiteView(
           integrations: true,
           publishedAt: true,
         },
-      },
-    },
-  });
-  const version = site?.publishedSiteVersion;
+      })
+    : (
+        await getDb().site.findUnique({
+          where: { slug },
+          select: {
+            publishedSiteVersion: {
+              select: {
+                vertical: true,
+                theme: true,
+                themeVersion: true,
+                palette: true,
+                content: true,
+                translations: true,
+                integrations: true,
+                publishedAt: true,
+              },
+            },
+          },
+        })
+      )?.publishedSiteVersion;
   return version ? projectPublishedSiteVersion(version) : null;
 }
 

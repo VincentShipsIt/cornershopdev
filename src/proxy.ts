@@ -1,8 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import {
+  decideCustomerHostRoute,
+  planDomainHostnames,
+} from "@/lib/domain-routing";
 import { platformHostnames, requestHostname } from "@/lib/hostnames";
-import { LIVE_SITE_SLUG_HEADER } from "@/lib/site-surface";
+import {
+  LIVE_SITE_SLUG_HEADER,
+  LIVE_SITE_VERSION_HEADER,
+} from "@/lib/site-surface";
 import {
   listEmbedFrameOrigins,
   resolveVerticalByHostname,
@@ -36,20 +43,16 @@ export async function proxy(request: NextRequest) {
   // Never trust a caller-supplied surface marker. Only the verified-domain
   // branch below may add it for the rewritten Server Component request.
   upstreamHeaders.delete(LIVE_SITE_SLUG_HEADER);
-
-  // A `/preview` URL is already the rendered site, whatever hostname asked for
-  // it, so it is passed through with the frame policy attached and never
-  // resolved against the domain table. Handling it before the hostname branch
-  // keeps custom-domain behaviour on these paths exactly as it was.
-  if (request.nextUrl.pathname.startsWith("/preview/")) {
-    return withEmbedFrameCsp(
-      NextResponse.next({ request: { headers: upstreamHeaders } }),
-    );
-  }
+  upstreamHeaders.delete(LIVE_SITE_VERSION_HEADER);
 
   const hostname = requestHostname(request.headers);
   if (!hostname || platformHostnames().has(hostname)) {
-    return NextResponse.next({ request: { headers: upstreamHeaders } });
+    const response = NextResponse.next({
+      request: { headers: upstreamHeaders },
+    });
+    return request.nextUrl.pathname.startsWith("/preview/")
+      ? withEmbedFrameCsp(response)
+      : response;
   }
 
   // A niche's own marketing domain — restofront.com today, a nails or barber
@@ -62,35 +65,66 @@ export async function proxy(request: NextRequest) {
     // The locale segment is dropped deliberately: a niche's marketing copy lives
     // in its config in one language, unlike a generated site, so `/fr` here
     // serves the same page rather than 404ing on a URL a visitor may well try.
-    return NextResponse.rewrite(
-      new URL(`/niche/${verticalSlug(niche)}`, request.url),
-      { request: { headers: upstreamHeaders } },
-    );
+    const locale = request.nextUrl.pathname.match(/^\/([a-z]{2})\/?$/i);
+    if (request.nextUrl.pathname === "/" || locale) {
+      return NextResponse.rewrite(
+        new URL(`/niche/${verticalSlug(niche)}`, request.url),
+        { request: { headers: upstreamHeaders } },
+      );
+    }
+    return NextResponse.next({ request: { headers: upstreamHeaders } });
   }
 
-  const domain = await getDb().domain.findFirst({
-    where: { hostname, verified: true },
+  const plan = planDomainHostnames(hostname);
+  const domains = await getDb().domain.findMany({
+    where: { hostname: { in: plan.hostnames } },
     select: {
+      hostname: true,
+      verified: true,
       site: {
         select: {
+          id: true,
           slug: true,
+          status: true,
           publishedSiteVersionId: true,
+          publishedSiteVersion: {
+            select: {
+              id: true,
+              siteId: true,
+              publishedAt: true,
+            },
+          },
         },
       },
     },
   });
-  if (!domain?.site.publishedSiteVersionId) {
-    return new NextResponse("Not found", { status: 404 });
+  const decision = decideCustomerHostRoute({
+    hostname,
+    pathname: request.nextUrl.pathname,
+    records: domains,
+  });
+  if (decision.kind === "not_found") {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  }
+  if (decision.kind === "redirect") {
+    const canonical = new URL(request.url);
+    canonical.protocol = "https:";
+    canonical.hostname = decision.canonicalHostname;
+    canonical.port = "";
+    return NextResponse.redirect(canonical, 308);
   }
 
-  const locale = request.nextUrl.pathname.match(/^\/([a-z]{2})\/?$/i)?.[1];
-  const destination = locale
-    ? `/preview/${domain.site.slug}/${locale.toLowerCase()}`
-    : `/preview/${domain.site.slug}`;
-  upstreamHeaders.set(LIVE_SITE_SLUG_HEADER, domain.site.slug);
-  // The rewrite target is a preview route, so the frame policy rides along here
-  // too — the visitor's URL never says `/preview`, but the page it gets is the
-  // one that may embed a booking widget.
+  upstreamHeaders.set(LIVE_SITE_SLUG_HEADER, decision.slug);
+  upstreamHeaders.set(LIVE_SITE_VERSION_HEADER, decision.versionId);
+  if (decision.kind === "public_api") {
+    return NextResponse.next({ request: { headers: upstreamHeaders } });
+  }
+  const destination = decision.locale
+    ? `/preview/${decision.slug}/${decision.locale}`
+    : `/preview/${decision.slug}`;
   return withEmbedFrameCsp(
     NextResponse.rewrite(new URL(destination, request.url), {
       request: { headers: upstreamHeaders },
@@ -99,5 +133,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/:locale([a-zA-Z]{2})", "/preview/:path*"],
+  matcher: [
+    "/((?!_next/static|_next/image|_next/webpack-hmr|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|woff|woff2)$).*)",
+  ],
 };

@@ -50,14 +50,31 @@ export async function resolveAnalyticsSiteForHeaders(headers: Headers) {
         where: { hostname: verifiedHostname },
         select: {
           verified: true,
-          site: { select: { id: true, slug: true } },
+          site: {
+            select: {
+              id: true,
+              slug: true,
+              status: true,
+              publishedSiteVersionId: true,
+              publishedSiteVersion: {
+                select: { id: true, siteId: true, publishedAt: true },
+              },
+            },
+          },
         },
       });
       if (!domain) return null;
+      const published = domain.site.publishedSiteVersion;
       return {
         id: domain.site.id,
         slug: domain.site.slug,
-        verified: domain.verified,
+        verified:
+          domain.verified &&
+          domain.site.status === "LIVE" &&
+          Boolean(domain.site.publishedSiteVersionId) &&
+          published?.id === domain.site.publishedSiteVersionId &&
+          published.siteId === domain.site.id &&
+          published.publishedAt instanceof Date,
       };
     },
   });
