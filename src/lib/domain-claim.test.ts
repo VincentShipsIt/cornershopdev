@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   claimDomainForSite,
+  claimDomainSetForSite,
   type DomainClaimStore,
 } from "@/lib/domain-claim";
 
@@ -50,6 +51,51 @@ describe("domain ownership claim", () => {
     expect(state.owner).toBe("site_2");
     expect(transactions).toBe(2);
   });
+
+  it("claims an apex and www atomically", async () => {
+    const state = {
+      owners: new Map<string, string>(),
+      creates: [] as string[],
+    };
+    const claimed = await claimDomainSetForSite(setStore(state), [
+      {
+        hostname: "example.test",
+        siteId: "site_1",
+        verificationToken: "token_apex",
+      },
+      {
+        hostname: "www.example.test",
+        siteId: "site_1",
+        verificationToken: "token_www",
+      },
+    ]);
+
+    expect(claimed).toBe(true);
+    expect(state.creates).toEqual(["example.test", "www.example.test"]);
+  });
+
+  it("does not partially claim a pair whose companion is owned", async () => {
+    const state = {
+      owners: new Map([["www.example.test", "site_2"]]),
+      creates: [] as string[],
+    };
+    const claimed = await claimDomainSetForSite(setStore(state), [
+      {
+        hostname: "example.test",
+        siteId: "site_1",
+        verificationToken: "token_apex",
+      },
+      {
+        hostname: "www.example.test",
+        siteId: "site_1",
+        verificationToken: "token_www",
+      },
+    ]);
+
+    expect(claimed).toBe(false);
+    expect(state.creates).toEqual([]);
+    expect(state.owners.get("example.test")).toBeUndefined();
+  });
 });
 
 function store(
@@ -67,5 +113,21 @@ function store(
         },
       });
     },
+  };
+}
+
+function setStore(state: {
+  owners: Map<string, string>;
+  creates: string[];
+}): DomainClaimStore {
+  return {
+    runSerializable: async (operation) =>
+      operation({
+        findOwner: async (hostname) => state.owners.get(hostname) ?? null,
+        create: async ({ hostname, siteId }) => {
+          state.creates.push(hostname);
+          state.owners.set(hostname, siteId);
+        },
+      }),
   };
 }

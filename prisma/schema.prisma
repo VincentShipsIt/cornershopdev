@@ -20,6 +20,12 @@ enum SiteStatus {
   PAUSED
 }
 
+enum DomainTlsStatus {
+  PENDING
+  READY
+  ERROR
+}
+
 enum BookingRequestStatus {
   NEW
   NOTIFIED
@@ -231,15 +237,18 @@ model SiteVersion {
 }
 
 model Domain {
-  id                String    @id @default(cuid())
-  hostname          String    @unique
-  verified          Boolean   @default(false)
-  verificationToken String    @unique
+  id                String          @id @default(cuid())
+  hostname          String          @unique
+  verified          Boolean         @default(false)
+  verificationToken String          @unique
   verifiedAt        DateTime?
+  tlsStatus         DomainTlsStatus @default(PENDING)
+  tlsCheckedAt      DateTime?
+  tlsFailureCode    String?
   siteId            String
-  site              Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  site              Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 }
 
 model ClaimInvitation {

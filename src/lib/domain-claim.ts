@@ -28,12 +28,41 @@ export async function claimDomainForSite(
     verificationToken: string;
   },
 ): Promise<boolean> {
+  return claimDomainSetForSite(store, [input]);
+}
+
+/**
+ * Claims an apex/www set atomically. Ownership of every hostname is checked
+ * before the first insert, so a companion already owned by another site cannot
+ * leave half of a canonical pair attached.
+ */
+export async function claimDomainSetForSite(
+  store: DomainClaimStore,
+  inputs: Array<{
+    hostname: string;
+    siteId: string;
+    verificationToken: string;
+  }>,
+): Promise<boolean> {
+  if (!inputs.length) return false;
+  const siteId = inputs[0].siteId;
+  if (inputs.some((input) => input.siteId !== siteId)) {
+    throw new Error("A domain set must belong to one site");
+  }
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await store.runSerializable(async (transaction) => {
-        const owner = await transaction.findOwner(input.hostname);
-        if (owner) return owner === input.siteId;
-        await transaction.create(input);
+        const owners = await Promise.all(
+          inputs.map(async (input) => ({
+            input,
+            owner: await transaction.findOwner(input.hostname),
+          })),
+        );
+        if (owners.some(({ owner }) => owner && owner !== siteId)) return false;
+        for (const { input, owner } of owners) {
+          if (!owner) await transaction.create(input);
+        }
         return true;
       });
     } catch (error) {

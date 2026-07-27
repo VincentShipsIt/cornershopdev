@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -23,7 +23,9 @@ import {
   Save,
   Settings,
   Sparkles,
+  Trash2,
   TrendingUp,
+  TriangleAlert,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import {
@@ -49,9 +51,17 @@ import {
 
 type DomainSetup = {
   hostname: string;
+  hostnames: string[];
   attached: boolean;
   verified: boolean;
   records: Array<{ type: string; name: string; value: string }>;
+  tls: {
+    status: "PENDING" | "READY" | "ERROR";
+    checkedAt: string | null;
+    message: string;
+  };
+  siteStatus: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
+  previewPath: string;
 };
 
 /**
@@ -87,9 +97,38 @@ export function Dashboard({
   const [domain, setDomain] = useState("");
   const [domainSetup, setDomainSetup] = useState<DomainSetup | null>(null);
   const [domainError, setDomainError] = useState<string | null>(null);
+  const [domainNotice, setDomainNotice] = useState<string | null>(null);
   const [domainLoading, setDomainLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+
+  useEffect(() => {
+    if (demo) return;
+    let active = true;
+    void fetch(`/api/domains?siteSlug=${encodeURIComponent(draft.slug)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const result = (await response.json()) as {
+          domains?: DomainSetup[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(result.error ?? "Could not load domain");
+        if (!active || !result.domains?.[0]) return;
+        setDomainSetup(result.domains[0]);
+        setDomain(result.domains[0].hostname);
+      })
+      .catch((caught) => {
+        if (active) {
+          setDomainError(
+            caught instanceof Error ? caught.message : "Could not load domain",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [demo, draft.slug]);
 
   async function save(): Promise<boolean> {
     setSaving(true);
@@ -171,6 +210,7 @@ export function Dashboard({
   async function connectDomain() {
     setDomainLoading(true);
     setDomainError(null);
+    setDomainNotice(null);
     try {
       const response = await fetch("/api/domains", {
         method: "POST",
@@ -185,9 +225,82 @@ export function Dashboard({
       };
       if (!response.ok) throw new Error(result.error ?? "Could not add domain");
       setDomainSetup(result);
+      setDomain(result.hostname);
     } catch (caught) {
       setDomainError(
         caught instanceof Error ? caught.message : "Could not add domain",
+      );
+    } finally {
+      setDomainLoading(false);
+    }
+  }
+
+  async function checkDomain() {
+    if (!domainSetup) return;
+    setDomainLoading(true);
+    setDomainError(null);
+    setDomainNotice(null);
+    try {
+      const response = await fetch(
+        `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as DomainSetup & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Could not check the domain");
+      }
+      setDomainSetup(result);
+    } catch (caught) {
+      setDomainError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not check the domain",
+      );
+    } finally {
+      setDomainLoading(false);
+    }
+  }
+
+  async function removeDomain() {
+    if (
+      !domainSetup ||
+      !window.confirm(
+        `Remove ${domainSetup.hostname}? The public domain will stop routing here and the preview will remain available.`,
+      )
+    ) {
+      return;
+    }
+    setDomainLoading(true);
+    setDomainError(null);
+    setDomainNotice(null);
+    try {
+      const response = await fetch("/api/domains", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hostname: domainSetup.hostname,
+          siteSlug: draft.slug,
+        }),
+      });
+      const result = (await response.json()) as {
+        removed?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !result.removed) {
+        throw new Error(result.error ?? "Could not remove the domain");
+      }
+      setDomainSetup(null);
+      setDomain("");
+      setDomainNotice(
+        "Domain removed. The website is preview-only until another verified domain is connected.",
+      );
+    } catch (caught) {
+      setDomainError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not remove the domain",
       );
     } finally {
       setDomainLoading(false);
@@ -772,8 +885,19 @@ export function Dashboard({
                       className="mt-2 h-11"
                     />
                     {domainError ? (
-                      <p className="mt-3 text-xs text-destructive">
+                      <p
+                        className="mt-3 text-xs text-destructive"
+                        role="alert"
+                      >
                         {domainError}
+                      </p>
+                    ) : null}
+                    {domainNotice ? (
+                      <p
+                        className="mt-3 text-xs text-muted-foreground"
+                        role="status"
+                      >
+                        {domainNotice}
                       </p>
                     ) : null}
                     <Button
@@ -831,31 +955,71 @@ export function Dashboard({
                             </Button>
                           </div>
                         ))}
+                        <div className="grid gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-2">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              DNS
+                            </p>
+                            <p className="mt-1 flex items-center gap-2 text-xs font-medium">
+                              {domainSetup.verified ? (
+                                <CircleCheck className="size-4 text-emerald-500" />
+                              ) : (
+                                <RefreshCcw className="size-4 text-muted-foreground" />
+                              )}
+                              {domainSetup.verified
+                                ? "Verified"
+                                : "Waiting for records"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              HTTPS
+                            </p>
+                            <p className="mt-1 flex items-center gap-2 text-xs font-medium">
+                              {domainSetup.tls.status === "READY" ? (
+                                <CircleCheck className="size-4 text-emerald-500" />
+                              ) : domainSetup.tls.status === "ERROR" ? (
+                                <TriangleAlert className="size-4 text-amber-500" />
+                              ) : (
+                                <RefreshCcw className="size-4 text-muted-foreground" />
+                              )}
+                              {domainSetup.tls.status === "READY"
+                                ? "Secure connection ready"
+                                : domainSetup.tls.status === "ERROR"
+                                  ? "Needs attention"
+                                  : "Certificate pending"}
+                            </p>
+                          </div>
+                          <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
+                            {domainSetup.tls.message}
+                          </p>
+                        </div>
                         <Button
                           variant="outline"
                           className="w-full"
-                          onClick={async () => {
-                            const response = await fetch(
-                              `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
-                            );
-                            const result = (await response.json()) as {
-                              verified?: boolean;
-                            };
-                            setDomainSetup((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    verified: Boolean(result.verified),
-                                  }
-                                : current,
-                            );
-                          }}
+                          onClick={() => void checkDomain()}
+                          disabled={domainLoading}
                         >
-                          <RefreshCcw />
+                          <RefreshCcw
+                            className={domainLoading ? "animate-spin" : ""}
+                          />
                           {domainSetup.verified
-                            ? "Domain connected"
+                            ? "Check HTTPS again"
                             : "Check DNS again"}
                         </Button>
+                        <Button
+                          variant="ghost"
+                          className="w-full text-destructive hover:text-destructive"
+                          onClick={() => void removeDomain()}
+                          disabled={domainLoading}
+                        >
+                          <Trash2 />
+                          Remove domain
+                        </Button>
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Removing the domain immediately revokes public routing.
+                          Your private preview and published version are kept.
+                        </p>
                       </div>
                     ) : (
                       <ol className="space-y-5 text-sm">

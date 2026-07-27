@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { SiteRenderer } from "@/components/site-renderer";
 import { getSiteLocales } from "@/lib/site-draft";
-import { isLiveSiteSurface } from "@/lib/site-surface";
+import { liveSiteVersionId } from "@/lib/site-surface";
 import {
   findPublishedSiteView,
   findSiteView,
@@ -17,11 +17,12 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const liveSurface = isLiveSiteSurface(await headers(), slug);
-  const site = liveSurface
-    ? await findPublishedSiteView(slug)
+  const versionId = liveSiteVersionId(await headers(), slug);
+  const site = versionId
+    ? await findPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
   if (!site) notFound();
+  const liveSurface = versionId !== null;
   const locales = getSiteLocales(site.draft);
   return {
     title: liveSurface
@@ -50,11 +51,12 @@ export async function generateMetadata({
 
 export default async function PreviewPage({ params }: PageProps) {
   const { slug } = await params;
-  const liveSurface = isLiveSiteSurface(await headers(), slug);
-  const site = liveSurface
-    ? await findPublishedSiteView(slug)
+  const versionId = liveSiteVersionId(await headers(), slug);
+  const site = versionId
+    ? await findPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
   if (!site) notFound();
+  const liveSurface = versionId !== null;
   return (
     <SiteRenderer
       draft={site.draft}
