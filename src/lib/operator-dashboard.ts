@@ -6,6 +6,13 @@ import type {
   Vertical,
 } from "@/generated/prisma/enums";
 import {
+  buildOperatorLeadRollup,
+  getOperatorInvitationState,
+  isOperatorReviewCurrent,
+  type OperatorInvitationState,
+  type OperatorLeadStageRollup,
+} from "@/lib/operator-lead-status";
+import {
   getPortfolioAnalytics,
   type AnalyticsSummaryDto,
   type SiteAnalyticsRowDto,
@@ -23,9 +30,37 @@ export type OperatorSiteRow = {
   subscriptionStatus: SubscriptionStatus | null;
   latestImportStatus: ImportStatus | null;
   latestImportAt: Date | null;
+  latestImportError: string | null;
   bookingRequestCount: number;
   pendingBookingRequestCount: number;
   verifiedDomain: string | null;
+  domainCount: number;
+  verifiedDomainCount: number;
+  tlsReadiness: "NOT_CONFIGURED" | "WAITING_FOR_DNS" | "AUTHORIZED";
+  invitation: {
+    id: string;
+    email: string;
+    state: OperatorInvitationState;
+    expiresAt: Date;
+    createdAt: Date;
+  } | null;
+  reviewedAt: Date | null;
+  reviewedBy: string | null;
+  notes: Array<{
+    id: string;
+    note: string;
+    actor: string | null;
+    createdAt: Date;
+  }>;
+  contentReview: {
+    missingFields: string[];
+    heroImage: "missing" | "provenance_missing" | "provenance_recorded";
+    translationCount: number;
+    integrationCount: number;
+    catalogItemCount: number;
+  };
+  isPublished: boolean;
+  blockers: OperatorLeadStageRollup[];
   analytics30d: SiteAnalyticsRowDto;
 };
 
@@ -76,27 +111,62 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         vertical: true,
         status: true,
         createdAt: true,
+        updatedAt: true,
+        description: true,
+        address: true,
+        phone: true,
+        sourceUrl: true,
+        heroImageUrl: true,
+        heroImageProvenance: true,
+        defaultLocale: true,
+        translations: true,
+        publishedSiteVersionId: true,
         organization: {
           select: {
             _count: { select: { memberships: true } },
-            subscriptions: {
-              orderBy: { createdAt: "desc" },
-              take: 1,
-              select: { status: true },
-            },
           },
         },
+        subscription: { select: { status: true } },
         importJobs: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { status: true, createdAt: true },
+          select: { status: true, createdAt: true, error: true },
         },
-        _count: { select: { bookingRequests: true } },
+        _count: { select: { bookingRequests: true, integrations: true } },
+        catalogSections: {
+          select: { _count: { select: { items: true } } },
+        },
         domains: {
-          where: { verified: true },
-          orderBy: { verifiedAt: "desc" },
+          orderBy: [{ verified: "desc" }, { verifiedAt: "desc" }],
+          select: { hostname: true, verified: true },
+        },
+        claimInvitations: {
+          orderBy: { createdAt: "desc" },
           take: 1,
-          select: { hostname: true },
+          select: {
+            id: true,
+            email: true,
+            expiresAt: true,
+            verifiedAt: true,
+            acceptedAt: true,
+            revokedAt: true,
+            checkoutSessionId: true,
+            createdAt: true,
+          },
+        },
+        auditEvents: {
+          where: {
+            type: { in: ["operator.note.created", "site.review.completed"] },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 12,
+          select: {
+            id: true,
+            type: true,
+            actor: true,
+            metadata: true,
+            createdAt: true,
+          },
         },
       },
     }),
@@ -127,28 +197,133 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
       pendingBookingRequests: pendingBookingRequestCount,
     },
     analytics: analytics.summary,
-    sites: sites.map((site) => ({
-      id: site.id,
-      slug: site.slug,
-      name: site.name,
-      vertical: site.vertical,
-      status: site.status,
-      createdAt: site.createdAt,
-      ownerCount: site.organization?._count.memberships ?? 0,
-      subscriptionStatus: site.organization?.subscriptions[0]?.status ?? null,
-      latestImportStatus: site.importJobs[0]?.status ?? null,
-      latestImportAt: site.importJobs[0]?.createdAt ?? null,
-      bookingRequestCount: site._count.bookingRequests,
-      pendingBookingRequestCount:
-        pendingBookingRequestCounts.get(site.id) ?? 0,
-      verifiedDomain: site.domains[0]?.hostname ?? null,
-      analytics30d: analytics.displayedSites30d.get(site.id) ?? {
-        visits: 0,
-        ctaVisitors: 0,
-        bookingLeads: 0,
-        ctaRate: 0,
-        leadRate: 0,
-      },
-    })),
+    sites: sites.map((site) => {
+      const ownerCount = site.organization?._count.memberships ?? 0;
+      const invitationRecord = site.claimInvitations[0] ?? null;
+      const invitationState = getOperatorInvitationState(invitationRecord);
+      const latestReviewEvent = site.auditEvents.find(
+        (event) => event.type === "site.review.completed",
+      );
+      const reviewEvent =
+        latestReviewEvent &&
+        isOperatorReviewCurrent(latestReviewEvent.createdAt, site.updatedAt)
+          ? latestReviewEvent
+          : undefined;
+      const notes = site.auditEvents.flatMap((event) => {
+        if (event.type !== "operator.note.created") return [];
+        const note = metadataString(event.metadata, "note");
+        return note
+          ? [
+              {
+                id: event.id,
+                note,
+                actor: event.actor,
+                createdAt: event.createdAt,
+              },
+            ]
+          : [];
+      });
+      const verifiedDomainCount = site.domains.filter(
+        (domain) => domain.verified,
+      ).length;
+      const contentReview = {
+        missingFields: [
+          !site.name.trim() ? "name" : null,
+          !site.description?.trim() ? "description" : null,
+          !site.address?.trim() ? "address" : null,
+          !site.phone?.trim() ? "phone" : null,
+          !site.sourceUrl?.trim() ? "source URL" : null,
+        ].filter((value): value is string => Boolean(value)),
+        heroImage: !site.heroImageUrl
+          ? ("missing" as const)
+          : site.heroImageProvenance
+            ? ("provenance_recorded" as const)
+            : ("provenance_missing" as const),
+        translationCount: jsonArrayLength(site.translations),
+        integrationCount: site._count.integrations,
+        catalogItemCount: site.catalogSections.reduce(
+          (sum, section) => sum + section._count.items,
+          0,
+        ),
+      };
+      const blockers = buildOperatorLeadRollup({
+        importStatus: site.importJobs[0]?.status ?? null,
+        reviewedAt: reviewEvent?.createdAt ?? null,
+        ownerCount,
+        invitationState,
+        subscriptionStatus: site.subscription?.status ?? null,
+        domainCount: site.domains.length,
+        verifiedDomainCount,
+        isPublished:
+          Boolean(site.publishedSiteVersionId) && site.status === "LIVE",
+      });
+
+      return {
+        id: site.id,
+        slug: site.slug,
+        name: site.name,
+        vertical: site.vertical,
+        status: site.status,
+        createdAt: site.createdAt,
+        ownerCount,
+        subscriptionStatus: site.subscription?.status ?? null,
+        latestImportStatus: site.importJobs[0]?.status ?? null,
+        latestImportAt: site.importJobs[0]?.createdAt ?? null,
+        latestImportError: site.importJobs[0]?.error ?? null,
+        bookingRequestCount: site._count.bookingRequests,
+        pendingBookingRequestCount:
+          pendingBookingRequestCounts.get(site.id) ?? 0,
+        verifiedDomain:
+          site.domains.find((domain) => domain.verified)?.hostname ?? null,
+        domainCount: site.domains.length,
+        verifiedDomainCount,
+        tlsReadiness:
+          verifiedDomainCount > 0
+            ? ("AUTHORIZED" as const)
+            : site.domains.length > 0
+              ? ("WAITING_FOR_DNS" as const)
+              : ("NOT_CONFIGURED" as const),
+        invitation: invitationRecord
+          ? {
+              id: invitationRecord.id,
+              email: invitationRecord.email,
+              state: invitationState,
+              expiresAt: invitationRecord.expiresAt,
+              createdAt: invitationRecord.createdAt,
+            }
+          : null,
+        reviewedAt: reviewEvent?.createdAt ?? null,
+        reviewedBy: reviewEvent?.actor ?? null,
+        notes,
+        contentReview,
+        isPublished:
+          Boolean(site.publishedSiteVersionId) && site.status === "LIVE",
+        blockers,
+        analytics30d: analytics.displayedSites30d.get(site.id) ?? {
+          visits: 0,
+          ctaVisitors: 0,
+          bookingLeads: 0,
+          ctaRate: 0,
+          leadRate: 0,
+        },
+      };
+    }),
   };
+}
+
+function metadataString(metadata: unknown, key: string): string | null {
+  if (
+    typeof metadata !== "object" ||
+    metadata === null ||
+    Array.isArray(metadata) ||
+    !(key in metadata)
+  ) {
+    return null;
+  }
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
+}
+
+function jsonArrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }

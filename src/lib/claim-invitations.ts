@@ -118,6 +118,8 @@ export async function issueClaimInvitation(input: {
   email: string;
   proofMethod: ClaimProofMethodValue;
   actor: string;
+  auditType?: "claim.invitation.created" | "claim.invitation.resent";
+  replacesInvitationId?: string;
   now?: Date;
 }): Promise<IssuedClaimInvitation> {
   const email = normalizeAccountEmail(input.email);
@@ -213,10 +215,11 @@ export async function issueClaimInvitation(input: {
           });
           await tx.auditEvent.create({
             data: {
-              type: "claim.invitation.created",
+              type: input.auditType ?? "claim.invitation.created",
               actor: input.actor,
               metadata: {
                 invitationId: invitation.id,
+                replacesInvitationId: input.replacesInvitationId ?? null,
                 proofMethod: input.proofMethod,
                 expiresAt: expiresAt.toISOString(),
               },
@@ -245,6 +248,70 @@ export async function issueClaimInvitation(input: {
   if (!issued) throw new Error("Claim invitation could not be issued");
 
   return { ...issued, token, email, expiresAt };
+}
+
+export async function resendClaimInvitation(input: {
+  siteSlug: string;
+  invitationId: string;
+  actor: string;
+}): Promise<IssuedClaimInvitation> {
+  const invitation = await getDb().claimInvitation.findFirst({
+    where: {
+      id: input.invitationId,
+      site: { slug: input.siteSlug },
+      acceptedAt: null,
+    },
+    select: { id: true, email: true },
+  });
+  if (!invitation) throw invalidInvitation();
+
+  return issueClaimInvitation({
+    siteSlug: input.siteSlug,
+    email: invitation.email,
+    proofMethod: "OPERATOR_APPROVAL",
+    actor: input.actor,
+    auditType: "claim.invitation.resent",
+    replacesInvitationId: invitation.id,
+  });
+}
+
+export async function revokeClaimInvitation(input: {
+  siteSlug: string;
+  invitationId: string;
+  actor: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return getDb().$transaction(async (tx) => {
+    const invitation = await tx.claimInvitation.findFirst({
+      where: {
+        id: input.invitationId,
+        site: { slug: input.siteSlug },
+      },
+      select: { id: true, siteId: true, acceptedAt: true, revokedAt: true },
+    });
+    if (!invitation) throw invalidInvitation();
+    if (invitation.acceptedAt || invitation.revokedAt) return false;
+
+    const revoked = await tx.claimInvitation.updateMany({
+      where: {
+        id: invitation.id,
+        acceptedAt: null,
+        revokedAt: null,
+      },
+      data: { revokedAt: now },
+    });
+    if (revoked.count !== 1) return false;
+    await tx.auditEvent.create({
+      data: {
+        type: "claim.invitation.revoked",
+        actor: input.actor,
+        metadata: { invitationId: invitation.id },
+        siteId: invitation.siteId,
+      },
+    });
+    return true;
+  });
 }
 
 export type CheckoutClaimInvitation = {

@@ -159,3 +159,13 @@ export function limitOperatorClaimInvitation(
     windowMs,
   });
 }
+
+export function limitOperatorLeadMutation(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-lead",
+    limit: 30,
+    windowMs,
+  });
+}
