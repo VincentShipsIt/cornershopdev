@@ -4,7 +4,9 @@ import {
   createOpaqueAuthToken,
   hashAuthToken,
   MAGIC_LINK_MAX_RETRIES,
+  MAGIC_LINK_TTL_MS,
   maskAccountEmail,
+  pendingMagicLinkCookieOptions,
 } from "@/lib/session";
 
 describe("opaque authentication tokens", () => {
@@ -74,18 +76,22 @@ describe("magic-link retries", () => {
       createdAt: stale,
       lastAttemptAt: stale,
     };
+    expect(canRetryMagicLink({ ...base, consumedAt: now }, now)).toBe(false);
+    expect(canRetryMagicLink({ ...base, revokedAt: now }, now)).toBe(false);
     expect(
-      canRetryMagicLink({ ...base, consumedAt: now }, now),
+      canRetryMagicLink({ ...base, retryCount: MAGIC_LINK_MAX_RETRIES }, now),
     ).toBe(false);
-    expect(
-      canRetryMagicLink({ ...base, revokedAt: now }, now),
-    ).toBe(false);
-    expect(
-      canRetryMagicLink(
-        { ...base, retryCount: MAGIC_LINK_MAX_RETRIES },
-        now,
-      ),
-    ).toBe(false);
+  });
+});
+
+describe("magic-link scanner protection", () => {
+  it("stages the pending credential in a short-lived strict HttpOnly cookie", () => {
+    expect(pendingMagicLinkCookieOptions()).toMatchObject({
+      httpOnly: true,
+      sameSite: "strict",
+      maxAge: MAGIC_LINK_TTL_MS / 1_000,
+      path: "/",
+    });
   });
 });
 

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 export const SESSION_COOKIE = "cornershopdev_session";
+export const PENDING_MAGIC_LINK_COOKIE = "cornershopdev_pending_magic_link";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 export const MAGIC_LINK_TTL_MS = 20 * 60_000;
 export const MAGIC_LINK_MAX_RETRIES = 2;
@@ -26,6 +27,17 @@ export function sessionCookieOptions(expiresAt: Date) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     expires: expiresAt,
+    path: "/",
+    priority: "high" as const,
+  };
+}
+
+export function pendingMagicLinkCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    maxAge: MAGIC_LINK_TTL_MS / 1_000,
     path: "/",
     priority: "high" as const,
   };
