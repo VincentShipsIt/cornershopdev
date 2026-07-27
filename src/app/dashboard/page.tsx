@@ -10,6 +10,7 @@ import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
 import { getSitePublicationHistory } from "@/lib/site-publication";
+import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 
@@ -41,6 +42,7 @@ export default async function DashboardPage({
     billingAccess,
     publicationHistory,
     workspaces,
+    sourceMonitoring,
   ] = access?.ok
     ? await Promise.all([
         getRestaurantDraft(access.site.slug),
@@ -49,6 +51,7 @@ export default async function DashboardPage({
         getSiteBillingAccess(access.site.id),
         getSitePublicationHistory(access.site.id),
         listAccountWorkspaces(access.session.userId),
+        getSourceMonitoringDashboard(access.site.id),
       ])
     : [
         sampleRestaurant,
@@ -62,6 +65,16 @@ export default async function DashboardPage({
         null,
         [],
         [],
+        {
+          cadenceDays: null,
+          nextRunAt: null,
+          lastRunAt: null,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastFailureCode: null,
+          latestRun: null,
+          suggestions: [],
+        },
       ];
 
   return (
@@ -79,6 +92,7 @@ export default async function DashboardPage({
         publishedAt: item.publishedAt.toISOString(),
       }))}
       canSwitchWorkspace={workspaces.length > 1}
+      sourceMonitoring={sourceMonitoring}
     />
   );
 }

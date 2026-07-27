@@ -88,6 +88,7 @@ export type SiteDraftView = {
   heroImageUrl: string | null;
   palette: SitePaletteView;
   defaultLocale: string;
+  businessHours: Array<{ days: string; hours: string }>;
   attributes: Record<string, unknown>;
   catalogSections: SiteCatalogSectionView[];
   integrations: SiteIntegrationView[];

@@ -108,6 +108,27 @@ enum AuthSessionPurpose {
   SITE
 }
 
+enum SourceMonitorRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum SourceMonitorSuggestionField {
+  MENU
+  CONTACT
+  HOURS
+  LINKS
+}
+
+enum SourceMonitorSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -143,8 +164,8 @@ model Membership {
 }
 
 model Site {
-  id                     String            @id @default(cuid())
-  slug                   String            @unique
+  id                     String             @id @default(cuid())
+  slug                   String             @unique
   name                   String
   eyebrow                String?
   description            String?
@@ -160,6 +181,7 @@ model Site {
   autoEnhanceImages      Boolean           @default(true)
   defaultLocale          String            @default("en")
   translations           Json              @default("[]")
+  businessHours          Json              @default("[]")
   draftTheme             Json              @default("{}")
   draftThemeVersion      String            @default("legacy-v1")
   draftPalette           Json              @default("{}")
@@ -184,6 +206,9 @@ model Site {
   bookingRequests        BookingRequest[]
   analyticsEvents        AnalyticsEvent[]
   authSessions           AuthSession[]
+  sourceMonitorState       SourceMonitorState?
+  sourceMonitorRuns        SourceMonitorRun[]
+  sourceMonitorSuggestions SourceMonitorSuggestion[]
 }
 
 model AuthMagicLink {
@@ -460,4 +485,68 @@ model AnalyticsEvent {
 
   @@index([siteId, occurredAt, type])
   @@index([occurredAt])
+}
+
+model SourceMonitorState {
+  siteId          String    @id
+  site            Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  cadenceDays     Int
+  nextRunAt       DateTime
+  lastRunAt       DateTime?
+  lastSuccessAt   DateTime?
+  lastFailureAt   DateTime?
+  lastFailureCode String?
+  lastRunId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([nextRunAt])
+}
+
+model SourceMonitorRun {
+  id                      String                    @id @default(cuid())
+  idempotencyKey          String                    @unique
+  scheduledFor            DateTime
+  status                  SourceMonitorRunStatus    @default(QUEUED)
+  workflowRunId           String?                   @unique
+  startedAt               DateTime?
+  completedAt             DateTime?
+  errorCode               String?
+  checkedSourceCount      Int                       @default(0)
+  failedSourceCount       Int                       @default(0)
+  suggestionCount         Int                       @default(0)
+  notificationSentAt      DateTime?
+  notificationFailureCode String?
+  siteId                  String
+  site                    Site                      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  suggestions             SourceMonitorSuggestion[]
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  @@index([siteId, scheduledFor])
+  @@index([status, createdAt])
+}
+
+model SourceMonitorSuggestion {
+  id             String                        @id @default(cuid())
+  fingerprint    String
+  field          SourceMonitorSuggestionField
+  path           String
+  currentValue   Json
+  suggestedValue Json
+  editedValue    Json?
+  evidence       Json
+  status         SourceMonitorSuggestionStatus @default(PENDING)
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  runId          String
+  run            SourceMonitorRun              @relation(fields: [runId], references: [id], onDelete: Cascade)
+  siteId         String
+  site           Site                          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  @@unique([runId, fingerprint])
+  @@index([siteId, status, createdAt])
 }

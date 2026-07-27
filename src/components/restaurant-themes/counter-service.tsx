@@ -4,6 +4,7 @@ import {
   itemBadges,
   themeStyle,
   ThemeAnalytics,
+  ThemeBusinessHours,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -199,9 +200,10 @@ export function CounterServiceTheme({
           ordering && !embedded ? "pb-24 md:pb-8" : undefined,
         )}
       >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto grid max-w-7xl gap-4 text-sm sm:grid-cols-3 sm:items-start">
           <span className="font-black">{draft.name}</span>
-          <span>{draft.address}</span>
+          <ThemeBusinessHours draft={draft} />
+          <span className="sm:text-right">{draft.address}</span>
         </div>
       </footer>
 

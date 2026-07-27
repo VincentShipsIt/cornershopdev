@@ -62,6 +62,8 @@ export type OperatorSiteRow = {
   isPublished: boolean;
   blockers: OperatorLeadStageRollup[];
   analytics30d: SiteAnalyticsRowDto;
+  pendingSourceSuggestionCount: number;
+  sourceMonitorLastSuccessAt: Date | null;
 };
 
 export type OperatorDashboardData = {
@@ -132,9 +134,20 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           take: 1,
           select: { status: true, createdAt: true, error: true },
         },
-        _count: { select: { bookingRequests: true, integrations: true } },
+        _count: {
+          select: {
+            bookingRequests: true,
+            integrations: true,
+            sourceMonitorSuggestions: {
+              where: { status: "PENDING" },
+            },
+          },
+        },
         catalogSections: {
           select: { _count: { select: { items: true } } },
+        },
+        sourceMonitorState: {
+          select: { lastSuccessAt: true },
         },
         domains: {
           orderBy: [{ verified: "desc" }, { verifiedAt: "desc" }],
@@ -306,6 +319,10 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           ctaRate: 0,
           leadRate: 0,
         },
+        pendingSourceSuggestionCount:
+          site._count.sourceMonitorSuggestions,
+        sourceMonitorLastSuccessAt:
+          site.sourceMonitorState?.lastSuccessAt ?? null,
       };
     }),
   };
