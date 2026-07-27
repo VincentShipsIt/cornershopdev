@@ -13,4 +13,15 @@ describe("health endpoint routing", () => {
       expect(response.headers.get("x-middleware-rewrite")).toBeNull();
     }
   });
+
+  it("lets Caddy authorize TLS through its internal service hostname", async () => {
+    const response = await proxy(
+      new NextRequest(
+        "http://cornershopdev:3000/api/domains/authorize?domain=cornershop.dev",
+      ),
+    );
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
 });

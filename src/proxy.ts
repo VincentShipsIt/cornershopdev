@@ -45,10 +45,14 @@ export async function proxy(request: NextRequest) {
   upstreamHeaders.delete(LIVE_SITE_SLUG_HEADER);
   upstreamHeaders.delete(LIVE_SITE_VERSION_HEADER);
 
-  // Container and external health probes do not carry a public hostname. Let
-  // the route handlers enforce their own liveness/readiness policy before any
-  // custom-domain lookup can turn the probe into an unknown-host 404.
-  if (request.nextUrl.pathname.startsWith("/api/health/")) {
+  // Container-local infrastructure calls do not carry a public hostname.
+  // Caddy's on-demand TLS check uses the Docker service name, while health
+  // probes use an IP. Let these route handlers enforce their own authorization
+  // before custom-domain lookup can turn either call into an unknown-host 404.
+  if (
+    request.nextUrl.pathname.startsWith("/api/health/") ||
+    request.nextUrl.pathname === "/api/domains/authorize"
+  ) {
     return NextResponse.next({ request: { headers: upstreamHeaders } });
   }
 
