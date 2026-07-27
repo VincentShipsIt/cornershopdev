@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Blocks,
   Check,
-  Code2,
   Database,
   GitBranch,
   Globe2,
@@ -18,12 +17,8 @@ import {
 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { FACTORY_BRAND } from "@/lib/brand";
+import { factoryProductCatalog } from "@/lib/factory-products";
 import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
-import {
-  listVerticalIds,
-  resolveVerticalConfig,
-  verticalSlug,
-} from "@/lib/verticals/registry";
 import styles from "./factory-home.module.css";
 
 const REPO_URL = "https://github.com/VincentShipsIt/cornershopdev";
@@ -89,18 +84,9 @@ const platform = [
 ];
 
 export default function Home() {
-  const niches = listVerticalIds().map((id) => {
-    const { marketing } = resolveVerticalConfig(id);
-    return {
-      id,
-      slug: verticalSlug(id),
-      marketing,
-      status: marketing.domain ? "live" : "in build",
-    } as const;
-  });
-  const liveNiches = niches.filter(({ marketing }) => marketing.domain);
+  const products = factoryProductCatalog();
   const themes = listRestaurantThemeManifests();
-  const primaryNiche = liveNiches[0] ?? niches[0];
+  const primaryNiche = products.launched[0] ?? products.next;
 
   return (
     <div className={`${styles.factoryShell} min-h-screen`}>
@@ -113,11 +99,7 @@ export default function Home() {
           { href: "/themes/restaurant", label: "Themes" },
           { href: REPO_URL, label: "GitHub" },
         ]}
-        createHref={
-          primaryNiche
-            ? `/niche/${primaryNiche.slug}`
-            : "/create?vertical=restaurant"
-        }
+        createHref="/create"
         ctaLabel="Build a site"
       />
 
@@ -133,32 +115,30 @@ export default function Home() {
                 The system behind your next local website.
               </h1>
               <p className="mt-7 max-w-2xl text-balance text-base leading-7 text-white/58 md:text-lg md:leading-8">
-                Scan an existing business. Recover what matters. Publish a
-                focused website built for its trade—not another blank template
-                wearing different colours.
+                One workspace to scan an existing business, recover what
+                matters, and publish a focused website built for its trade—not
+                another blank template wearing different colours.
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  href="/create"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-white/82 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                >
+                  Build a local site
+                  <ArrowRight className="size-4" />
+                </Link>
                 {primaryNiche?.marketing.domain ? (
                   <a
                     href={`https://${primaryNiche.marketing.domain}`}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-white/82 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/16 bg-white/[0.035] px-5 text-sm font-medium text-white transition-colors hover:border-white/28 hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                   >
                     Explore {primaryNiche.marketing.brand.name}
                     <ArrowUpRight className="size-4" />
                   </a>
                 ) : null}
-                <a
-                  href={REPO_URL}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/16 bg-white/[0.035] px-5 text-sm font-medium text-white transition-colors hover:border-white/28 hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-                >
-                  <Code2 className="size-4 text-[#ff775f]" />
-                  View source
-                </a>
               </div>
 
               <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-[0.08em] text-white/58">
@@ -235,9 +215,12 @@ export default function Home() {
 
           <div className="border-t border-white/10 bg-black/30">
             <div className="mx-auto grid max-w-7xl divide-y divide-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-              <Metric value={liveNiches.length} label="live niche product" />
+              <Metric value={products.launched.length} label="live niche product" />
               <Metric value={themes.length} label="restaurant theme systems" />
-              <Metric value={niches.length} label="verticals in the registry" />
+              <Metric
+                value={products.registeredCount}
+                label="verticals in the registry"
+              />
             </div>
           </div>
         </section>
@@ -250,8 +233,8 @@ export default function Home() {
               copy="Cornershopdev stays behind the curtain. Each niche gets the language, workflows, themes, and domain its customers already understand."
             />
 
-            <div className="mt-12 grid gap-4 lg:grid-cols-2">
-              {niches.map(({ slug, marketing, status }) => (
+            <div className="mt-12 grid gap-4">
+              {products.launched.map(({ slug, marketing }) => (
                 <article
                   key={slug}
                   className="group flex min-h-[360px] flex-col border border-white/10 bg-white/[0.025] p-6 transition-colors hover:border-white/20 hover:bg-white/[0.04] sm:p-8"
@@ -281,14 +264,8 @@ export default function Home() {
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-2 border border-white/10 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-white/55">
-                      <span
-                        className={
-                          status === "live"
-                            ? styles.statusDot
-                            : "size-1.5 rounded-full bg-white/28"
-                        }
-                      />
-                      {status}
+                      <span className={styles.statusDot} />
+                      live
                     </span>
                   </div>
 
@@ -310,15 +287,7 @@ export default function Home() {
                         Visit product
                         <ArrowUpRight className="size-3.5" />
                       </a>
-                    ) : (
-                      <Link
-                        href={`/niche/${slug}`}
-                        className="inline-flex items-center gap-2 font-medium text-white transition-colors hover:text-white/72"
-                      >
-                        Preview the vertical
-                        <ArrowRight className="size-3.5" />
-                      </Link>
-                    )}
+                    ) : null}
                     {marketing.themeGallery ? (
                       <Link
                         href={marketing.themeGallery.href}
@@ -332,6 +301,33 @@ export default function Home() {
                 </article>
               ))}
             </div>
+
+            {products.next ? (
+              <aside className="mt-4 grid gap-6 border border-dashed border-white/12 bg-white/[0.015] px-6 py-6 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:px-8">
+                <span className="grid size-11 place-items-center rounded-xl border border-white/12 bg-white/[0.035] font-mono text-[11px] font-semibold text-white/72">
+                  {products.next.marketing.brand.initials}
+                </span>
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#ff775f]">
+                    Next niche · in development
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <h3 className="text-lg font-semibold tracking-[-0.025em] text-white">
+                      {products.next.marketing.brand.name}
+                    </h3>
+                    <span className="text-sm text-white/52">
+                      Built for {products.next.marketing.audience}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
+                    {products.next.marketing.tagline}
+                  </p>
+                </div>
+                <span className="w-fit border border-white/10 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-white/52">
+                  No public preview yet
+                </span>
+              </aside>
+            ) : null}
           </div>
         </section>
 

@@ -40,6 +40,15 @@ export const restaurantMarketing = {
     submitLabel: "Show my preview",
     pendingLabel: "Opening your restaurant",
   },
+  signIn: {
+    title: "Open your restaurant.",
+    description:
+      "Enter the owner email used when the website was claimed. No password needed.",
+    emailPlaceholder: "owner@restaurant.com",
+    emptyPrompt: "No site yet?",
+    createLabel: "Build a preview",
+    createHref: "/create?vertical=restaurant",
+  },
   themeGallery: {
     href: "/themes/restaurant",
     label: "Browse themes",
