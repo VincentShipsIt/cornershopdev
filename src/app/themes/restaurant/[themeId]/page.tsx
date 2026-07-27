@@ -6,6 +6,7 @@ import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaura
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { restaurantThemeGallerySurface } from "@/lib/theme-gallery-surface";
 import {
   restaurantThemeIdSchema,
   type RestaurantThemeId,
@@ -16,7 +17,8 @@ import {
   listRestaurantThemeManifests,
 } from "@/lib/site-themes/restaurant/registry";
 import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
-import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
+import { resolveRequestOrigin } from "@/lib/verticals/request-site";
+import styles from "../theme-gallery.module.css";
 
 export const dynamicParams = false;
 
@@ -37,11 +39,12 @@ export async function generateMetadata({
   const id = parseThemeId((await params).themeId);
   if (!id) return {};
   const manifest = getRestaurantThemeManifest(id);
+  const surface = restaurantThemeGallerySurface(await resolveRequestOrigin());
   return {
-    title: { absolute: `${manifest.name} theme | Restofront` },
+    title: { absolute: `${manifest.name} theme | ${surface.brand.name}` },
     description: manifest.description,
     alternates: {
-      canonical: `https://restofront.com/themes/restaurant/${manifest.id}`,
+      canonical: `${surface.canonicalOrigin}/themes/restaurant/${manifest.id}`,
     },
   };
 }
@@ -60,11 +63,13 @@ export default async function RestaurantThemeDetailPage({
     fixture.attributes.themeSelection,
   );
   if (!selection) notFound();
+  const surface = restaurantThemeGallerySurface(await resolveRequestOrigin());
 
   return (
-    <>
+    <div className={surface.inverse ? styles.factorySurface : undefined}>
       <SiteHeader
-        brand={{ ...restaurantMarketing.brand, href: "/" }}
+        brand={{ ...surface.brand, href: "/" }}
+        inverse={surface.inverse}
         links={[
           { href: "/themes/restaurant", label: "All themes" },
           { href: "#fit", label: "Fit" },
@@ -73,7 +78,9 @@ export default async function RestaurantThemeDetailPage({
         createHref="/create?vertical=restaurant"
       />
       <main>
-        <section className="paper-grid border-b">
+        <section
+          className={`${surface.inverse ? styles.factoryGrid : "paper-grid"} border-b`}
+        >
           <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-24">
             <Link
               href="/themes/restaurant"
@@ -187,6 +194,6 @@ export default async function RestaurantThemeDetailPage({
           </div>
         </section>
       </main>
-    </>
+    </div>
   );
 }
