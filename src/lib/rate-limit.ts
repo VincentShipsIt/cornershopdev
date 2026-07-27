@@ -140,12 +140,20 @@ export function limitClaimInvitationRequest(
   });
 }
 
-export function limitClaimCheckout(
-  request: Request,
-): Promise<RateLimitResult> {
+export function limitClaimCheckout(request: Request): Promise<RateLimitResult> {
   return limitByIp(request, {
     namespace: "claim-checkout",
     limit: 10,
+    windowMs,
+  });
+}
+
+export function limitTranslationRegeneration(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "translation-regeneration",
+    limit: 12,
     windowMs,
   });
 }
