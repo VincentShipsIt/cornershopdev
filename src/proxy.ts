@@ -45,6 +45,13 @@ export async function proxy(request: NextRequest) {
   upstreamHeaders.delete(LIVE_SITE_SLUG_HEADER);
   upstreamHeaders.delete(LIVE_SITE_VERSION_HEADER);
 
+  // Container and external health probes do not carry a public hostname. Let
+  // the route handlers enforce their own liveness/readiness policy before any
+  // custom-domain lookup can turn the probe into an unknown-host 404.
+  if (request.nextUrl.pathname.startsWith("/api/health/")) {
+    return NextResponse.next({ request: { headers: upstreamHeaders } });
+  }
+
   const hostname = requestHostname(request.headers);
   if (!hostname || platformHostnames().has(hostname)) {
     const response = NextResponse.next({
