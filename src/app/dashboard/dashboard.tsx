@@ -18,7 +18,6 @@ import {
   LoaderCircle,
   Mail,
   MoreHorizontal,
-  Plus,
   Palette,
   RefreshCcw,
   RotateCcw,

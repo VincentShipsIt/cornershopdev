@@ -68,7 +68,10 @@ function adapter({
   return {
     isDatabaseConfigured: () => true,
     getSession: async () => ({
+      id: "session_1",
       userId: "owner_1",
+      purpose: "SITE",
+      organizationId: "org_1",
       siteSlug: "osteria-luna",
     }),
     findSiteForMember: async () => {
