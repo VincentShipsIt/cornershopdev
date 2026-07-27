@@ -103,7 +103,7 @@ export function scoreRestaurantThemes(
 
 function resolvedSelection(
   input: RestaurantAiThemeOutput,
-  source: "ai" | "deterministic",
+  source: "ai" | "deterministic" | "owner",
 ): RestaurantThemeSelection {
   const manifest = getRestaurantThemeManifest(input.themeId);
   return restaurantThemeSelectionSchema.parse({
@@ -166,6 +166,52 @@ export function selectRestaurantTheme(
   return parsed.success
     ? resolvedSelection(parsed.data, "ai")
     : selectDeterministicRestaurantTheme(profile);
+}
+
+/**
+ * Converts an owner choice into the same closed, versioned contract used by
+ * automatic selection. Tokens always come from the registered theme manifest;
+ * the dashboard can choose a renderer, but it cannot smuggle arbitrary style
+ * values into the public site.
+ */
+export function selectOwnerRestaurantTheme(
+  profileInput: RestaurantDesignProfile | undefined,
+  themeId: RestaurantThemeId,
+): RestaurantThemeSelection {
+  const profile =
+    restaurantDesignProfileSchema.safeParse(profileInput).data ??
+    DEFAULT_RESTAURANT_DESIGN_PROFILE;
+  const automatic = selectDeterministicRestaurantTheme(profile);
+  const alternatives = [
+    automatic.themeId,
+    ...automatic.alternatives,
+  ].filter((candidate) => candidate !== themeId);
+  const [firstAlternative, secondAlternative] = alternatives;
+  if (!firstAlternative || !secondAlternative) {
+    throw new Error(
+      "Owner theme selection requires at least three registered themes",
+    );
+  }
+
+  return resolvedSelection(
+    {
+      themeId,
+      confidence: 1,
+      reasons: ["Selected explicitly by the restaurant owner"],
+      alternatives: [firstAlternative, secondAlternative],
+      tokens: {},
+    },
+    "owner",
+  );
+}
+
+export function restoreAutomaticRestaurantTheme(
+  profileInput: RestaurantDesignProfile | undefined,
+): RestaurantThemeSelection {
+  const profile =
+    restaurantDesignProfileSchema.safeParse(profileInput).data ??
+    DEFAULT_RESTAURANT_DESIGN_PROFILE;
+  return selectDeterministicRestaurantTheme(profile);
 }
 
 /**

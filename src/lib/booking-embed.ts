@@ -31,11 +31,20 @@ export function resolveBookingEmbed(
   vertical: VerticalId,
   integration: SiteIntegrationView,
 ): ResolvedBookingEmbed | null {
-  if (integration.type !== "booking") return null;
+  if (!integration.enabled || integration.type !== "booking") return null;
 
   const config = resolveVerticalConfig(vertical);
+  let hostname: string;
+  try {
+    hostname = new URL(integration.url).hostname;
+  } catch {
+    return null;
+  }
   const provider = config.providers.find(
-    (candidate) => candidate.embed && candidate.pattern.test(integration.url),
+    (candidate) =>
+      candidate.embed &&
+      (candidate.hostnamePattern?.test(hostname) ??
+        candidate.pattern.test(hostname)),
   );
   const embed = provider?.embed;
   if (!provider || !embed) return null;

@@ -17,6 +17,26 @@ encrypted SSM parameters on the EC2 host.
 | Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
 | Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
 | Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
+| Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
+
+Preview database provisioning is still an external infrastructure gate. Do not
+mark it complete because a Preview URL exists in a local file or CI placeholder.
+After the managed Preview database is created, compare the two reviewed runtime
+values without printing either value:
+
+```bash
+bun run operator:verify-environment-isolation
+```
+
+Inject `PRODUCTION_DATABASE_URL` and `PREVIEW_DATABASE_URL` into that process
+from the approved secret stores; do not put either value in shell history. The
+command first compares normalized host, port, database, and schema identifiers,
+then opens read-only transactions and compares the observed server/database
+identities. It rejects credential-only differences, local hosts, malformed
+values, matching configuration, matching observed identities, and unreachable
+targets. Attach its hash-only JSON output to the release record; never attach
+the input URLs. This proves database identity separation, not provider backup
+policy.
 
 After configuring production, redeploy it and request `/api/health/ready`. The
 route returns `200` only when the runtime services and billing configuration are
@@ -39,6 +59,63 @@ The route fails closed when the token is missing or invalid. Each application
 instance also coalesces concurrent probes and caches the aggregate result for
 five seconds to avoid amplifying health checks into the database, Redis, and
 S3 providers.
+
+Readiness also checks the operator-alert configuration and durable queue. An
+exhausted alert or a due failed delivery returns `503` with instructions to run
+the dispatcher; recipients and provider errors are never returned.
+
+## Image storage round trip
+
+Bucket reachability alone does not prove the application write/read path.
+After explicit production authorization, execute:
+
+```bash
+docker exec cornershopdev \
+  bun run operator:verify-image-storage --environment production --execute
+```
+
+The command writes separate `original-hero` and enhanced `hero` fixtures through
+`storeSiteImage`, retrieves both with the configured S3 client, verifies their
+exact SHA-256 content, and deletes both in a `finally` cleanup. Output contains
+only fixture labels, digests, cleanup status, environment, and timestamp—never
+bucket names, keys, URLs, credentials, or provider error bodies. A run without
+`--execute` performs no write. Do not claim the production round trip until the
+real command succeeds and cleanup is recorded as `completed`.
+
+## Runtime operator alerts
+
+Checkout webhook infrastructure failures, persisted-draft or server publication
+failures, and failed public `/api/health/live` checks create a durable
+`OperatorAlert`. The fingerprint deduplicates each incident for 15 minutes.
+Delivery uses the configured factory sender and `OPERATOR_ALERT_EMAILS`, leases
+each row against concurrent workers, and stops after three attempts (one, five,
+and fifteen-minute retry spacing). Recipient addresses and provider responses
+are absent from alert rows, readiness responses, and command output.
+
+Production deploys install a local systemd timer named
+`cornershopdev-public-health.timer`. Every two minutes it starts the exact
+deployed image with the encrypted environment file, retries due alerts, and
+checks the public HTTPS endpoint. This uses the existing host and providers; it
+creates no separate billable monitoring service.
+
+Useful commands:
+
+```bash
+systemctl status cornershopdev-public-health.timer
+journalctl -u cornershopdev-public-health.service --since '30 minutes ago'
+docker exec cornershopdev bun run operator:dispatch-alerts
+```
+
+The repository owner owns primary response; the release operator is backup.
+An `EXHAUSTED` row or alerting readiness failure is actionable: restore Resend
+configuration/provider availability, run the dispatcher, confirm `DELIVERED`,
+then document the incident. Do not reset attempt counters or delete the row to
+make readiness green.
+
+The code path is not evidence of delivery. Exercise each of the three alert
+kinds in an authorized Preview environment, then one controlled production
+public-health alert. Record timestamps and receipt without including recipient
+addresses. Until those exercises occur, keep the acceptance item open.
 
 ## Database release procedure
 
@@ -138,6 +215,11 @@ candidate and leaves the current production container running.
   in place.
 - S3 versioning protects image originals and derivatives from accidental
   replacement. Retain authentic source URLs and provenance in PostgreSQL.
+- PostgreSQL backups include `OperatorAlert`; restore drills must confirm one
+  delivered and one exhausted fixture retain attempts, timestamps, and status.
+- After restore, run the alert dispatcher with delivery disabled until DNS and
+  database identity are confirmed, preventing stale pending alerts from being
+  mailed from a drill environment.
 
 ## Credential ownership and rotation
 
@@ -156,6 +238,13 @@ suspected exposure or an operator access change:
 4. Revoke the old credential only after production is healthy.
 5. Record the date, owner, affected environment, and verification result without
    recording the credential value.
+
+For `RESEND_API_KEY` or `OPERATOR_ALERT_EMAILS`, keep the old delivery path
+active while the replacement is configured, dispatch all due rows, deploy and
+confirm alerting readiness, then revoke the old key. For database rotation,
+re-run the non-secret environment-isolation command after both environments are
+updated. For S3 credentials or policies, re-run the cleanup-safe round trip in
+Preview first and Production only with explicit approval.
 
 ## Deployment
 

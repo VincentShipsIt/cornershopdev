@@ -9,7 +9,10 @@ import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
+import { getSitePublicationHistory } from "@/lib/site-publication";
+import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
+import { listAccountWorkspaces } from "@/lib/workspaces";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -24,18 +27,31 @@ export default async function DashboardPage({
   const query = await searchParams;
   const session = await getCurrentSession();
   if (!session && query.demo !== "1") redirect("/sign-in");
-  if (session && !session.siteSlug) redirect("/admin");
+  if (session?.purpose === "WORKSPACE_SELECTION") redirect("/workspace/select");
+  if (session?.purpose === "ADMIN") redirect("/admin");
+  if (session && session.purpose !== "SITE") redirect("/sign-in");
 
   const access =
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
-  const [draft, analyticsSummary, bookingInbox, billingAccess] = access?.ok
+  const [
+    draft,
+    analyticsSummary,
+    bookingInbox,
+    billingAccess,
+    publicationHistory,
+    workspaces,
+    sourceMonitoring,
+  ] = access?.ok
     ? await Promise.all([
         getRestaurantDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
         getSiteBillingAccess(access.site.id),
+        getSitePublicationHistory(access.site.id),
+        listAccountWorkspaces(access.session.userId),
+        getSourceMonitoringDashboard(access.site.id),
       ])
     : [
         sampleRestaurant,
@@ -47,6 +63,18 @@ export default async function DashboardPage({
           truncated: false,
         },
         null,
+        [],
+        [],
+        {
+          cadenceDays: null,
+          nextRunAt: null,
+          lastRunAt: null,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastFailureCode: null,
+          latestRun: null,
+          suggestions: [],
+        },
       ];
 
   return (
@@ -59,6 +87,12 @@ export default async function DashboardPage({
       analyticsSummary={analyticsSummary}
       bookingInbox={bookingInbox}
       billingAccess={billingAccess}
+      publicationHistory={publicationHistory.map((item) => ({
+        ...item,
+        publishedAt: item.publishedAt.toISOString(),
+      }))}
+      canSwitchWorkspace={workspaces.length > 1}
+      sourceMonitoring={sourceMonitoring}
     />
   );
 }

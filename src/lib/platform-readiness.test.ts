@@ -20,6 +20,7 @@ const configuredEnvironment = {
   STRIPE_GROWTH_PRICE_ID: "price_growth",
   RESEND_API_KEY: "re_test_configured",
   CLAIM_TOKEN_SECRET: "a-secure-test-secret-that-is-long-enough",
+  OPERATOR_ALERT_EMAILS: "ops@example.com",
 };
 
 function probes(): ReadinessProbes {
@@ -28,6 +29,7 @@ function probes(): ReadinessProbes {
     rateLimit: mock(async () => {}),
     storage: mock(async () => {}),
     billing: mock(async () => {}),
+    alerting: mock(async () => {}),
   };
 }
 
@@ -64,11 +66,18 @@ describe("checkPlatformReadiness", () => {
         message:
           "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
       },
+      {
+        service: "alerting",
+        status: "misconfigured",
+        message:
+          "Set OPERATOR_ALERT_EMAILS and RESEND_API_KEY for operator incident delivery.",
+      },
     ]);
     expect(serviceProbes.database).not.toHaveBeenCalled();
     expect(serviceProbes.rateLimit).not.toHaveBeenCalled();
     expect(serviceProbes.storage).not.toHaveBeenCalled();
     expect(serviceProbes.billing).not.toHaveBeenCalled();
+    expect(serviceProbes.alerting).not.toHaveBeenCalled();
   });
 
   it("reports configured and reachable services as ready", async () => {
@@ -85,6 +94,7 @@ describe("checkPlatformReadiness", () => {
     expect(serviceProbes.database).toHaveBeenCalledTimes(1);
     expect(serviceProbes.rateLimit).toHaveBeenCalledTimes(1);
     expect(serviceProbes.storage).toHaveBeenCalledTimes(1);
+    expect(serviceProbes.alerting).toHaveBeenCalledTimes(1);
   });
 
   it("requires invitation email delivery for billing readiness", async () => {
@@ -95,13 +105,16 @@ describe("checkPlatformReadiness", () => {
     );
 
     expect(result.status).toBe("not_ready");
-    expect(result.services.at(-1)).toEqual({
+    expect(
+      result.services.find((service) => service.service === "billing"),
+    ).toEqual({
       service: "billing",
       status: "misconfigured",
       message:
         "Set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, and a 32-character CLAIM_TOKEN_SECRET.",
     });
     expect(serviceProbes.billing).not.toHaveBeenCalled();
+    expect(serviceProbes.alerting).not.toHaveBeenCalled();
   });
 
   it("fails deployed environments that point at a local database", async () => {
@@ -169,6 +182,31 @@ describe("checkPlatformReadiness", () => {
     });
     expect(JSON.stringify(result)).not.toContain(
       configuredEnvironment.S3_BUCKET,
+    );
+  });
+
+  it("reports an actionable blocked alert queue without exposing recipients", async () => {
+    const serviceProbes = probes();
+    serviceProbes.alerting = mock(async () => {
+      throw new Error(`delivery failed for ${configuredEnvironment.OPERATOR_ALERT_EMAILS}`);
+    });
+
+    const result = await checkPlatformReadiness(
+      configuredEnvironment,
+      serviceProbes,
+    );
+    const alerting = result.services.find(
+      (service) => service.service === "alerting",
+    );
+
+    expect(alerting).toEqual({
+      service: "alerting",
+      status: "unavailable",
+      message:
+        "Alert delivery is blocked. Run the dispatcher and inspect exhausted alerts.",
+    });
+    expect(JSON.stringify(result)).not.toContain(
+      configuredEnvironment.OPERATOR_ALERT_EMAILS,
     );
   });
 });

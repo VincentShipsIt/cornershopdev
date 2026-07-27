@@ -20,6 +20,12 @@ enum SiteStatus {
   PAUSED
 }
 
+enum DomainTlsStatus {
+  PENDING
+  READY
+  ERROR
+}
+
 enum BookingRequestStatus {
   NEW
   NOTIFIED
@@ -68,9 +74,59 @@ enum AnalyticsEventType {
   LEAD_CREATED
 }
 
+enum OperatorAlertKind {
+  CHECKOUT_WEBHOOK_FAILURE
+  PUBLISH_FAILURE
+  PUBLIC_SITE_HEALTH_FAILURE
+}
+
+enum OperatorAlertStatus {
+  PENDING
+  DELIVERED
+  EXHAUSTED
+}
+
 enum ClaimProofMethod {
   DOMAIN_EMAIL
   OPERATOR_APPROVAL
+}
+
+enum AuthLinkDestination {
+  ADMIN
+  WORKSPACE
+}
+
+enum AuthDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AuthSessionPurpose {
+  ADMIN
+  WORKSPACE_SELECTION
+  SITE
+}
+
+enum SourceMonitorRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum SourceMonitorSuggestionField {
+  MENU
+  CONTACT
+  HOURS
+  LINKS
+}
+
+enum SourceMonitorSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
 }
 
 model User {
@@ -81,6 +137,8 @@ model User {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   memberships  Membership[]
+  authMagicLinks AuthMagicLink[]
+  authSessions   AuthSession[]
 }
 
 model Organization {
@@ -91,6 +149,7 @@ model Organization {
   memberships   Membership[]
   sites         Site[]
   subscriptions Subscription[]
+  authSessions   AuthSession[]
 }
 
 model Membership {
@@ -105,8 +164,8 @@ model Membership {
 }
 
 model Site {
-  id                     String            @id @default(cuid())
-  slug                   String            @unique
+  id                     String             @id @default(cuid())
+  slug                   String             @unique
   name                   String
   eyebrow                String?
   description            String?
@@ -122,11 +181,13 @@ model Site {
   autoEnhanceImages      Boolean           @default(true)
   defaultLocale          String            @default("en")
   translations           Json              @default("[]")
+  businessHours          Json              @default("[]")
   draftTheme             Json              @default("{}")
   draftThemeVersion      String            @default("legacy-v1")
   draftPalette           Json              @default("{}")
   vertical               Vertical          @default(RESTAURANT)
   attributes             Json              @default("{}")
+  draftRevision          Int               @default(0)
   status                 SiteStatus        @default(PROSPECT)
   publishedSiteVersionId String?           @unique
   publishedSiteVersion   SiteVersion?      @relation("PublishedSiteVersion", fields: [publishedSiteVersionId], references: [id], onDelete: SetNull)
@@ -144,6 +205,69 @@ model Site {
   auditEvents            AuditEvent[]
   bookingRequests        BookingRequest[]
   analyticsEvents        AnalyticsEvent[]
+  authSessions           AuthSession[]
+  sourceMonitorState       SourceMonitorState?
+  sourceMonitorRuns        SourceMonitorRun[]
+  sourceMonitorSuggestions SourceMonitorSuggestion[]
+}
+
+model AuthMagicLink {
+  id                String             @id @default(cuid())
+  tokenHash         String             @unique
+  destination       AuthLinkDestination
+  brandVertical     Vertical?
+  deliveryStatus    AuthDeliveryStatus @default(PENDING)
+  deliveryAttempts  Int                @default(0)
+  retryCount        Int                @default(0)
+  providerMessageId String?
+  failureCode       String?
+  expiresAt         DateTime
+  deliveredAt       DateTime?
+  lastAttemptAt     DateTime?
+  consumedAt        DateTime?
+  revokedAt         DateTime?
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([deliveryStatus, createdAt])
+}
+
+model AuthSession {
+  id             String             @id @default(cuid())
+  tokenHash      String             @unique
+  purpose        AuthSessionPurpose
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteId         String?
+  site           Site?              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([userId, expiresAt])
+  @@index([siteId, expiresAt])
+}
+
+model AuthEvent {
+  id            String   @id @default(cuid())
+  type          String
+  actor         String?
+  subjectUserId String?
+  magicLinkId   String?
+  sessionId     String?
+  siteId        String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([subjectUserId, createdAt])
+  @@index([magicLinkId, createdAt])
+  @@index([sessionId, createdAt])
 }
 
 model CatalogSection {
@@ -231,15 +355,18 @@ model SiteVersion {
 }
 
 model Domain {
-  id                String    @id @default(cuid())
-  hostname          String    @unique
-  verified          Boolean   @default(false)
-  verificationToken String    @unique
+  id                String          @id @default(cuid())
+  hostname          String          @unique
+  verified          Boolean         @default(false)
+  verificationToken String          @unique
   verifiedAt        DateTime?
+  tlsStatus         DomainTlsStatus @default(PENDING)
+  tlsCheckedAt      DateTime?
+  tlsFailureCode    String?
   siteId            String
-  site              Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  site              Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 }
 
 model ClaimInvitation {
@@ -303,6 +430,30 @@ model AuditEvent {
   @@index([siteId, createdAt])
 }
 
+model OperatorAlert {
+  id                 String              @id @default(cuid())
+  fingerprint        String              @unique
+  kind               OperatorAlertKind
+  status             OperatorAlertStatus @default(PENDING)
+  title              String
+  message            String
+  context            Json?
+  occurrenceCount    Int                 @default(1)
+  attempts           Int                 @default(0)
+  firstOccurredAt    DateTime            @default(now())
+  lastOccurredAt     DateTime            @default(now())
+  nextAttemptAt      DateTime            @default(now())
+  deliveryLeaseUntil DateTime?
+  deliveryLeaseToken String?
+  deliveredAt        DateTime?
+  lastFailureCode    String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([kind, lastOccurredAt])
+}
+
 model BookingRequest {
   id          String               @id @default(cuid())
   siteId      String
@@ -334,4 +485,68 @@ model AnalyticsEvent {
 
   @@index([siteId, occurredAt, type])
   @@index([occurredAt])
+}
+
+model SourceMonitorState {
+  siteId          String    @id
+  site            Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  cadenceDays     Int
+  nextRunAt       DateTime
+  lastRunAt       DateTime?
+  lastSuccessAt   DateTime?
+  lastFailureAt   DateTime?
+  lastFailureCode String?
+  lastRunId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([nextRunAt])
+}
+
+model SourceMonitorRun {
+  id                      String                    @id @default(cuid())
+  idempotencyKey          String                    @unique
+  scheduledFor            DateTime
+  status                  SourceMonitorRunStatus    @default(QUEUED)
+  workflowRunId           String?                   @unique
+  startedAt               DateTime?
+  completedAt             DateTime?
+  errorCode               String?
+  checkedSourceCount      Int                       @default(0)
+  failedSourceCount       Int                       @default(0)
+  suggestionCount         Int                       @default(0)
+  notificationSentAt      DateTime?
+  notificationFailureCode String?
+  siteId                  String
+  site                    Site                      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  suggestions             SourceMonitorSuggestion[]
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  @@index([siteId, scheduledFor])
+  @@index([status, createdAt])
+}
+
+model SourceMonitorSuggestion {
+  id             String                        @id @default(cuid())
+  fingerprint    String
+  field          SourceMonitorSuggestionField
+  path           String
+  currentValue   Json
+  suggestedValue Json
+  editedValue    Json?
+  evidence       Json
+  status         SourceMonitorSuggestionStatus @default(PENDING)
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  runId          String
+  run            SourceMonitorRun              @relation(fields: [runId], references: [id], onDelete: Cascade)
+  siteId         String
+  site           Site                          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  @@unique([runId, fingerprint])
+  @@index([siteId, status, createdAt])
 }

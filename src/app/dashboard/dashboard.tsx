@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -10,6 +10,7 @@ import {
   Copy,
   CreditCard,
   ExternalLink,
+  Eye,
   Globe2,
   ImageIcon,
   LayoutDashboard,
@@ -17,19 +18,26 @@ import {
   LoaderCircle,
   Mail,
   MoreHorizontal,
-  Plus,
+  Palette,
   RefreshCcw,
+  RotateCcw,
   Rocket,
   Save,
   Settings,
   Sparkles,
+  Trash2,
   TrendingUp,
+  TriangleAlert,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
+import { AccountActions } from "@/components/account-actions";
 import {
   ClientAnalyticsPanel,
   ClientBookingRequestInbox,
 } from "@/components/client-workspace";
+import { RestaurantIntegrationEditor } from "@/components/restaurant-integration-editor";
+import { RestaurantMenuEditor } from "@/components/restaurant-menu-editor";
+import { SourceMonitoringPanel } from "@/components/source-monitoring-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,16 +50,52 @@ import type { BrandIdentity } from "@/lib/brand";
 import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
 import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
 import type { BillingAccess } from "@/lib/billing-access";
+import type { SitePublicationHistoryItem } from "@/lib/site-publication";
+import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
+import type { SourceMonitoringDashboardDto } from "@/lib/source-monitoring";
 import {
-  formatPrice,
+  parseRestaurantThemeSelection,
+  restoreAutomaticRestaurantTheme,
+  selectOwnerRestaurantTheme,
+} from "@/lib/site-themes/restaurant/selection";
+import {
+  restaurantDraftSchema,
   type RestaurantDraft,
 } from "@/lib/restaurant";
+import {
+  applyRestaurantIntegrationMutation,
+  validateRestaurantIntegrations,
+  type RestaurantIntegrationMutation,
+} from "@/lib/restaurant-integration-editor";
+import {
+  applyRestaurantMenuMutation,
+  hasUnreviewedRestaurantTranslations,
+  markRestaurantTranslationReviewed,
+  updateRestaurantTranslation,
+  validateRestaurantMenuDraft,
+  type RestaurantMenuMutation,
+} from "@/lib/restaurant-menu-editor";
 
 type DomainSetup = {
   hostname: string;
+  hostnames: string[];
   attached: boolean;
   verified: boolean;
   records: Array<{ type: string; name: string; value: string }>;
+  tls: {
+    status: "PENDING" | "READY" | "ERROR";
+    checkedAt: string | null;
+    message: string;
+  };
+  siteStatus: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
+  previewPath: string;
+};
+
+type ClientPublicationHistoryItem = Omit<
+  SitePublicationHistoryItem,
+  "publishedAt"
+> & {
+  publishedAt: string;
 };
 
 /**
@@ -68,6 +112,9 @@ export function Dashboard({
   analyticsSummary,
   bookingInbox,
   billingAccess,
+  publicationHistory: initialPublicationHistory,
+  canSwitchWorkspace,
+  sourceMonitoring,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -77,24 +124,107 @@ export function Dashboard({
   analyticsSummary: AnalyticsSummaryDto;
   bookingInbox: BookingRequestInboxDto;
   billingAccess: BillingAccess | null;
+  publicationHistory: ClientPublicationHistoryItem[];
+  canSwitchWorkspace: boolean;
+  sourceMonitoring: SourceMonitoringDashboardDto;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedRevision, setSavedRevision] = useState<number | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [domain, setDomain] = useState("");
   const [domainSetup, setDomainSetup] = useState<DomainSetup | null>(null);
   const [domainError, setDomainError] = useState<string | null>(null);
+  const [domainNotice, setDomainNotice] = useState<string | null>(null);
   const [domainLoading, setDomainLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [themeDirty, setThemeDirty] = useState(false);
+  const [rollbackLoading, setRollbackLoading] = useState<string | null>(null);
+  const [publicationHistory, setPublicationHistory] = useState(
+    initialPublicationHistory,
+  );
+
+  const themeManifests = listRestaurantThemeManifests();
+  const currentThemeSelection = parseRestaurantThemeSelection(
+    draft.themeSelection,
+  );
+  const automaticThemeSelection = restoreAutomaticRestaurantTheme(
+    draft.designProfile,
+  );
+  const [menuDirty, setMenuDirty] = useState(false);
+  const [menuSaveError, setMenuSaveError] = useState<string | null>(null);
+  const [menuValidationIssues, setMenuValidationIssues] = useState<
+    ReturnType<typeof validateRestaurantMenuDraft>
+  >([]);
+  const [menuUndoStack, setMenuUndoStack] = useState<RestaurantDraft[]>([]);
+  const [integrationDirty, setIntegrationDirty] = useState(false);
+  const [integrationSaveError, setIntegrationSaveError] = useState<
+    string | null
+  >(null);
+  const [integrationValidationIssues, setIntegrationValidationIssues] =
+    useState<ReturnType<typeof validateRestaurantIntegrations>>([]);
+  const [integrationUndoStack, setIntegrationUndoStack] = useState<
+    RestaurantDraft[]
+  >([]);
+  const [regeneratingLocale, setRegeneratingLocale] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (demo) return;
+    let active = true;
+    void fetch(`/api/domains?siteSlug=${encodeURIComponent(draft.slug)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const result = (await response.json()) as {
+          domains?: DomainSetup[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(result.error ?? "Could not load domain");
+        if (!active || !result.domains?.[0]) return;
+        setDomainSetup(result.domains[0]);
+        setDomain(result.domains[0].hostname);
+      })
+      .catch((caught) => {
+        if (active) {
+          setDomainError(
+            caught instanceof Error ? caught.message : "Could not load domain",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [demo, draft.slug]);
 
   async function save(): Promise<boolean> {
+    const validationIssues = validateRestaurantMenuDraft(draft);
+    const integrationIssues = validateRestaurantIntegrations(draft);
+    setMenuValidationIssues(validationIssues);
+    setIntegrationValidationIssues(integrationIssues);
+    if (validationIssues.length > 0 || integrationIssues.length > 0) {
+      setMenuSaveError(
+        validationIssues.length > 0
+          ? "The menu contains invalid or incomplete fields"
+          : "Fix the integration labels before saving this draft",
+      );
+      setIntegrationSaveError(
+        integrationIssues.length > 0
+          ? "One or more external links are invalid or incomplete"
+          : "Fix the invalid menu fields before saving these links",
+      );
+      return false;
+    }
     setSaving(true);
     setSaved(false);
     setPublishError(null);
+    setMenuSaveError(null);
+    setIntegrationSaveError(null);
     try {
       if (!demo) {
         const response = await fetch(`/api/sites/${draft.slug}`, {
@@ -102,15 +232,28 @@ export function Dashboard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
         });
-        if (!response.ok) throw new Error("Save failed");
+        const result = (await response.json()) as {
+          error?: string;
+          revision?: number;
+        };
+        if (!response.ok) {
+          throw new Error(result.error ?? "Save failed");
+        }
+        setSavedRevision(result.revision ?? null);
       }
       setSaved(true);
+      setThemeDirty(false);
+      setMenuDirty(false);
+      setIntegrationDirty(false);
+      setMenuValidationIssues([]);
+      setIntegrationValidationIssues([]);
       setPublishedVersion(null);
       return true;
     } catch (caught) {
-      setPublishError(
-        caught instanceof Error ? caught.message : "Save failed",
-      );
+      const message = caught instanceof Error ? caught.message : "Save failed";
+      setPublishError(message);
+      setMenuSaveError(message);
+      setIntegrationSaveError(message);
       return false;
     } finally {
       setSaving(false);
@@ -118,6 +261,12 @@ export function Dashboard({
   }
 
   async function publish() {
+    if (hasUnreviewedRestaurantTranslations(draft)) {
+      setPublishError(
+        "Review every stale or regenerated translation before publishing",
+      );
+      return;
+    }
     const changeSummary = window
       .prompt(
         "Summarize what will change on the public site:",
@@ -143,6 +292,8 @@ export function Dashboard({
       if (!(await save())) return;
       if (demo) {
         setPublishedVersion(1);
+        setMenuUndoStack([]);
+        setIntegrationUndoStack([]);
         return;
       }
 
@@ -153,12 +304,30 @@ export function Dashboard({
       });
       const result = (await response.json()) as {
         error?: string;
-        published?: { version: number };
+        published?: {
+          id: string;
+          version: number;
+          publishedAt: string;
+          theme: { id: string; version: string };
+        };
       };
       if (!response.ok || !result.published) {
         throw new Error(result.error ?? "Publish failed");
       }
       setPublishedVersion(result.published.version);
+      setPublicationHistory((current) => [
+        {
+          id: result.published!.id,
+          version: result.published!.version,
+          publishedAt: result.published!.publishedAt,
+          changeSummary,
+          current: true,
+          theme: result.published!.theme,
+        },
+        ...current.map((item) => ({ ...item, current: false })),
+      ]);
+      setMenuUndoStack([]);
+      setIntegrationUndoStack([]);
     } catch (caught) {
       setPublishError(
         caught instanceof Error ? caught.message : "Publish failed",
@@ -168,9 +337,268 @@ export function Dashboard({
     }
   }
 
+  function selectTheme(themeId: Parameters<typeof selectOwnerRestaurantTheme>[1]) {
+    const selection = selectOwnerRestaurantTheme(
+      draft.designProfile,
+      themeId,
+    );
+    setDraft((current) => ({ ...current, themeSelection: selection }));
+    setSaved(false);
+    setThemeDirty(true);
+    setPublishedVersion(null);
+    setPublishError(null);
+  }
+
+  function restoreAutomaticTheme() {
+    setDraft((current) => ({
+      ...current,
+      themeSelection: restoreAutomaticRestaurantTheme(
+        current.designProfile,
+      ),
+    }));
+    setSaved(false);
+    setThemeDirty(true);
+    setPublishedVersion(null);
+    setPublishError(null);
+  }
+
+  async function rollback(siteVersionId: string) {
+    const target = publicationHistory.find(
+      (item) => item.id === siteVersionId,
+    );
+    if (!target || target.current) return;
+    if (
+      !window.confirm(
+        `Restore the public site to version ${target.version}? Your private draft will not change.`,
+      )
+    ) {
+      return;
+    }
+
+    setRollbackLoading(siteVersionId);
+    setPublishError(null);
+    try {
+      const response = await fetch(`/api/sites/${draft.slug}/rollback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteVersionId }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        published?: {
+          id: string;
+          version: number;
+          publishedAt: string;
+          theme: { id: string; version: string };
+        };
+      };
+      if (!response.ok || !result.published) {
+        throw new Error(result.error ?? "Rollback failed");
+      }
+      setPublishedVersion(result.published.version);
+      setPublicationHistory((current) => [
+        {
+          id: result.published!.id,
+          version: result.published!.version,
+          publishedAt: result.published!.publishedAt,
+          changeSummary: `Rollback to v${target.version}: ${target.changeSummary}`,
+          current: true,
+          theme: result.published!.theme,
+        },
+        ...current.map((item) => ({ ...item, current: false })),
+      ]);
+    } catch (caught) {
+      setPublishError(
+        caught instanceof Error ? caught.message : "Rollback failed",
+      );
+    } finally {
+      setRollbackLoading(null);
+    }
+  }
+
+  function mutateMenu(
+    mutation: RestaurantMenuMutation,
+    destructive = false,
+  ) {
+    try {
+      if (destructive) {
+        setMenuUndoStack((current) => [
+          ...current,
+          structuredClone(draft),
+        ]);
+      }
+      const next = applyRestaurantMenuMutation(draft, mutation);
+      setDraft(next);
+      setMenuDirty(true);
+      setSaved(false);
+      setMenuSaveError(null);
+      setMenuValidationIssues(validateRestaurantMenuDraft(next));
+    } catch (error) {
+      setMenuSaveError(
+        error instanceof Error ? error.message : "Menu change failed",
+      );
+    }
+  }
+
+  function changeTranslation(
+    locale: string,
+    updater: Parameters<typeof updateRestaurantTranslation>[2],
+  ) {
+    const next = updateRestaurantTranslation(draft, locale, updater);
+    setDraft(next);
+    setMenuDirty(true);
+    setSaved(false);
+    setMenuSaveError(null);
+    setMenuValidationIssues(validateRestaurantMenuDraft(next));
+  }
+
+  function reviewTranslation(locale: string) {
+    try {
+      const next = markRestaurantTranslationReviewed(draft, locale);
+      setDraft(next);
+      setMenuDirty(true);
+      setSaved(false);
+      setMenuSaveError(null);
+      setMenuValidationIssues([]);
+    } catch {
+      setMenuSaveError(
+        "Fix the translated menu fields before marking this locale reviewed",
+      );
+    }
+  }
+
+  async function regenerateTranslation(locale: string) {
+    if (menuDirty || integrationDirty) {
+      setMenuSaveError(
+        "Save canonical menu and integration changes before regenerating a translation",
+      );
+      return;
+    }
+    setRegeneratingLocale(locale);
+    setMenuSaveError(null);
+    try {
+      const response = await fetch(
+        `/api/sites/${draft.slug}/translations/${locale}/regenerate`,
+        { method: "POST" },
+      );
+      const result = (await response.json()) as {
+        error?: string;
+        draft?: unknown;
+      };
+      if (!response.ok || !result.draft) {
+        throw new Error(result.error ?? "Translation regeneration failed");
+      }
+      const regenerated = restaurantDraftSchema.parse(result.draft);
+      setDraft((current) => ({
+        ...current,
+        translations: regenerated.translations,
+      }));
+      setSaved(true);
+      setMenuDirty(false);
+      setIntegrationDirty(false);
+      setMenuValidationIssues([]);
+      setIntegrationValidationIssues([]);
+    } catch (error) {
+      setMenuSaveError(
+        error instanceof Error
+          ? error.message
+          : "Translation regeneration failed",
+      );
+    } finally {
+      setRegeneratingLocale(null);
+    }
+  }
+
+  function undoMenuDeletion() {
+    const previous = menuUndoStack.at(-1);
+    if (!previous) return;
+    setDraft(previous);
+    setMenuUndoStack((current) => current.slice(0, -1));
+    setMenuDirty(true);
+    setSaved(false);
+    setMenuSaveError(null);
+    setMenuValidationIssues([]);
+  }
+
+  function mutateIntegration(
+    mutation: RestaurantIntegrationMutation,
+    destructive = false,
+  ) {
+    try {
+      if (destructive) {
+        setIntegrationUndoStack((current) => [
+          ...current,
+          structuredClone(draft),
+        ]);
+      }
+      const next = applyRestaurantIntegrationMutation(draft, mutation);
+      setDraft(next);
+      setIntegrationDirty(true);
+      setSaved(false);
+      setIntegrationSaveError(null);
+      setIntegrationValidationIssues(
+        validateRestaurantIntegrations(next),
+      );
+    } catch (error) {
+      setIntegrationSaveError(
+        error instanceof Error
+          ? error.message
+          : "Integration change failed",
+      );
+    }
+  }
+
+  function changeIntegrationTranslationLabel(
+    locale: string,
+    integrationIndex: number,
+    label: string,
+  ) {
+    const next = updateRestaurantTranslation(
+      draft,
+      locale,
+      (translation) => {
+        translation.integrationLabels[integrationIndex] = label;
+      },
+    );
+    setDraft(next);
+    setIntegrationDirty(true);
+    setSaved(false);
+    setIntegrationSaveError(null);
+    setIntegrationValidationIssues(
+      validateRestaurantIntegrations(next),
+    );
+  }
+
+  function reviewIntegrationTranslation(locale: string) {
+    try {
+      const next = markRestaurantTranslationReviewed(draft, locale);
+      setDraft(next);
+      setIntegrationDirty(true);
+      setSaved(false);
+      setIntegrationSaveError(null);
+      setIntegrationValidationIssues([]);
+    } catch {
+      setIntegrationSaveError(
+        "Fix every translated label before marking this locale reviewed",
+      );
+    }
+  }
+
+  function undoIntegrationRemoval() {
+    const previous = integrationUndoStack.at(-1);
+    if (!previous) return;
+    setDraft(previous);
+    setIntegrationUndoStack((current) => current.slice(0, -1));
+    setIntegrationDirty(true);
+    setSaved(false);
+    setIntegrationSaveError(null);
+    setIntegrationValidationIssues([]);
+  }
+
   async function connectDomain() {
     setDomainLoading(true);
     setDomainError(null);
+    setDomainNotice(null);
     try {
       const response = await fetch("/api/domains", {
         method: "POST",
@@ -185,9 +613,82 @@ export function Dashboard({
       };
       if (!response.ok) throw new Error(result.error ?? "Could not add domain");
       setDomainSetup(result);
+      setDomain(result.hostname);
     } catch (caught) {
       setDomainError(
         caught instanceof Error ? caught.message : "Could not add domain",
+      );
+    } finally {
+      setDomainLoading(false);
+    }
+  }
+
+  async function checkDomain() {
+    if (!domainSetup) return;
+    setDomainLoading(true);
+    setDomainError(null);
+    setDomainNotice(null);
+    try {
+      const response = await fetch(
+        `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as DomainSetup & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Could not check the domain");
+      }
+      setDomainSetup(result);
+    } catch (caught) {
+      setDomainError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not check the domain",
+      );
+    } finally {
+      setDomainLoading(false);
+    }
+  }
+
+  async function removeDomain() {
+    if (
+      !domainSetup ||
+      !window.confirm(
+        `Remove ${domainSetup.hostname}? The public domain will stop routing here and the preview will remain available.`,
+      )
+    ) {
+      return;
+    }
+    setDomainLoading(true);
+    setDomainError(null);
+    setDomainNotice(null);
+    try {
+      const response = await fetch("/api/domains", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hostname: domainSetup.hostname,
+          siteSlug: draft.slug,
+        }),
+      });
+      const result = (await response.json()) as {
+        removed?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !result.removed) {
+        throw new Error(result.error ?? "Could not remove the domain");
+      }
+      setDomainSetup(null);
+      setDomain("");
+      setDomainNotice(
+        "Domain removed. The website is preview-only until another verified domain is connected.",
+      );
+    } catch (caught) {
+      setDomainError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not remove the domain",
       );
     } finally {
       setDomainLoading(false);
@@ -330,6 +831,9 @@ export function Dashboard({
               ? `Published v${publishedVersion}`
               : "Publish"}
           </Button>
+          {!demo ? (
+            <AccountActions canSwitch={canSwitchWorkspace} />
+          ) : null}
         </div>
       </header>
 
@@ -377,6 +881,8 @@ export function Dashboard({
                 ["overview", LayoutDashboard, "Overview"],
                 ["analytics", TrendingUp, "Analytics"],
                 ["leads", Mail, "Leads"],
+                ["design", Palette, "Design"],
+                ["monitoring", RefreshCcw, "Monitoring"],
                 ["menu", BookOpenText, "Menu"],
                 ["imagery", ImageIcon, "Imagery"],
                 ["integrations", Link2, "Integrations"],
@@ -406,6 +912,8 @@ export function Dashboard({
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="leads">Leads</TabsTrigger>
+              <TabsTrigger value="design">Design</TabsTrigger>
+              <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
               <TabsTrigger value="menu">Menu</TabsTrigger>
               <TabsTrigger value="imagery">Imagery</TabsTrigger>
               <TabsTrigger value="integrations">Links</TabsTrigger>
@@ -501,7 +1009,17 @@ export function Dashboard({
               <div className="mt-5 grid gap-5 md:grid-cols-3">
                 <Metric label="Menu items" value={`${draft.menuSections.reduce((sum, section) => sum + section.items.length, 0)}`} detail={`${draft.menuSections.length} sections`} />
                 <Metric label="Preserved systems" value={`${draft.integrations.length}`} detail="No migrations required" />
-                <Metric label="Last source check" value="Just now" detail="No changes detected" />
+                <Metric
+                  label="Last source check"
+                  value={sourceMonitoring.lastSuccessAt ? "Completed" : "Pending"}
+                  detail={
+                    sourceMonitoring.lastSuccessAt
+                      ? new Date(
+                          sourceMonitoring.lastSuccessAt,
+                        ).toLocaleDateString("en", { dateStyle: "medium" })
+                      : "No successful run yet"
+                  }
+                />
               </div>
             </TabsContent>
 
@@ -517,92 +1035,242 @@ export function Dashboard({
               />
             </TabsContent>
 
-            <TabsContent value="menu" className="mt-0">
+            <TabsContent value="monitoring" className="mt-0">
+              <SourceMonitoringPanel
+                siteSlug={draft.slug}
+                initial={sourceMonitoring}
+                demo={demo}
+              />
+            </TabsContent>
+
+            <TabsContent value="design" className="mt-0">
               <PageHeading
-                eyebrow="Menu editor"
-                title="The menu, structured."
-                copy="Edit what guests see. Prices and dietary labels stay machine-readable."
+                eyebrow="Website design"
+                title="Choose the right service experience."
+                copy="Preview every compatible renderer with your restaurant content. A choice changes only the private draft until you Save and Publish."
                 action={
-                  <Button size="sm">
-                    <Plus /> Add item
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={restoreAutomaticTheme}
+                    disabled={
+                      currentThemeSelection !== null &&
+                      currentThemeSelection.source !== "owner"
+                    }
+                  >
+                    <RotateCcw />
+                    {currentThemeSelection
+                      ? "Restore automatic"
+                      : "Use automatic match"}
                   </Button>
                 }
               />
-              <div className="mt-8 space-y-5">
-                {draft.menuSections.map((section, sectionIndex) => (
-                  <Card key={section.name}>
-                    <CardHeader className="flex-row items-center justify-between">
-                      <div>
-                        <CardTitle>{section.name}</CardTitle>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {section.description}
-                        </p>
+
+              <Card className="mt-8">
+                <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Current private draft
+                    </p>
+                    <p className="mt-2 text-lg font-semibold">
+                      {currentThemeSelection
+                        ? themeManifests.find(
+                            (theme) =>
+                              theme.id === currentThemeSelection.themeId,
+                          )?.name
+                        : "Legacy restaurant design"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {currentThemeSelection
+                        ? `${currentThemeSelection.source === "owner" ? "Owner selected" : "Automatically matched"} · immutable renderer v${currentThemeSelection.rendererVersion}`
+                        : `Automatic match available: ${
+                            themeManifests.find(
+                              (theme) =>
+                                theme.id === automaticThemeSelection.themeId,
+                            )?.name
+                          }`}
+                    </p>
+                  </div>
+                  {themeDirty ? (
+                    <Badge variant="outline">Save to keep this choice</Badge>
+                  ) : (
+                    <Badge className="bg-emerald-600 text-white">
+                      Stored private draft
+                    </Badge>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="mt-5 grid gap-5 xl:grid-cols-3">
+                {themeManifests.map((manifest) => {
+                  const selected =
+                    currentThemeSelection?.themeId === manifest.id;
+                  const automatic =
+                    automaticThemeSelection.themeId === manifest.id;
+                  return (
+                    <Card
+                      key={manifest.id}
+                      className={
+                        selected
+                          ? "overflow-hidden border-primary ring-2 ring-primary/15"
+                          : "overflow-hidden"
+                      }
+                    >
+                      <div
+                        className="relative aspect-[16/9] border-b bg-cover bg-center"
+                        style={{
+                          backgroundColor:
+                            manifest.safeDefaultTokens.colors.background,
+                          backgroundImage: `url("/themes/restaurant/${manifest.id}.webp")`,
+                        }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-transparent" />
+                        <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3 text-white">
+                          <div>
+                            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/70">
+                              renderer v{manifest.rendererVersion}
+                            </p>
+                            <h2 className="mt-1 text-xl font-semibold">
+                              {manifest.name}
+                            </h2>
+                          </div>
+                          {selected ? <Badge>Selected</Badge> : null}
+                        </div>
                       </div>
-                      <Button variant="ghost" size="icon-sm">
-                        <MoreHorizontal />
-                      </Button>
-                    </CardHeader>
-                    <CardContent className="divide-y">
-                      {section.items.map((item, itemIndex) => (
+                      <CardContent className="space-y-5 pt-6">
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          {manifest.description}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">
+                            {manifest.experience.primaryIntent}-led
+                          </Badge>
+                          <Badge variant="secondary">
+                            {manifest.experience.menuExperience} menu
+                          </Badge>
+                          {automatic ? (
+                            <Badge variant="outline">Automatic match</Badge>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            render={
+                              <Link
+                                href={`/dashboard/themes/${manifest.id}`}
+                                target="_blank"
+                              />
+                            }
+                            nativeButton={false}
+                            variant="outline"
+                            size="sm"
+                          >
+                            <Eye /> Preview
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => selectTheme(manifest.id)}
+                            disabled={
+                              selected &&
+                              currentThemeSelection?.source === "owner"
+                            }
+                          >
+                            <Check />
+                            {selected ? "Selected" : "Use theme"}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              <Card className="mt-8">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Published history
+                  </CardTitle>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Rollback creates a new immutable version from a previous
+                    snapshot. Your private draft remains untouched.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {publicationHistory.length > 0 ? (
+                    <div className="divide-y">
+                      {publicationHistory.map((item) => (
                         <div
-                          key={`${sectionIndex}-${itemIndex}`}
-                          className="grid gap-4 py-5 md:grid-cols-[1fr_1.5fr_110px_auto]"
+                          key={item.id}
+                          className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <Input
-                            value={item.name}
-                            onChange={(event) =>
-                              setDraft((current) => {
-                                const menuSections = structuredClone(
-                                  current.menuSections,
-                                );
-                                menuSections[sectionIndex].items[
-                                  itemIndex
-                                ].name = event.target.value;
-                                return { ...current, menuSections };
-                              })
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold">
+                                Version {item.version}
+                              </p>
+                              {item.current ? (
+                                <Badge className="bg-emerald-600 text-white">
+                                  Live
+                                </Badge>
+                              ) : null}
+                              <Badge variant="outline">
+                                {item.theme.id} · {item.theme.version}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.changeSummary} ·{" "}
+                              {new Intl.DateTimeFormat(undefined, {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              }).format(new Date(item.publishedAt))}
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              item.current ||
+                              rollbackLoading !== null ||
+                              demo
                             }
-                          />
-                          <Input
-                            value={item.description}
-                            onChange={(event) =>
-                              setDraft((current) => {
-                                const menuSections = structuredClone(
-                                  current.menuSections,
-                                );
-                                menuSections[sectionIndex].items[
-                                  itemIndex
-                                ].description = event.target.value;
-                                return { ...current, menuSections };
-                              })
-                            }
-                          />
-                          <Input
-                            type="number"
-                            value={item.price ?? ""}
-                            onChange={(event) =>
-                              setDraft((current) => {
-                                const menuSections = structuredClone(
-                                  current.menuSections,
-                                );
-                                menuSections[sectionIndex].items[
-                                  itemIndex
-                                ].price = event.target.value
-                                  ? Number(event.target.value)
-                                  : null;
-                                return { ...current, menuSections };
-                              })
-                            }
-                            aria-label={`Price for ${item.name}`}
-                          />
-                          <span className="self-center font-mono text-xs text-muted-foreground">
-                            {formatPrice(item.price, item.currency)}
-                          </span>
+                            onClick={() => void rollback(item.id)}
+                          >
+                            {rollbackLoading === item.id ? (
+                              <LoaderCircle className="animate-spin" />
+                            ) : (
+                              <RotateCcw />
+                            )}
+                            {item.current ? "Currently live" : "Rollback"}
+                          </Button>
                         </div>
                       ))}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Publish the site once to start immutable version history.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="menu" className="mt-0">
+              <RestaurantMenuEditor
+                draft={draft}
+                dirty={menuDirty}
+                saving={saving}
+                saveError={menuSaveError}
+                validationIssues={menuValidationIssues}
+                canUndo={menuUndoStack.length > 0}
+                regeneratingLocale={regeneratingLocale}
+                onMutation={mutateMenu}
+                onTranslationChange={changeTranslation}
+                onReviewTranslation={reviewTranslation}
+                onRegenerateTranslation={(locale) =>
+                  void regenerateTranslation(locale)
+                }
+                onUndo={undoMenuDeletion}
+                onSave={() => void save()}
+              />
             </TabsContent>
 
             <TabsContent value="imagery" className="mt-0">
@@ -708,47 +1376,22 @@ export function Dashboard({
             </TabsContent>
 
             <TabsContent value="integrations" className="mt-0">
-              <PageHeading
-                eyebrow="Existing systems"
-                title="Keep what already works."
-                copy="Cornershopdev sends guests to the restaurant's current booking, ordering and delivery providers."
+              <RestaurantIntegrationEditor
+                draft={draft}
+                dirty={integrationDirty}
+                saving={saving}
+                saveError={integrationSaveError}
+                validationIssues={integrationValidationIssues}
+                savedRevision={savedRevision}
+                canUndo={integrationUndoStack.length > 0}
+                onMutation={mutateIntegration}
+                onTranslationLabelChange={
+                  changeIntegrationTranslationLabel
+                }
+                onReviewTranslation={reviewIntegrationTranslation}
+                onUndo={undoIntegrationRemoval}
+                onSave={() => void save()}
               />
-              <div className="mt-8 grid gap-4">
-                {draft.integrations.map((integration) => (
-                  <Card key={integration.url}>
-                    <CardContent className="flex items-center gap-4 pt-6">
-                      <span className="grid size-10 place-items-center rounded-xl bg-muted">
-                        <Link2 className="size-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{integration.label}</p>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {integration.type}
-                          </Badge>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {integration.provider ?? "External provider"} ·{" "}
-                          {integration.url}
-                        </p>
-                      </div>
-                      <Switch defaultChecked />
-                      <Button
-                        render={
-                          <Link href={integration.url} target="_blank" />
-                        }
-                        variant="ghost"
-                        size="icon-sm"
-                      >
-                        <ExternalLink />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-                <Button variant="outline" className="h-14 border-dashed">
-                  <Plus /> Add another link
-                </Button>
-              </div>
             </TabsContent>
 
             <TabsContent value="domain" className="mt-0">
@@ -772,8 +1415,19 @@ export function Dashboard({
                       className="mt-2 h-11"
                     />
                     {domainError ? (
-                      <p className="mt-3 text-xs text-destructive">
+                      <p
+                        className="mt-3 text-xs text-destructive"
+                        role="alert"
+                      >
                         {domainError}
+                      </p>
+                    ) : null}
+                    {domainNotice ? (
+                      <p
+                        className="mt-3 text-xs text-muted-foreground"
+                        role="status"
+                      >
+                        {domainNotice}
                       </p>
                     ) : null}
                     <Button
@@ -831,31 +1485,71 @@ export function Dashboard({
                             </Button>
                           </div>
                         ))}
+                        <div className="grid gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-2">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              DNS
+                            </p>
+                            <p className="mt-1 flex items-center gap-2 text-xs font-medium">
+                              {domainSetup.verified ? (
+                                <CircleCheck className="size-4 text-emerald-500" />
+                              ) : (
+                                <RefreshCcw className="size-4 text-muted-foreground" />
+                              )}
+                              {domainSetup.verified
+                                ? "Verified"
+                                : "Waiting for records"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              HTTPS
+                            </p>
+                            <p className="mt-1 flex items-center gap-2 text-xs font-medium">
+                              {domainSetup.tls.status === "READY" ? (
+                                <CircleCheck className="size-4 text-emerald-500" />
+                              ) : domainSetup.tls.status === "ERROR" ? (
+                                <TriangleAlert className="size-4 text-amber-500" />
+                              ) : (
+                                <RefreshCcw className="size-4 text-muted-foreground" />
+                              )}
+                              {domainSetup.tls.status === "READY"
+                                ? "Secure connection ready"
+                                : domainSetup.tls.status === "ERROR"
+                                  ? "Needs attention"
+                                  : "Certificate pending"}
+                            </p>
+                          </div>
+                          <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
+                            {domainSetup.tls.message}
+                          </p>
+                        </div>
                         <Button
                           variant="outline"
                           className="w-full"
-                          onClick={async () => {
-                            const response = await fetch(
-                              `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
-                            );
-                            const result = (await response.json()) as {
-                              verified?: boolean;
-                            };
-                            setDomainSetup((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    verified: Boolean(result.verified),
-                                  }
-                                : current,
-                            );
-                          }}
+                          onClick={() => void checkDomain()}
+                          disabled={domainLoading}
                         >
-                          <RefreshCcw />
+                          <RefreshCcw
+                            className={domainLoading ? "animate-spin" : ""}
+                          />
                           {domainSetup.verified
-                            ? "Domain connected"
+                            ? "Check HTTPS again"
                             : "Check DNS again"}
                         </Button>
+                        <Button
+                          variant="ghost"
+                          className="w-full text-destructive hover:text-destructive"
+                          onClick={() => void removeDomain()}
+                          disabled={domainLoading}
+                        >
+                          <Trash2 />
+                          Remove domain
+                        </Button>
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Removing the domain immediately revokes public routing.
+                          Your private preview and published version are kept.
+                        </p>
                       </div>
                     ) : (
                       <ol className="space-y-5 text-sm">

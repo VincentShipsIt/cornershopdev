@@ -26,6 +26,7 @@ required_parameters=(
   DATABASE_URL
   HEALTHCHECK_TOKEN
   NEXT_PUBLIC_APP_URL
+  OPERATOR_ALERT_EMAILS
   PLATFORM_HOSTNAMES
   PUBLIC_APP_IP
   REDIS_URL
@@ -155,4 +156,39 @@ if ! reload_caddy || ! wait_for_health cornershopdev; then
 fi
 
 docker rm -f cornershopdev-previous >/dev/null 2>&1 || true
+
+monitor_service="/etc/systemd/system/cornershopdev-public-health.service"
+monitor_timer="/etc/systemd/system/cornershopdev-public-health.timer"
+temporary_monitor_service="$(mktemp /etc/systemd/system/cornershopdev-public-health.service.XXXXXX)"
+temporary_monitor_timer="$(mktemp /etc/systemd/system/cornershopdev-public-health.timer.XXXXXX)"
+trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_service" "$temporary_monitor_timer"' EXIT
+
+{
+  printf '%s\n' '[Unit]'
+  printf '%s\n' 'Description=Cornershopdev public-site health and operator alert check'
+  printf '%s\n' 'After=docker.service network-online.target'
+  printf '%s\n' 'Wants=network-online.target'
+  printf '\n%s\n' '[Service]'
+  printf '%s\n' 'Type=oneshot'
+  printf '%s\n' 'TimeoutStartSec=45s'
+  printf '%s\n' "ExecStart=/usr/bin/docker run --rm --network shipshit --memory 256m --cpus 0.25 --env-file ${environment_file} --entrypoint bun ${image_name} run operator:monitor-public-site --execute"
+} >"$temporary_monitor_service"
+
+{
+  printf '%s\n' '[Unit]'
+  printf '%s\n' 'Description=Check Cornershopdev public health every two minutes'
+  printf '\n%s\n' '[Timer]'
+  printf '%s\n' 'OnBootSec=2min'
+  printf '%s\n' 'OnUnitActiveSec=2min'
+  printf '%s\n' 'RandomizedDelaySec=15s'
+  printf '%s\n' 'Persistent=true'
+  printf '\n%s\n' '[Install]'
+  printf '%s\n' 'WantedBy=timers.target'
+} >"$temporary_monitor_timer"
+
+install -m 644 "$temporary_monitor_service" "$monitor_service"
+install -m 644 "$temporary_monitor_timer" "$monitor_timer"
+systemctl daemon-reload
+systemctl enable --now cornershopdev-public-health.timer >/dev/null
+
 echo "Cornershopdev deployment is healthy: ${image_name}"

@@ -20,9 +20,13 @@ const actor = { id: userId, email: `${userId}@example.test` };
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let sampleSiteDraft: typeof import("@/lib/restaurant").sampleSiteDraft;
 let publishSiteDraft: typeof import("@/lib/site-publication").publishSiteDraft;
+let rollbackPublishedSiteVersion: typeof import("@/lib/site-publication").rollbackPublishedSiteVersion;
 let updateSiteDraft: typeof import("@/lib/site-persistence").updateSiteDraft;
 let findPublishedSiteView: typeof import("@/lib/sites").findPublishedSiteView;
 let findSiteView: typeof import("@/lib/sites").findSiteView;
+let localizeSiteDraft: typeof import("@/lib/site-draft").localizeSiteDraft;
+let restaurantThemeFixtures: typeof import("@/lib/site-themes/restaurant/fixtures").restaurantThemeFixtures;
+let selectOwnerRestaurantTheme: typeof import("@/lib/site-themes/restaurant/selection").selectOwnerRestaurantTheme;
 let Vertical: typeof import("@/generated/prisma/enums").Vertical;
 
 describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () => {
@@ -32,14 +36,27 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     const publication = await import("@/lib/site-publication");
     const persistence = await import("@/lib/site-persistence");
     const sites = await import("@/lib/sites");
+    const siteDraft = await import("@/lib/site-draft");
+    const themeFixtures = await import(
+      "@/lib/site-themes/restaurant/fixtures"
+    );
+    const themeSelection = await import(
+      "@/lib/site-themes/restaurant/selection"
+    );
     const enums = await import("@/generated/prisma/enums");
 
     db = database.getDb();
     sampleSiteDraft = restaurant.sampleSiteDraft;
     publishSiteDraft = publication.publishSiteDraft;
+    rollbackPublishedSiteVersion =
+      publication.rollbackPublishedSiteVersion;
     updateSiteDraft = persistence.updateSiteDraft;
     findPublishedSiteView = sites.findPublishedSiteView;
     findSiteView = sites.findSiteView;
+    localizeSiteDraft = siteDraft.localizeSiteDraft;
+    restaurantThemeFixtures = themeFixtures.restaurantThemeFixtures;
+    selectOwnerRestaurantTheme =
+      themeSelection.selectOwnerRestaurantTheme;
     Vertical = enums.Vertical;
 
     await db.user.create({
@@ -122,6 +139,15 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
             }),
           ),
         },
+      },
+    });
+    await db.domain.create({
+      data: {
+        hostname: `${randomUUID()}.example.test`,
+        siteId,
+        verificationToken: randomUUID(),
+        verified: true,
+        verifiedAt: new Date(),
       },
     });
   });
@@ -293,6 +319,197 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     });
   });
 
+  test("persists menu order, availability, currency and approved imagery", async () => {
+    const firstSection = sampleSiteDraft.catalogSections[0];
+    const secondSection = sampleSiteDraft.catalogSections[1];
+    const editedDraft = {
+      ...sampleSiteDraft,
+      slug,
+      catalogSections: [
+        {
+          ...secondSection,
+          items: [...secondSection.items].reverse(),
+        },
+        {
+          ...firstSection,
+          items: firstSection.items.map((item, index) =>
+            index === 0
+              ? {
+                  ...item,
+                  price: 8.5,
+                  currency: "GBP" as const,
+                  available: false,
+                  imageUrl: "/approved/menu-item.webp",
+                  originalImageUrl: "/approved/menu-item.webp",
+                  imageProvenance: "owner" as const,
+                }
+              : item,
+          ),
+        },
+      ],
+    };
+
+    await updateSiteDraft(slug, editedDraft, Vertical.RESTAURANT);
+    const reloaded = await findSiteView(slug);
+    expect(
+      reloaded?.draft.catalogSections.map((section) => section.name),
+    ).toEqual([
+      secondSection.name,
+      firstSection.name,
+    ]);
+    expect(reloaded?.draft.catalogSections[0].items.map((item) => item.name))
+      .toEqual([...secondSection.items].reverse().map((item) => item.name));
+    expect(reloaded?.draft.catalogSections[1].items[0]).toMatchObject({
+      price: 8.5,
+      currency: "GBP",
+      available: false,
+      imageUrl: "/approved/menu-item.webp",
+    });
+  });
+
+  test("versions and audits authorized integration saves without publishing", async () => {
+    const before = await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: {
+        draftRevision: true,
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true } },
+      },
+    });
+    const first = sampleSiteDraft.integrations[0];
+    const second = sampleSiteDraft.integrations[1];
+    const editedDraft = {
+      ...sampleSiteDraft,
+      slug,
+      integrations: [
+        { ...second, enabled: false },
+        {
+          ...first,
+          label: "Reserve securely",
+          enabled: true,
+        },
+      ],
+    };
+
+    const saved = await updateSiteDraft(
+      slug,
+      editedDraft,
+      Vertical.RESTAURANT,
+      { actor },
+    );
+    const [reloaded, after, audit] = await Promise.all([
+      findSiteView(slug),
+      db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: {
+          draftRevision: true,
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true } },
+        },
+      }),
+      db.auditEvent.findFirst({
+        where: {
+          siteId,
+          type: "site.draft.saved",
+          actor: actor.id,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { metadata: true },
+      }),
+    ]);
+
+    expect(saved.revision).toBe(before.draftRevision + 1);
+    expect(after).toEqual({
+      draftRevision: saved.revision,
+      publishedSiteVersionId: before.publishedSiteVersionId,
+      _count: before._count,
+    });
+    expect(reloaded?.draft.integrations).toEqual([
+      expect.objectContaining({
+        label: second.label,
+        enabled: false,
+      }),
+      expect.objectContaining({
+        label: "Reserve securely",
+        provider: first.provider,
+        enabled: true,
+      }),
+    ]);
+    expect(audit?.metadata).toMatchObject({
+      revision: saved.revision,
+      actorEmail: actor.email,
+      integrationCount: 2,
+      enabledIntegrationCount: 1,
+    });
+  });
+
+  test("refuses to publish stale translated copy without moving the live pointer", async () => {
+    const current = await findSiteView(slug);
+    if (!current) throw new Error("Expected the persisted restaurant draft");
+    const staleDraft = {
+      ...current.draft,
+      autoEnhanceImages: sampleSiteDraft.autoEnhanceImages,
+      translations: [
+        {
+          locale: "fr" as const,
+          status: "stale" as const,
+          attributes: {
+            cuisine: current.draft.attributes.cuisine,
+          },
+          eyebrow: current.draft.eyebrow,
+          description: current.draft.description,
+          catalogSections: current.draft.catalogSections.map((section) => ({
+            name: section.name,
+            description: section.description,
+            items: section.items.map((item) => ({
+              name: item.name,
+              description: item.description,
+              attributes: {
+                dietaryLabels: item.attributes.dietaryLabels,
+              },
+            })),
+          })),
+          integrationLabels: current.draft.integrations.map(
+            (integration) => integration.label,
+          ),
+        },
+      ],
+    };
+    await updateSiteDraft(slug, staleDraft, Vertical.RESTAURANT);
+    const before = await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: {
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true, auditEvents: true } },
+      },
+    });
+
+    await expect(
+      publishSiteDraft({
+        siteId,
+        slug,
+        vertical: Vertical.RESTAURANT,
+        actor,
+        changeSummary: "Stale translation must not publish",
+      }),
+    ).rejects.toThrow("Review every stale translation before publishing");
+
+    expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: {
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true, auditEvents: true } },
+        },
+      }),
+    ).toEqual(before);
+    await updateSiteDraft(
+      slug,
+      { ...staleDraft, translations: [] },
+      Vertical.RESTAURANT,
+    );
+  });
+
   test("leaves the live pointer untouched when persisted draft validation fails", async () => {
     const before = await db.site.findUniqueOrThrow({
       where: { id: siteId },
@@ -377,5 +594,132 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         }),
       ),
     ).rejects.toThrow("Published site versions are immutable");
+  });
+
+  test("preserves an owner theme through save, reload, locale, publish and rollback", async () => {
+    const fixture = restaurantThemeFixtures["counter-service"];
+    const ownerSelection = selectOwnerRestaurantTheme(
+      fixture.profile,
+      "after-dark",
+    );
+    const ownerDraft = {
+      ...fixture,
+      slug,
+      attributes: {
+        ...fixture.attributes,
+        themeSelection: ownerSelection,
+      },
+      translations: [
+        {
+          locale: "fr",
+          attributes: { cuisine: "Comptoir italien" },
+          eyebrow: "Des parts, des pizzas entières, sans détour",
+          description:
+            "Un comptoir de quartier pour des pizzas au levain, des boissons fraîches et une collecte rapide.",
+          catalogSections: fixture.catalogSections.map((section) => ({
+            name: section.name,
+            description: section.description,
+            items: section.items.map((item) => ({
+              name: item.name,
+              description: item.description,
+              attributes: item.attributes,
+            })),
+          })),
+          integrationLabels: fixture.integrations.map(
+            (integration) => integration.label,
+          ),
+        },
+      ],
+    };
+
+    await updateSiteDraft(slug, ownerDraft, Vertical.RESTAURANT);
+    const reloaded = await findSiteView(slug);
+    expect(reloaded?.theme).toEqual({
+      id: "after-dark",
+      version: "restaurant-renderer-v1",
+      selection: ownerSelection,
+    });
+    expect(reloaded?.draft.attributes.themeSelection).toEqual(ownerSelection);
+    expect(
+      localizeSiteDraft(reloaded!.draft, "fr").attributes.themeSelection,
+    ).toEqual(ownerSelection);
+
+    const ownerPublished = await publishSiteDraft({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      actor,
+      changeSummary: "Publish owner-selected after-dark theme",
+    });
+    expect(ownerPublished.theme).toEqual({
+      id: "after-dark",
+      version: "restaurant-renderer-v1",
+    });
+    const storedOwnerVersion = await db.siteVersion.findUniqueOrThrow({
+      where: { id: ownerPublished.id },
+      select: {
+        theme: true,
+        themeVersion: true,
+        translations: true,
+      },
+    });
+    expect(storedOwnerVersion).toMatchObject({
+      theme: ownerSelection,
+      themeVersion: "restaurant-renderer-v1",
+      translations: ownerDraft.translations,
+    });
+
+    const nextSelection = selectOwnerRestaurantTheme(
+      fixture.profile,
+      "terroir-editorial",
+    );
+    await updateSiteDraft(
+      slug,
+      {
+        ...ownerDraft,
+        attributes: {
+          ...ownerDraft.attributes,
+          themeSelection: nextSelection,
+        },
+      },
+      Vertical.RESTAURANT,
+    );
+    await publishSiteDraft({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      actor,
+      changeSummary: "Publish a later owner theme",
+    });
+
+    const rolledBack = await rollbackPublishedSiteVersion({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      targetSiteVersionId: ownerPublished.id,
+      actor,
+    });
+    expect(rolledBack.id).not.toBe(ownerPublished.id);
+    expect(rolledBack.theme).toEqual(ownerPublished.theme);
+    expect((await findPublishedSiteView(slug))?.draft.attributes.themeSelection)
+      .toEqual(ownerSelection);
+    expect(
+      localizeSiteDraft((await findPublishedSiteView(slug))!.draft, "fr")
+        .attributes.themeSelection,
+    ).toEqual(ownerSelection);
+    // Rollback moves only the public pointer; the owner's later private draft
+    // remains available for another edit or publish.
+    expect((await findSiteView(slug))?.draft.attributes.themeSelection).toEqual(
+      nextSelection,
+    );
+    expect(
+      await db.auditEvent.count({
+        where: {
+          siteId,
+          type: "site.rolled_back",
+          actor: actor.id,
+        },
+      }),
+    ).toBe(1);
   });
 });

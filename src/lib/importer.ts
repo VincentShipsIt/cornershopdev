@@ -240,6 +240,40 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
   throw new Error("The source image redirected too many times");
 }
 
+/**
+ * Re-validates a known integration URL through the same SSRF and redirect
+ * boundary as source imports. Monitoring records only status/final URL; it
+ * never downloads third-party response bodies or follows private redirects.
+ */
+export async function inspectPublicLink(rawUrl: string): Promise<{
+  originalUrl: string;
+  finalUrl: string;
+  status: number;
+}> {
+  const originalUrl = new URL(rawUrl).toString();
+  let url = new URL(originalUrl);
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+    await assertPublicUrl(url);
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+      headers: {
+        "User-Agent":
+          "Cornershopdev Monitor/1.0 (+https://cornershop.dev; source link check)",
+      },
+    });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("The link returned an invalid redirect");
+      url = new URL(location, url);
+      continue;
+    }
+    return { originalUrl, finalUrl: url.toString(), status: response.status };
+  }
+  throw new Error("The link redirected too many times");
+}
+
 function decodeHtml(value: string): string {
   return value
     .replaceAll("&amp;", "&")

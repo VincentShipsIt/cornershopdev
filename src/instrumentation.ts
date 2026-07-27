@@ -12,4 +12,14 @@ export async function register() {
     const { getWorld } = await import("workflow/runtime");
     await getWorld().start?.();
   }
+
+  if (
+    process.env.DATABASE_URL &&
+    process.env.WORKFLOW_ENABLED === "true"
+  ) {
+    const { startSourceMonitoringScheduler } = await import(
+      "@/lib/source-monitoring-runtime"
+    );
+    startSourceMonitoringScheduler();
+  }
 }

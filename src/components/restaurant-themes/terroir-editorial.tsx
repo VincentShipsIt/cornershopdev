@@ -4,6 +4,7 @@ import {
   itemBadges,
   themeStyle,
   ThemeAnalytics,
+  ThemeBusinessHours,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -23,10 +24,12 @@ export function TerroirEditorialTheme({
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
   const booking = draft.integrations.find(
-    (integration) => integration.type === "booking",
+    (integration) =>
+      integration.enabled && integration.type === "booking",
   );
   const supportingLinks = draft.integrations.filter(
-    (integration) => integration !== booking,
+    (integration) =>
+      integration.enabled && integration !== booking,
   );
   const tokens = selection.tokens;
 
@@ -135,7 +138,7 @@ export function TerroirEditorialTheme({
                   </p>
                 </div>
                 <div className="divide-y divide-current/12">
-                  {section.items.map((item) => (
+                  {section.items.filter((item) => item.available).map((item) => (
                     <div
                       key={item.name}
                       className="grid gap-4 py-6 sm:grid-cols-[1fr_auto]"
@@ -206,9 +209,10 @@ export function TerroirEditorialTheme({
         </div>
       </section>
 
-      <footer className="flex flex-col gap-3 border-t border-current/15 px-6 py-7 text-xs opacity-55 sm:flex-row sm:justify-between md:px-10">
+      <footer className="grid gap-3 border-t border-current/15 px-6 py-7 text-xs opacity-55 sm:grid-cols-3 md:px-10">
         <span>{draft.name}</span>
-        <span>{draft.address}</span>
+        <ThemeBusinessHours draft={draft} />
+        <span className="sm:text-right">{draft.address}</span>
       </footer>
     </article>
   );

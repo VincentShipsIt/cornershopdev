@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import {
   restaurantDesignProfileSchema,
   type RestaurantDesignProfile,
@@ -15,7 +16,7 @@ export type RestaurantThemeFixture = RestaurantSiteDraft & {
 
 function fixture(
   draft: Omit<
-    RestaurantSiteDraft,
+    z.input<typeof restaurantSiteDraftSchema>,
     "attributes" | "autoEnhanceImages"
   > & {
     cuisine: string;
@@ -91,7 +92,8 @@ export const restaurantThemeFixtures: Record<
       foreground: "#20231f",
       accent: "#7f3f2e",
     },
-    defaultLocale: "en",
+  defaultLocale: "en",
+  businessHours: [],
     profile: terroirProfile,
     catalogSections: [
       {
@@ -152,7 +154,8 @@ export const restaurantThemeFixtures: Record<
       foreground: "#172118",
       accent: "#d94028",
     },
-    defaultLocale: "en",
+  defaultLocale: "en",
+  businessHours: [],
     profile: counterProfile,
     catalogSections: [
       {
@@ -234,7 +237,8 @@ export const restaurantThemeFixtures: Record<
       foreground: "#f5efe4",
       accent: "#e85d3f",
     },
-    defaultLocale: "en",
+  defaultLocale: "en",
+  businessHours: [],
     profile: afterDarkProfile,
     catalogSections: [
       {

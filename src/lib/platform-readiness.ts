@@ -3,8 +3,14 @@ import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
 import { configuredBillingPlans } from "@/lib/billing-plans";
 import { getDb } from "@/lib/db";
 import { getRedisClient } from "@/lib/redis";
+import { configuredOperatorAlertRecipients } from "@/lib/operator-alert-policy";
 
-export type PlatformService = "database" | "rateLimit" | "storage" | "billing";
+export type PlatformService =
+  | "database"
+  | "rateLimit"
+  | "storage"
+  | "billing"
+  | "alerting";
 export type PlatformServiceStatus =
   | "ready"
   | "misconfigured"
@@ -162,6 +168,20 @@ function validateBilling(env: Environment): ServiceReadiness | null {
   return null;
 }
 
+function validateAlerting(env: Environment): ServiceReadiness | null {
+  try {
+    configuredOperatorAlertRecipients(env);
+    return null;
+  } catch {
+    return {
+      service: "alerting",
+      status: "misconfigured",
+      message:
+        "Set OPERATOR_ALERT_EMAILS and RESEND_API_KEY for operator incident delivery.",
+    };
+  }
+}
+
 function configurationError(
   service: PlatformService,
   env: Environment,
@@ -170,7 +190,8 @@ function configurationError(
   if (service === "database") return validateDatabase(env, environment);
   if (service === "rateLimit") return validateRateLimit(env);
   if (service === "storage") return validateStorage(env);
-  return validateBilling(env);
+  if (service === "billing") return validateBilling(env);
+  return validateAlerting(env);
 }
 
 function createDefaultProbes(env: Environment): ReadinessProbes {
@@ -191,6 +212,23 @@ function createDefaultProbes(env: Environment): ReadinessProbes {
     // Checkout creates a session. Readiness intentionally avoids calling the
     // Stripe API every five seconds.
     billing: async () => {},
+    alerting: async () => {
+      const blocked = await getDb().operatorAlert.count({
+        where: {
+          OR: [
+            { status: "EXHAUSTED" },
+            {
+              status: "PENDING",
+              attempts: { gt: 0 },
+              nextAttemptAt: { lte: new Date() },
+            },
+          ],
+        },
+      });
+      if (blocked > 0) {
+        throw new Error("Operator alert delivery requires attention");
+      }
+    },
   };
 }
 
@@ -222,6 +260,7 @@ export async function checkPlatformReadiness(
       "rateLimit",
       "storage",
       "billing",
+      "alerting",
     ] satisfies PlatformService[]).map(
       async (service): Promise<ServiceReadiness> => {
         const error = configurationError(service, env, environment);
@@ -239,7 +278,9 @@ export async function checkPlatformReadiness(
             service,
             status: "unavailable",
             message:
-              "Configured but unreachable. Check provider status and credentials.",
+              service === "alerting"
+                ? "Alert delivery is blocked. Run the dispatcher and inspect exhausted alerts."
+                : "Configured but unreachable. Check provider status and credentials.",
           };
         }
       },

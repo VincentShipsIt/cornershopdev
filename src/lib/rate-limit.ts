@@ -140,12 +140,20 @@ export function limitClaimInvitationRequest(
   });
 }
 
-export function limitClaimCheckout(
-  request: Request,
-): Promise<RateLimitResult> {
+export function limitClaimCheckout(request: Request): Promise<RateLimitResult> {
   return limitByIp(request, {
     namespace: "claim-checkout",
     limit: 10,
+    windowMs,
+  });
+}
+
+export function limitTranslationRegeneration(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "translation-regeneration",
+    limit: 12,
     windowMs,
   });
 }
@@ -156,6 +164,36 @@ export function limitOperatorClaimInvitation(
   return limitByIp(request, {
     namespace: "operator-claim-invitation",
     limit: 30,
+    windowMs,
+  });
+}
+
+export function limitOperatorLeadMutation(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-lead",
+    limit: 30,
+    windowMs,
+  });
+}
+
+export function limitMagicLinkRequest(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "magic-link",
+    limit: 5,
+    windowMs: 15 * 60_000,
+  });
+}
+
+export function limitOperatorAuthRetry(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-auth-retry",
+    limit: 20,
     windowMs,
   });
 }

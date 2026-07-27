@@ -22,6 +22,22 @@ RUN bun build scripts/import-le-petit-meunier.ts \
   --target=bun \
   --packages=external \
   --outfile=.operator-scripts/import-le-petit-meunier.ts
+RUN bun build scripts/verify-environment-isolation.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/verify-environment-isolation.ts
+RUN bun build scripts/verify-image-storage-roundtrip.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/verify-image-storage-roundtrip.ts
+RUN bun build scripts/dispatch-operator-alerts.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/dispatch-operator-alerts.ts
+RUN bun build scripts/monitor-public-site.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/monitor-public-site.ts
 
 FROM oven/bun:1.3.14-alpine AS runner
 WORKDIR /app

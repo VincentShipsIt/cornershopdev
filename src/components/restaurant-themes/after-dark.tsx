@@ -5,6 +5,7 @@ import {
   itemBadges,
   themeStyle,
   ThemeAnalytics,
+  ThemeBusinessHours,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -24,10 +25,12 @@ export function AfterDarkTheme({
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
   const booking = draft.integrations.find(
-    (integration) => integration.type === "booking",
+    (integration) =>
+      integration.enabled && integration.type === "booking",
   );
   const eventLink = draft.integrations.find(
-    (integration) => integration.type === "social",
+    (integration) =>
+      integration.enabled && integration.type === "social",
   );
   const tokens = selection.tokens;
 
@@ -172,7 +175,7 @@ export function AfterDarkTheme({
                   </p>
                 </div>
                 <div className="divide-y divide-current/15">
-                  {section.items.map((item) => (
+                  {section.items.filter((item) => item.available).map((item) => (
                     <div
                       key={item.name}
                       className="grid grid-cols-[1fr_auto] gap-5 py-5"
@@ -225,9 +228,10 @@ export function AfterDarkTheme({
         </div>
       </section>
 
-      <footer className="flex flex-col gap-3 border-t border-current/15 px-6 py-8 text-xs opacity-55 sm:flex-row sm:justify-between md:px-10">
+      <footer className="grid gap-3 border-t border-current/15 px-6 py-8 text-xs opacity-55 sm:grid-cols-3 md:px-10">
         <span>{draft.name}</span>
-        <span>{draft.address}</span>
+        <ThemeBusinessHours draft={draft} />
+        <span className="sm:text-right">{draft.address}</span>
       </footer>
     </article>
   );

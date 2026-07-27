@@ -1,56 +1,81 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
-import { getClaimTokenSecret } from "@/lib/claim-security";
+import { createHash, randomBytes } from "node:crypto";
 
 export const SESSION_COOKIE = "cornershopdev_session";
+export const PENDING_MAGIC_LINK_COOKIE = "cornershopdev_pending_magic_link";
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
+export const MAGIC_LINK_TTL_MS = 20 * 60_000;
+export const MAGIC_LINK_MAX_RETRIES = 2;
+export const MAGIC_LINK_PENDING_RETRY_AFTER_MS = 5 * 60_000;
 
-const sessionPayloadSchema = z.object({
-  userId: z.string().min(1).max(128),
-  siteSlug: z.string().min(2).max(80).nullable(),
-  expiresAt: z.number().int().positive(),
-});
+export type OpaqueAuthToken = {
+  token: string;
+  tokenHash: string;
+};
 
-export type SessionPayload = z.infer<typeof sessionPayloadSchema>;
-
-function signature(value: string): string {
-  return createHmac("sha256", getClaimTokenSecret())
-    .update(value)
-    .digest("base64url");
+export function createOpaqueAuthToken(): OpaqueAuthToken {
+  const token = randomBytes(32).toString("base64url");
+  return { token, tokenHash: hashAuthToken(token) };
 }
 
-export function createSessionToken(
-  input: Omit<SessionPayload, "expiresAt" | "siteSlug"> & {
-    siteSlug?: string | null;
-    expiresAt?: number;
-  },
-): string {
-  const payload = sessionPayloadSchema.parse({
-    ...input,
-    siteSlug: input.siteSlug ?? null,
-    expiresAt: input.expiresAt ?? Date.now() + 30 * 24 * 60 * 60 * 1000,
-  });
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${encoded}.${signature(encoded)}`;
+export function hashAuthToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
-export function verifySessionToken(token: string): SessionPayload | null {
-  try {
-    const [encoded, suppliedSignature] = token.split(".");
-    if (!encoded || !suppliedSignature) return null;
-    const expected = signature(encoded);
-    const suppliedBuffer = Buffer.from(suppliedSignature);
-    const expectedBuffer = Buffer.from(expected);
-    if (
-      suppliedBuffer.length !== expectedBuffer.length ||
-      !timingSafeEqual(suppliedBuffer, expectedBuffer)
-    ) {
-      return null;
-    }
-    const payload = sessionPayloadSchema.parse(
-      JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")),
-    );
-    return payload.expiresAt > Date.now() ? payload : null;
-  } catch {
-    return null;
+export function sessionCookieOptions(expiresAt: Date) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    expires: expiresAt,
+    path: "/",
+    priority: "high" as const,
+  };
+}
+
+export function pendingMagicLinkCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    maxAge: MAGIC_LINK_TTL_MS / 1_000,
+    path: "/",
+    priority: "high" as const,
+  };
+}
+
+export function maskAccountEmail(email: string): string {
+  const separator = email.lastIndexOf("@");
+  if (separator <= 0) return "hidden";
+  const local = email.slice(0, separator);
+  const domain = email.slice(separator + 1);
+  return `${local.slice(0, 1)}${"*".repeat(Math.min(6, Math.max(2, local.length - 1)))}@${domain}`;
+}
+
+export type MagicLinkRetrySnapshot = {
+  deliveryStatus: "PENDING" | "SENT" | "FAILED";
+  retryCount: number;
+  consumedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+  lastAttemptAt: Date | null;
+};
+
+export function canRetryMagicLink(
+  link: MagicLinkRetrySnapshot,
+  now = new Date(),
+): boolean {
+  if (
+    link.consumedAt ||
+    link.revokedAt ||
+    link.deliveryStatus === "SENT" ||
+    link.retryCount >= MAGIC_LINK_MAX_RETRIES
+  ) {
+    return false;
   }
+  if (link.deliveryStatus === "FAILED") return true;
+  const lastActivityAt = link.lastAttemptAt ?? link.createdAt;
+  return (
+    now.getTime() - lastActivityAt.getTime() >=
+    MAGIC_LINK_PENDING_RETRY_AFTER_MS
+  );
 }

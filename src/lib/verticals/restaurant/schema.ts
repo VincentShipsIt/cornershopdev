@@ -5,6 +5,7 @@ import {
   baseSiteTranslationSchema,
   catalogItemSchema,
   catalogSectionSchema,
+  integrationSchema,
   localeSchema,
   translatedCatalogItemSchema,
   translatedCatalogSectionSchema,
@@ -13,6 +14,10 @@ import {
   safeOptionalRestaurantDesignProfileSchema,
   safeOptionalRestaurantThemeSelectionSchema,
 } from "@/lib/site-themes/restaurant/contracts";
+import {
+  findRestaurantProviderByUrl,
+  restaurantProviders,
+} from "@/lib/verticals/restaurant/providers";
 
 /**
  * The engine primitives live in `@/lib/verticals/schema` so a second vertical can
@@ -50,7 +55,63 @@ export const menuSectionSchema = catalogSectionSchema.extend({
   items: z.array(menuItemSchema).max(40),
 });
 
+export const restaurantIntegrationSchema = integrationSchema
+  .superRefine((integration, context) => {
+    const provider = findRestaurantProviderByUrl(integration.url);
+    if (provider && provider.type !== integration.type) {
+      context.addIssue({
+        code: "custom",
+        path: ["type"],
+        message: `${provider.name} links must use the ${provider.type} type`,
+      });
+    }
+    if (
+      provider &&
+      integration.provider &&
+      integration.provider !== provider.name
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["provider"],
+        message: `Provider must remain ${provider.name} for this URL`,
+      });
+    }
+    if (!provider && integration.type === "social") {
+      context.addIssue({
+        code: "custom",
+        path: ["url"],
+        message: "Use an approved social provider URL",
+      });
+    }
+    if (
+      !provider &&
+      integration.provider &&
+      restaurantProviders.some(
+        (candidate) => candidate.name === integration.provider,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["provider"],
+        message: `${integration.provider} does not match this URL`,
+      });
+    }
+  })
+  .transform((integration) => ({
+    ...integration,
+    provider:
+      findRestaurantProviderByUrl(integration.url)?.name ??
+      integration.provider,
+  }));
+
+export const restaurantTranslationStatusSchema = z.enum([
+  "current",
+  "stale",
+  "draft",
+]);
+
 const restaurantSiteTranslationSchema = baseSiteTranslationSchema.extend({
+  status: restaurantTranslationStatusSchema.default("current"),
   attributes: restaurantAttributesSchema.pick({ cuisine: true }),
   catalogSections: z.array(
     translatedCatalogSectionSchema.extend({
@@ -65,6 +126,7 @@ const restaurantSiteTranslationSchema = baseSiteTranslationSchema.extend({
 
 export const restaurantTranslationSchema = z.object({
   locale: localeSchema,
+  status: restaurantTranslationStatusSchema.default("current"),
   cuisine: z.string().max(80),
   eyebrow: z.string().max(100),
   description: z.string().min(20).max(500),
@@ -84,10 +146,17 @@ export const restaurantTranslationSchema = z.object({
   integrationLabels: z.array(z.string().min(1).max(60)).max(12),
 });
 
+export const restaurantTranslationCandidateSchema =
+  restaurantTranslationSchema.omit({
+    locale: true,
+    status: true,
+  });
+
 export const restaurantSiteDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     attributes: restaurantAttributesSchema,
+    integrations: z.array(restaurantIntegrationSchema).max(12),
     translations: z
       .array(restaurantSiteTranslationSchema)
       .max(8)
@@ -113,7 +182,8 @@ export const restaurantDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     ...restaurantAttributesSchema.shape,
-  translations: z.array(restaurantTranslationSchema).max(8).default([]),
+    integrations: z.array(restaurantIntegrationSchema).max(12),
+    translations: z.array(restaurantTranslationSchema).max(8).default([]),
     menuSections: z.array(menuSectionSchema).min(1).max(12),
   })
   .superRefine((draft, context) => {
@@ -139,6 +209,9 @@ export type RestaurantItemAttributes = z.infer<
   typeof restaurantItemAttributesSchema
 >;
 export type RestaurantDraft = z.infer<typeof restaurantDraftSchema>;
+export type RestaurantTranslation = z.infer<
+  typeof restaurantTranslationSchema
+>;
 export type RestaurantSiteDraft = z.infer<typeof restaurantSiteDraftSchema>;
 export type RestaurantLocale = z.infer<typeof localeSchema>;
 
@@ -266,8 +339,10 @@ export function toRestaurantDraft(
     showMenuImages: draft.attributes.showMenuImages,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
+    businessHours: draft.businessHours,
     translations: draft.translations.map((translation) => ({
       locale: translation.locale,
+      status: translation.status,
       cuisine: translation.attributes.cuisine,
       eyebrow: translation.eyebrow,
       description: translation.description,
@@ -290,6 +365,7 @@ export function toRestaurantDraft(
         description: item.description,
         price: item.price,
         currency: item.currency,
+        available: item.available,
         dietaryLabels: item.attributes.dietaryLabels,
         imageUrl: item.imageUrl,
         originalImageUrl: item.originalImageUrl,
@@ -323,8 +399,10 @@ export function fromRestaurantDraft(
     palette: draft.palette,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
+    businessHours: draft.businessHours,
     translations: draft.translations.map((translation) => ({
       locale: translation.locale,
+      status: translation.status,
       attributes: {
         cuisine: translation.cuisine,
       },
@@ -351,6 +429,7 @@ export function fromRestaurantDraft(
         description: item.description,
         price: item.price,
         currency: item.currency,
+        available: item.available,
         attributes: {
           dietaryLabels: item.dietaryLabels,
         },

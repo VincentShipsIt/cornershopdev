@@ -2,12 +2,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
+import { createSiteSession } from "@/lib/auth-sessions";
 import {
   CHECKOUT_RETURN_COOKIE,
   verifyHashedToken,
 } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
-import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
+import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
 
 const querySchema = z.object({
   sessionId: z.string().startsWith("cs_").max(256),
@@ -109,19 +110,17 @@ export async function GET(request: Request) {
     },
   });
   cookieStore.delete(CHECKOUT_RETURN_COOKIE);
+  const existingToken = cookieStore.get(SESSION_COOKIE)?.value;
+  const created = await createSiteSession({
+    userId: membership.userId,
+    siteId: invitation.site.id,
+    actor: "checkout-return",
+    previousToken: existingToken,
+  });
   cookieStore.set(
     SESSION_COOKIE,
-    createSessionToken({
-      userId: membership.userId,
-      siteSlug: invitation.site.slug,
-    }),
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 30 * 24 * 60 * 60,
-      path: "/",
-    },
+    created.token,
+    sessionCookieOptions(created.session.expiresAt),
   );
 
   if (poll) {

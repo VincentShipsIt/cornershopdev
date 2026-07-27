@@ -4,6 +4,7 @@ import {
   itemBadges,
   themeStyle,
   ThemeAnalytics,
+  ThemeBusinessHours,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -22,8 +23,10 @@ export function CounterServiceTheme({
   embedded = false,
   analyticsEnabled = false,
 }: RestaurantThemeRendererProps) {
-  const ordering = draft.integrations.find((integration) =>
-    ["ordering", "delivery"].includes(integration.type),
+  const ordering = draft.integrations.find(
+    (integration) =>
+      integration.enabled &&
+      ["ordering", "delivery"].includes(integration.type),
   );
   const tokens = selection.tokens;
 
@@ -158,7 +161,7 @@ export function CounterServiceTheme({
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {section.items.map((item) => (
+                  {section.items.filter((item) => item.available).map((item) => (
                     <article
                       key={item.name}
                       className="grid min-h-44 grid-cols-[1fr_auto] gap-5 rounded-[1.4rem] border-2 border-current bg-[var(--theme-surface)] p-5"
@@ -197,9 +200,10 @@ export function CounterServiceTheme({
           ordering && !embedded ? "pb-24 md:pb-8" : undefined,
         )}
       >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto grid max-w-7xl gap-4 text-sm sm:grid-cols-3 sm:items-start">
           <span className="font-black">{draft.name}</span>
-          <span>{draft.address}</span>
+          <ThemeBusinessHours draft={draft} />
+          <span className="sm:text-right">{draft.address}</span>
         </div>
       </footer>
 

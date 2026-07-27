@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
+import { restaurantSiteTheme } from "@/lib/site-themes/restaurant/configuration";
 import {
   buildImportUrls,
   importFailureMessage,
@@ -41,6 +42,7 @@ export type PersistableSiteDraft = {
   attributes: Record<string, unknown>;
   autoEnhanceImages: boolean;
   defaultLocale: string;
+  businessHours: Array<{ days: string; hours: string }>;
   translations: unknown[];
   catalogSections: Array<{
     name: string;
@@ -50,6 +52,7 @@ export type PersistableSiteDraft = {
       description: string;
       price: number | null;
       currency: string;
+      available: boolean;
       attributes: Record<string, unknown>;
       imageUrl: string | null;
       originalImageUrl?: string | null;
@@ -61,6 +64,7 @@ export type PersistableSiteDraft = {
     label: string;
     provider: string | null;
     url: string;
+    enabled: boolean;
     venueId?: string | null;
   }>;
 };
@@ -70,6 +74,18 @@ export type PersistedSiteImport<TDraft extends PersistableSiteDraft> = {
   importJobId: string;
   urls: ImportUrls;
   created: boolean;
+};
+
+export type OwnerDraftSaveOptions = {
+  actor?: {
+    id: string;
+    email: string;
+  };
+  auditType?: "site.draft.saved" | "site.translation.regenerated";
+};
+
+export type OwnerDraftSaveResult = {
+  revision: number;
 };
 
 export class ImportDatabaseUnavailableError extends Error {
@@ -190,6 +206,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
   vertical: VerticalId;
   source: string;
   importJobId: string;
+  actor?: string;
 }): Promise<PersistedSiteImport<TDraft>> {
   const db = requireImportDatabase();
   const config = resolveVerticalConfig(input.vertical);
@@ -291,7 +308,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
           await tx.auditEvent.create({
             data: {
               type: existing ? "site.import.updated" : "site.import.created",
-              actor: "system:import",
+              actor: input.actor ?? "system:import",
               metadata: {
                 importJobId: input.importJobId,
                 vertical: input.vertical,
@@ -506,31 +523,53 @@ export async function updateSiteDraft(
   slug: string,
   draft: PersistableSiteDraft,
   vertical: VerticalId,
-): Promise<void> {
+  options: OwnerDraftSaveOptions = {},
+): Promise<OwnerDraftSaveResult> {
   const config = resolveVerticalConfig(vertical);
   const parsed = config.draftSchema.parse(draft) as PersistableSiteDraft;
   const db = requireImportDatabase();
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await db.$transaction(
+      return await db.$transaction(
         async (tx) => {
-          await tx.site.update({
+          const updated = await tx.site.update({
             where: { slug, vertical },
             data: {
               ...editableSiteScalarData(parsed, vertical),
               ...siteRelationReplaceData(parsed, vertical),
+              draftRevision: { increment: 1 },
             },
+            select: { id: true, draftRevision: true },
           });
+          if (options.actor) {
+            await tx.auditEvent.create({
+              data: {
+                type: options.auditType ?? "site.draft.saved",
+                actor: options.actor.id,
+                siteId: updated.id,
+                metadata: {
+                  revision: updated.draftRevision,
+                  actorEmail: options.actor.email,
+                  integrationCount: parsed.integrations.length,
+                  enabledIntegrationCount: parsed.integrations.filter(
+                    (integration) => integration.enabled,
+                  ).length,
+                },
+              },
+            });
+          }
+          return { revision: updated.draftRevision };
         },
         { isolationLevel: "Serializable" },
       );
-      return;
     } catch (error) {
       if (attempt < 2 && isRetryablePrismaError(error)) continue;
       throw error;
     }
   }
+
+  throw new Error("The site draft could not be saved");
 }
 
 function requireImportDatabase() {
@@ -581,6 +620,7 @@ function editableSiteScalarData(
   const config = resolveVerticalConfig(vertical);
   const attributes = config.attributesSchema.parse(draft.attributes);
   const theme = config.templates.resolve(attributes);
+  const registeredTheme = restaurantSiteTheme(vertical, attributes);
   return {
     name: draft.name,
     eyebrow: draft.eyebrow,
@@ -594,11 +634,15 @@ function editableSiteScalarData(
     // only place vertical-specific data lives, so an unvalidated write here is a
     // read-path crash later.
     attributes: attributes as Prisma.InputJsonValue,
-    draftTheme: { id: theme.id } as Prisma.InputJsonValue,
-    draftThemeVersion: LEGACY_THEME_VERSION,
+    draftTheme: (registeredTheme?.selection ?? {
+      id: theme.id,
+    }) as Prisma.InputJsonValue,
+    draftThemeVersion:
+      registeredTheme?.version ?? LEGACY_THEME_VERSION,
     draftPalette: draft.palette as Prisma.InputJsonValue,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
+    businessHours: draft.businessHours as Prisma.InputJsonValue,
     translations: draft.translations as Prisma.InputJsonValue,
   };
 }
@@ -609,6 +653,7 @@ function integrationCreateData(draft: PersistableSiteDraft) {
     label: integration.label,
     provider: integration.provider,
     url: integration.url,
+    enabled: integration.enabled,
     venueId: integration.venueId ?? null,
     position,
   }));
@@ -629,6 +674,7 @@ function catalogSectionCreateData(
         description: item.description,
         price: item.price,
         currency: item.currency,
+        available: item.available,
         attributes: config.itemAttributesSchema.parse(
           item.attributes,
         ) as Prisma.InputJsonValue,

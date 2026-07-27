@@ -24,6 +24,7 @@ export function buildMagicLinkEmail(input: {
   verifyUrl: string;
   isSuperadmin: boolean;
   site: MagicLinkSite | null;
+  workspaceCount?: number;
 }): MagicLinkEmail {
   if (!input.isSuperadmin && !input.site) {
     throw new Error("A customer site is required for a customer sign-in link");
@@ -33,11 +34,18 @@ export function buildMagicLinkEmail(input: {
     ? FACTORY_BRAND
     : resolveVerticalConfig(input.site!.vertical).marketing.brand;
   const vertical = input.isSuperadmin ? null : input.site!.vertical;
+  const multipleWorkspaces = (input.workspaceCount ?? 0) > 1;
   const accountName = input.isSuperadmin
     ? "operator console"
+    : multipleWorkspaces
+      ? "workspace chooser"
     : `${input.site!.name} dashboard`;
   const escapedAccountName = escapeHtml(accountName);
-  const actionLabel = input.isSuperadmin ? "Open console" : "Open dashboard";
+  const actionLabel = input.isSuperadmin
+    ? "Open console"
+    : multipleWorkspaces
+      ? "Choose workspace"
+      : "Open dashboard";
   const subject = input.isSuperadmin
     ? `Open the ${FACTORY_BRAND.name} operator console`
     : `Open ${input.site!.name} in ${brand.name}`;
