@@ -29,6 +29,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
+import { AccountActions } from "@/components/account-actions";
 import {
   ClientAnalyticsPanel,
   ClientBookingRequestInbox,
@@ -101,6 +102,7 @@ export function Dashboard({
   bookingInbox,
   billingAccess,
   publicationHistory: initialPublicationHistory,
+  canSwitchWorkspace,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -111,6 +113,7 @@ export function Dashboard({
   bookingInbox: BookingRequestInboxDto;
   billingAccess: BillingAccess | null;
   publicationHistory: ClientPublicationHistoryItem[];
+  canSwitchWorkspace: boolean;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -712,6 +715,9 @@ export function Dashboard({
               ? `Published v${publishedVersion}`
               : "Publish"}
           </Button>
+          {!demo ? (
+            <AccountActions canSwitch={canSwitchWorkspace} />
+          ) : null}
         </div>
       </header>
 

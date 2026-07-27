@@ -177,3 +177,23 @@ export function limitOperatorLeadMutation(
     windowMs,
   });
 }
+
+export function limitMagicLinkRequest(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "magic-link",
+    limit: 5,
+    windowMs: 15 * 60_000,
+  });
+}
+
+export function limitOperatorAuthRetry(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-auth-retry",
+    limit: 20,
+    windowMs,
+  });
+}

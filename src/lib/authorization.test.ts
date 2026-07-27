@@ -77,6 +77,44 @@ describe("site authorization", () => {
     expect(queried).toBe(false);
   });
 
+  it("rejects an unbound workspace-selection session", async () => {
+    const policy = createAuthorizationPolicy(
+      adapter({
+        session: {
+          id: "session_1",
+          userId: "user_1",
+          purpose: "WORKSPACE_SELECTION",
+          organizationId: null,
+          siteSlug: null,
+        },
+      }),
+    );
+
+    expect(await policy.getSiteAccess("chez-lea")).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+  });
+
+  it("rejects a stale organization binding after membership lookup", async () => {
+    const policy = createAuthorizationPolicy(
+      adapter({
+        session: {
+          id: "session_1",
+          userId: "user_1",
+          purpose: "SITE",
+          organizationId: "org_stale",
+          siteSlug: "chez-lea",
+        },
+      }),
+    );
+
+    expect(await policy.getSiteAccess("chez-lea")).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+  });
+
   it("revokes access when current membership is absent", async () => {
     const policy = createAuthorizationPolicy(adapter({ site: null }));
 
@@ -151,7 +189,13 @@ describe("superadmin authorization", () => {
 
 function adapter(
   overrides: {
-    session?: { userId: string; siteSlug: string | null } | null;
+    session?: {
+      id: string;
+      userId: string;
+      purpose: "ADMIN" | "WORKSPACE_SELECTION" | "SITE";
+      organizationId: string | null;
+      siteSlug: string | null;
+    } | null;
     site?: SiteAccessRecord | null;
     user?: Awaited<ReturnType<AuthorizationAdapter["findUser"]>>;
     allowedSuperadminEmail?: string | null;
@@ -163,7 +207,13 @@ function adapter(
     getSession: async () =>
       "session" in overrides
         ? (overrides.session ?? null)
-        : { userId: "user_1", siteSlug: "chez-lea" },
+        : {
+            id: "session_1",
+            userId: "user_1",
+            purpose: "SITE",
+            organizationId: "org_1",
+            siteSlug: "chez-lea",
+          },
     findSiteForMember: async () => {
       overrides.onFindSite?.();
       return "site" in overrides ? (overrides.site ?? null) : siteRecord;

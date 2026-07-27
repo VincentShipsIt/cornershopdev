@@ -59,7 +59,7 @@ const authorization = createAuthorizationPolicy({
 });
 
 /**
- * Revalidates the signed session against current organization membership.
+ * Revalidates the database-backed session against current organization membership.
  * Removing a user from an organization therefore revokes access immediately,
  * even if their browser still holds an unexpired cookie.
  */
