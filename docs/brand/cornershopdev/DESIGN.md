@@ -1,7 +1,7 @@
 ---
 version: "beta"
 name: Cornershopdev
-description: Dark technical factory identity built around a folded storefront tile and a clear C.
+description: Dark technical factory identity built around a custom C and a centered coral point.
 colors:
   primary: "#F7F7F4"
   on-primary: "#050505"
@@ -87,6 +87,10 @@ The identity is inspired by the clarity of modern developer tooling, not by any
 single product composition. It must remain original and should never reproduce a
 third party's copy, assets, component geometry or distinctive page structure.
 
+The mark uses one direct custom C and one coral point, optically centered in the
+C's open-right side. The result should feel useful, memorable and human without
+softening the technical factory system around it.
+
 ## Colors
 
 - **Factory black (`#050505`):** the default Cornershopdev marketing surface.
@@ -97,9 +101,10 @@ third party's copy, assets, component geometry or distinctive page structure.
 - **Coral (`#FF775F`):** brand accent for commands, labels and directional cues.
 - **Signal green (`#74D7A4`):** operational status only: live, ready or healthy.
 
-The existing logo keeps its exact factory green (`#0D4A39`), coral
-(`#F15A3D`) and cream (`#F7F1E7`). The brighter page accents are interface
-tokens chosen for contrast on black; they do not modify the raster mark.
+The two logo colors are exact flat sRGB values. Do not sample softened colors
+from the generated concept board: factory green (`#0D4A39`) and coral
+(`#F15A3D`). The brighter page accents are interface tokens chosen for contrast
+on black; they do not modify the raster mark.
 
 ## Typography
 
@@ -142,14 +147,16 @@ Factory interface cards use tighter corners than the niche storefronts. Data
 panels and architecture modules are usually rectangular. Pills are reserved for
 compact status lines.
 
-The mark itself still uses one clipped page tile, exactly three awning tabs and
-one C. Keep the 45-degree lower-right fold and equal transparent canvas padding.
-Do not add windows, doors, carts, bags, gears or extra modular blocks.
+The mark uses one continuous C and one detached rounded-square point. Keep the
+point centered on the C's horizontal axis, preserve the open-right silhouette
+and use equal transparent canvas padding. Do not add a tile, storefront,
+windows, doors, carts, bags, gears or extra modular blocks.
 
 ## Components
 
-- **Brand mark:** `public/brand/cornershopdev/logo-square.png` is the 1024 × 1024
-  transparent RGBA master.
+- **Brand mark:** `public/brand/cornershopdev/logo-square.png` is the 1024 ×
+  1024 transparent RGBA master. It contains only exact factory green, exact
+  coral and alpha.
 - **Header mark:** use the 512px derivative; render it at 36px.
 - **Browser chrome:** use the dedicated 32px favicon and 180px Apple touch icon.
 - **Primary button:** warm-white background, factory-black text, 44px height.
@@ -177,9 +184,14 @@ appearance.
 - Do expose real registry, theme-library and pipeline concepts.
 - Do keep primary and supporting copy at WCAG AA contrast on black.
 - Do route visitors clearly to live niche products, themes and source.
-- Do preserve the folded lower-right corner and three-tab awning.
+- Do preserve the single C and centered coral point.
+- Do keep the C readable at 16px.
+- Do use the exact factory green and coral values in the mark.
 - Do keep every raster export square with a transparent exterior.
 - Don't use the warm paper grid, editorial serif scale or hospitality palette.
 - Don't fake command output, customer counts, uptime or deployment activity.
+- Don't add gradients, texture, highlights, shadows or an enclosing app tile.
+- Don't move the point onto a text baseline or into the C's counter.
+- Don't turn the mark into a generic shopping bag or SaaS cube.
 - Don't copy third-party code, wording, assets or recognizable compositions.
 - Don't use the Cornershopdev identity on a niche storefront or generated site.
