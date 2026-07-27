@@ -70,7 +70,7 @@ Bucket reachability alone does not prove the application write/read path.
 After explicit production authorization, execute:
 
 ```bash
-docker exec cornershopdev \
+docker exec api-cornershop-dev \
   bun run operator:verify-image-storage --environment production --execute
 ```
 
@@ -103,7 +103,7 @@ Useful commands:
 ```bash
 systemctl status cornershopdev-public-health.timer
 journalctl -u cornershopdev-public-health.service --since '30 minutes ago'
-docker exec cornershopdev bun run operator:dispatch-alerts
+docker exec api-cornershop-dev bun run operator:dispatch-alerts
 ```
 
 The repository owner owns primary response; the release operator is backup.
@@ -153,7 +153,7 @@ Le Petit Meunier uses the canonical slug `le-petit-meunier`. Run the dry-run
 inside the healthy production container first:
 
 ```bash
-docker exec cornershopdev \
+docker exec api-cornershop-dev \
   bun run operator:import:le-petit-meunier
 ```
 
@@ -163,7 +163,7 @@ source URL already exists. After confirming the RDS recovery window is healthy,
 execute the same reviewed import:
 
 ```bash
-docker exec cornershopdev \
+docker exec api-cornershop-dev \
   bun run operator:import:le-petit-meunier --execute
 ```
 
@@ -184,14 +184,14 @@ Store `SUPERADMIN_EMAILS` as a SecureString under
 the role change:
 
 ```bash
-docker exec cornershopdev \
+docker exec api-cornershop-dev \
   bun run operator:grant-superadmin --email owner@example.com
 ```
 
 Apply it only after confirming the target:
 
 ```bash
-docker exec cornershopdev \
+docker exec api-cornershop-dev \
   bun run operator:grant-superadmin --email owner@example.com --execute
 ```
 
