@@ -4,6 +4,7 @@ import {
   resolveVerticalByHostname,
   resolveVerticalConfig,
 } from "@/lib/verticals/registry";
+import type { VerticalMarketing } from "@/lib/verticals/types";
 
 const FACTORY_ORIGIN = "https://cornershop.dev";
 
@@ -40,8 +41,16 @@ async function requestHostname(): Promise<string> {
  * of every screen that needs this.
  */
 export async function resolveRequestBrand(): Promise<BrandIdentity> {
+  return (await resolveRequestMarketing())?.brand ?? FACTORY_BRAND;
+}
+
+/**
+ * The niche marketing contract for the hostname the visitor used. Shared
+ * customer surfaces consume this instead of guessing a trade from the route.
+ */
+export async function resolveRequestMarketing(): Promise<VerticalMarketing | null> {
   const niche = resolveVerticalByHostname(await requestHostname());
-  return niche ? resolveVerticalConfig(niche).marketing.brand : FACTORY_BRAND;
+  return niche ? resolveVerticalConfig(niche).marketing : null;
 }
 
 /**

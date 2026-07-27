@@ -160,6 +160,15 @@ export type VerticalMarketing = {
     submitLabel: string;
     pendingLabel: string;
   };
+  /** Host-specific copy for the shared passwordless customer workspace. */
+  signIn: {
+    title: string;
+    description: string;
+    emailPlaceholder: string;
+    emptyPrompt: string;
+    createLabel: string;
+    createHref: string;
+  };
   /** Optional public library powered by the vertical's registered site themes. */
   themeGallery?: { href: string; label: string };
   steps: { number: string; title: string; copy: string }[];

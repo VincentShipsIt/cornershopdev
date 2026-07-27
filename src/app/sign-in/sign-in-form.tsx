@@ -5,8 +5,16 @@ import Link from "next/link";
 import { ArrowRight, Check, LoaderCircle, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { SignInCopy } from "@/lib/sign-in-surface";
+import { cn } from "@/lib/utils";
 
-export function SignInForm() {
+export function SignInForm({
+  copy,
+  inverse,
+}: {
+  copy: SignInCopy;
+  inverse: boolean;
+}) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -33,17 +41,31 @@ export function SignInForm() {
   }
 
   return (
-    <section className="w-full max-w-md rounded-3xl border bg-card p-7 shadow-xl">
+    <section
+      className={cn(
+        "w-full max-w-md border bg-card p-7",
+        inverse
+          ? "rounded-2xl shadow-[0_28px_80px_rgb(0_0_0/0.56)]"
+          : "rounded-3xl shadow-xl",
+      )}
+    >
       <span className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary">
         {sent ? <Check className="size-5" /> : <Mail className="size-5" />}
       </span>
-      <h1 className="font-display mt-5 text-5xl leading-none tracking-[-0.045em]">
-        {sent ? "Check your inbox." : "Open your restaurant."}
+      <h1
+        className={cn(
+          "mt-5 leading-none tracking-[-0.045em]",
+          inverse
+            ? "text-4xl font-semibold"
+            : "font-display text-5xl",
+        )}
+      >
+        {sent ? "Check your inbox." : copy.title}
       </h1>
       <p className="mt-4 text-sm leading-6 text-muted-foreground">
         {sent
           ? `A secure sign-in link is on its way to ${email}.`
-          : "Enter the owner email used when the website was claimed. No password needed."}
+          : copy.description}
       </p>
       {!sent ? (
         <form onSubmit={submit} className="mt-7 space-y-3">
@@ -51,7 +73,7 @@ export function SignInForm() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="owner@restaurant.com"
+            placeholder={copy.emailPlaceholder}
             className="h-11"
             required
           />
@@ -68,9 +90,12 @@ export function SignInForm() {
         </form>
       ) : null}
       <div className="mt-6 border-t pt-5 text-center text-xs text-muted-foreground">
-        No site yet?{" "}
-        <Link href="/create" className="font-semibold text-foreground">
-          Build a preview
+        {copy.emptyPrompt}{" "}
+        <Link
+          href={copy.createHref}
+          className="font-semibold text-foreground"
+        >
+          {copy.createLabel}
         </Link>
       </div>
     </section>

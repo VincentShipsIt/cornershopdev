@@ -33,6 +33,15 @@ export const beautyMarketing = {
     submitLabel: "Show my preview",
     pendingLabel: "Opening your salon",
   },
+  signIn: {
+    title: "Open your salon.",
+    description:
+      "Enter the owner email used when the website was claimed. No password needed.",
+    emailPlaceholder: "owner@salon.com",
+    emptyPrompt: "No site yet?",
+    createLabel: "Build a preview",
+    createHref: "/create?vertical=beauty",
+  },
   steps: [
     {
       number: "01",
