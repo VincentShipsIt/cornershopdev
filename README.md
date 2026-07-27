@@ -137,7 +137,8 @@ The one-price offer, evidence gates, founder-cost worksheet, second-lead
 qualification, and 30-day decision record for the first paid restaurant are in
 [`docs/operations/first-customer-validation.md`](docs/operations/first-customer-validation.md).
 The bearer-authenticated `/api/health/ready` route verifies PostgreSQL, Redis,
-and Amazon S3 without returning secret values. Each application
+Amazon S3, billing, and the operator-alert outbox without returning secret
+values. Each application
 instance coalesces concurrent checks and caches their aggregate result for five
 seconds.
 
@@ -235,6 +236,16 @@ cannot authorize billing or ownership.
 - `CLAIM_TOKEN_SECRET` with at least 32 random characters
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
+
+### Operator alerts
+
+- `OPERATOR_ALERT_EMAILS`
+- `RESEND_API_KEY`
+
+Checkout webhook, publication, and public-site health failures use a durable,
+deduplicated outbox with bounded delivery retries. Deployment and exercise
+instructions are in
+[`docs/operations/platform-services.md`](docs/operations/platform-services.md).
 
 ### Customer domains
 

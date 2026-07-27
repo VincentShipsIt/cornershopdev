@@ -21,6 +21,23 @@ export function imageStorageIsConfigured(env: Environment = process.env) {
   return Boolean(env.S3_BUCKET && env.S3_PUBLIC_BASE_URL && env.AWS_REGION);
 }
 
+export function storageObjectKeyFromUrl(
+  storedUrl: string,
+  env: Environment = process.env,
+): string {
+  const { publicBaseUrl } = getImageStorageConfig(env);
+  const base = new URL(`${publicBaseUrl}/`);
+  const stored = new URL(storedUrl);
+  if (stored.origin !== base.origin || !stored.pathname.startsWith(base.pathname)) {
+    throw new Error("Stored image URL is outside the configured public base.");
+  }
+  const key = decodeURIComponent(stored.pathname.slice(base.pathname.length));
+  if (!key || key.includes("..")) {
+    throw new Error("Stored image URL does not contain a safe object key.");
+  }
+  return key;
+}
+
 export async function storeSiteImage(input: {
   siteSlug: string;
   vertical: VerticalId;
