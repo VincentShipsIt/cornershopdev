@@ -189,6 +189,9 @@ code verification.
   ```
 - Infrastructure and Stripe API failures return `500`, leaving no committed
   event-ledger row so a retry can process the event.
+- Those runtime failures also create a deduplicated durable operator alert.
+  Alert delivery never changes the webhook response: Stripe remains the source
+  of truth for retry, while the outbox provides human escalation.
 - Review failed deliveries in Stripe Workbench. Fix the database, configuration,
   or code fault first, deploy the fix, then resend the exact event.
 - Rotate a webhook signing secret in Workbench and encrypted deployment

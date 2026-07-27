@@ -8,6 +8,7 @@ import {
   SitePublicationStateError,
   SitePublicationTranslationError,
 } from "@/lib/site-publication";
+import { captureOperatorAlert } from "@/lib/operator-alerts";
 
 const publishRequestSchema = z.object({
   changeSummary: z.string().trim().min(3).max(280),
@@ -46,6 +47,18 @@ export async function POST(
         slug,
         issues: error.issues,
       });
+      await captureOperatorAlert({
+        kind: "PUBLISH_FAILURE",
+        dedupKey: `${access.site.id}:persisted-draft`,
+        title: "Persisted site draft failed publication validation",
+        message:
+          "A saved draft could not be published because persisted content failed schema validation. Inspect the site draft and recent editor changes.",
+        context: {
+          siteId: access.site.id,
+          slug: access.site.slug,
+          category: "validation",
+        },
+      });
       return Response.json(
         { error: "Fix the invalid draft fields before publishing" },
         { status: 422 },
@@ -62,6 +75,19 @@ export async function POST(
       slug,
       actorId: access.user.id,
       error: error instanceof Error ? error.message : "unknown",
+    });
+    await captureOperatorAlert({
+      kind: "PUBLISH_FAILURE",
+      dedupKey: `${access.site.id}:server`,
+      title: "Site publication failed",
+      message:
+        "A valid owner publication request failed on the server. Inspect database availability, billing state, and application logs.",
+      context: {
+        siteId: access.site.id,
+        slug: access.site.slug,
+        actorId: access.user.id,
+        category: "server",
+      },
     });
     return Response.json(
       { error: "Site could not be published" },

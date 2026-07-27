@@ -74,6 +74,18 @@ enum AnalyticsEventType {
   LEAD_CREATED
 }
 
+enum OperatorAlertKind {
+  CHECKOUT_WEBHOOK_FAILURE
+  PUBLISH_FAILURE
+  PUBLIC_SITE_HEALTH_FAILURE
+}
+
+enum OperatorAlertStatus {
+  PENDING
+  DELIVERED
+  EXHAUSTED
+}
+
 enum ClaimProofMethod {
   DOMAIN_EMAIL
   OPERATOR_APPROVAL
@@ -391,6 +403,30 @@ model AuditEvent {
   createdAt DateTime @default(now())
 
   @@index([siteId, createdAt])
+}
+
+model OperatorAlert {
+  id                 String              @id @default(cuid())
+  fingerprint        String              @unique
+  kind               OperatorAlertKind
+  status             OperatorAlertStatus @default(PENDING)
+  title              String
+  message            String
+  context            Json?
+  occurrenceCount    Int                 @default(1)
+  attempts           Int                 @default(0)
+  firstOccurredAt    DateTime            @default(now())
+  lastOccurredAt     DateTime            @default(now())
+  nextAttemptAt      DateTime            @default(now())
+  deliveryLeaseUntil DateTime?
+  deliveryLeaseToken String?
+  deliveredAt        DateTime?
+  lastFailureCode    String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([kind, lastOccurredAt])
 }
 
 model BookingRequest {
