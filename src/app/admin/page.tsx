@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { ClaimInvitationForm } from "@/app/admin/claim-invitation-form";
 import { Brand } from "@/components/brand";
+import { AccountActions } from "@/components/account-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +54,10 @@ export default async function AdminPage() {
               Client dashboard
             </Button>
           ) : null}
+          <AccountActions canSwitch />
+          <Button render={<Link href="/admin/auth" />} variant="outline" size="sm">
+            Sign-in delivery
+          </Button>
         </div>
       </header>
 

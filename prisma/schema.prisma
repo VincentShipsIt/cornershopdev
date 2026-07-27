@@ -73,6 +73,23 @@ enum ClaimProofMethod {
   OPERATOR_APPROVAL
 }
 
+enum AuthLinkDestination {
+  ADMIN
+  WORKSPACE
+}
+
+enum AuthDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AuthSessionPurpose {
+  ADMIN
+  WORKSPACE_SELECTION
+  SITE
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -81,6 +98,8 @@ model User {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   memberships  Membership[]
+  authMagicLinks AuthMagicLink[]
+  authSessions   AuthSession[]
 }
 
 model Organization {
@@ -91,6 +110,7 @@ model Organization {
   memberships   Membership[]
   sites         Site[]
   subscriptions Subscription[]
+  authSessions   AuthSession[]
 }
 
 model Membership {
@@ -144,6 +164,66 @@ model Site {
   auditEvents            AuditEvent[]
   bookingRequests        BookingRequest[]
   analyticsEvents        AnalyticsEvent[]
+  authSessions           AuthSession[]
+}
+
+model AuthMagicLink {
+  id                String             @id @default(cuid())
+  tokenHash         String             @unique
+  destination       AuthLinkDestination
+  brandVertical     Vertical?
+  deliveryStatus    AuthDeliveryStatus @default(PENDING)
+  deliveryAttempts  Int                @default(0)
+  retryCount        Int                @default(0)
+  providerMessageId String?
+  failureCode       String?
+  expiresAt         DateTime
+  deliveredAt       DateTime?
+  lastAttemptAt     DateTime?
+  consumedAt        DateTime?
+  revokedAt         DateTime?
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([deliveryStatus, createdAt])
+}
+
+model AuthSession {
+  id             String             @id @default(cuid())
+  tokenHash      String             @unique
+  purpose        AuthSessionPurpose
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteId         String?
+  site           Site?              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([userId, expiresAt])
+  @@index([siteId, expiresAt])
+}
+
+model AuthEvent {
+  id            String   @id @default(cuid())
+  type          String
+  actor         String?
+  subjectUserId String?
+  magicLinkId   String?
+  sessionId     String?
+  siteId        String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([subjectUserId, createdAt])
+  @@index([magicLinkId, createdAt])
+  @@index([sessionId, createdAt])
 }
 
 model CatalogSection {

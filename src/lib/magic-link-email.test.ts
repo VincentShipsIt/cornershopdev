@@ -25,4 +25,16 @@ describe("magic-link email identity", () => {
     expect(email.from).toContain("Restofrontapp");
     expect(email.html).toContain("Chez Lea dashboard");
   });
+
+  it("does not silently select the first of multiple workspaces", () => {
+    const email = buildMagicLinkEmail({
+      verifyUrl: "https://cornershop.dev/api/auth/verify?token=opaque",
+      isSuperadmin: false,
+      site: { name: "Chez Lea", vertical: "RESTAURANT" },
+      workspaceCount: 2,
+    });
+
+    expect(email.html).toContain("workspace chooser");
+    expect(email.html).toContain("Choose workspace");
+  });
 });

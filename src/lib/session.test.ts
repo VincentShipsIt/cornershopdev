@@ -1,55 +1,97 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { createSessionToken, verifySessionToken } from "@/lib/session";
+import { describe, expect, it } from "bun:test";
+import {
+  canRetryMagicLink,
+  createOpaqueAuthToken,
+  hashAuthToken,
+  MAGIC_LINK_MAX_RETRIES,
+  maskAccountEmail,
+} from "@/lib/session";
 
-const originalSecret = process.env.CLAIM_TOKEN_SECRET;
+describe("opaque authentication tokens", () => {
+  it("stores only a deterministic one-way digest", () => {
+    const issued = createOpaqueAuthToken();
 
-afterEach(() => {
-  if (originalSecret === undefined) {
-    delete process.env.CLAIM_TOKEN_SECRET;
-  } else {
-    process.env.CLAIM_TOKEN_SECRET = originalSecret;
-  }
+    expect(issued.token).toHaveLength(43);
+    expect(issued.tokenHash).toHaveLength(64);
+    expect(issued.tokenHash).toBe(hashAuthToken(issued.token));
+    expect(issued.tokenHash).not.toContain(issued.token);
+    expect(createOpaqueAuthToken().tokenHash).not.toBe(issued.tokenHash);
+  });
 });
 
-describe("signed sessions", () => {
-  it("round-trips the minimum account identity", () => {
-    process.env.CLAIM_TOKEN_SECRET =
-      "test-session-secret-with-at-least-thirty-two-characters";
-    const token = createSessionToken({
-      userId: "user_123",
-      siteSlug: "chez-lea",
-      expiresAt: Date.now() + 60_000,
-    });
+describe("magic-link retries", () => {
+  const now = new Date("2026-07-27T12:00:00.000Z");
+  const stale = new Date("2026-07-27T11:50:00.000Z");
 
-    expect(verifySessionToken(token)).toMatchObject({
-      userId: "user_123",
-      siteSlug: "chez-lea",
-    });
+  it("retries failed and stale pending deliveries only", () => {
+    expect(
+      canRetryMagicLink(
+        {
+          deliveryStatus: "FAILED",
+          retryCount: 0,
+          consumedAt: null,
+          revokedAt: null,
+          createdAt: now,
+          lastAttemptAt: now,
+        },
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      canRetryMagicLink(
+        {
+          deliveryStatus: "PENDING",
+          retryCount: 0,
+          consumedAt: null,
+          revokedAt: null,
+          createdAt: stale,
+          lastAttemptAt: stale,
+        },
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      canRetryMagicLink(
+        {
+          deliveryStatus: "SENT",
+          retryCount: 0,
+          consumedAt: null,
+          revokedAt: null,
+          createdAt: stale,
+          lastAttemptAt: stale,
+        },
+        now,
+      ),
+    ).toBe(false);
   });
 
-  it("supports a platform operator with no client site", () => {
-    process.env.CLAIM_TOKEN_SECRET =
-      "test-session-secret-with-at-least-thirty-two-characters";
-    const token = createSessionToken({
-      userId: "user_admin",
-      expiresAt: Date.now() + 60_000,
-    });
-
-    expect(verifySessionToken(token)).toMatchObject({
-      userId: "user_admin",
-      siteSlug: null,
-    });
+  it("stops terminal and exhausted retry chains", () => {
+    const base = {
+      deliveryStatus: "FAILED" as const,
+      retryCount: 0,
+      consumedAt: null,
+      revokedAt: null,
+      createdAt: stale,
+      lastAttemptAt: stale,
+    };
+    expect(
+      canRetryMagicLink({ ...base, consumedAt: now }, now),
+    ).toBe(false);
+    expect(
+      canRetryMagicLink({ ...base, revokedAt: now }, now),
+    ).toBe(false);
+    expect(
+      canRetryMagicLink(
+        { ...base, retryCount: MAGIC_LINK_MAX_RETRIES },
+        now,
+      ),
+    ).toBe(false);
   });
+});
 
-  it("rejects a modified token", () => {
-    process.env.CLAIM_TOKEN_SECRET =
-      "test-session-secret-with-at-least-thirty-two-characters";
-    const token = createSessionToken({
-      userId: "user_123",
-      siteSlug: "chez-lea",
-      expiresAt: Date.now() + 60_000,
-    });
-
-    expect(verifySessionToken(`${token}tampered`)).toBeNull();
+describe("operator-safe account display", () => {
+  it("masks the local part without hiding the delivery domain", () => {
+    expect(maskAccountEmail("owner@example.com")).toBe("o****@example.com");
+    expect(maskAccountEmail("a@example.com")).toBe("a**@example.com");
   });
 });

@@ -7,7 +7,10 @@ export type AccessFailure = {
 };
 
 export type SessionIdentity = {
+  id: string;
   userId: string;
+  purpose: "ADMIN" | "WORKSPACE_SELECTION" | "SITE";
+  organizationId: string | null;
   siteSlug: string | null;
 };
 
@@ -61,7 +64,11 @@ export function createAuthorizationPolicy(adapter: AuthorizationAdapter) {
       if (!session) {
         return { ok: false, status: 401, message: "Unauthorized" };
       }
-      if (!session.siteSlug || session.siteSlug !== siteSlug) {
+      if (
+        session.purpose !== "SITE" ||
+        !session.siteSlug ||
+        session.siteSlug !== siteSlug
+      ) {
         return { ok: false, status: 403, message: "Forbidden" };
       }
       if (!adapter.isDatabaseConfigured()) {
@@ -77,6 +84,9 @@ export function createAuthorizationPolicy(adapter: AuthorizationAdapter) {
         session.userId,
       );
       if (!record) {
+        return { ok: false, status: 403, message: "Forbidden" };
+      }
+      if (record.organizationId !== session.organizationId) {
         return { ok: false, status: 403, message: "Forbidden" };
       }
 

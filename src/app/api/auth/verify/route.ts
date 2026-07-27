@@ -1,31 +1,27 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  createSessionToken,
-  SESSION_COOKIE,
-  verifySessionToken,
-} from "@/lib/session";
+import { consumeMagicLink } from "@/lib/magic-links";
+import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
 
 export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const token = searchParams.get("token");
-  const session = token ? verifySessionToken(token) : null;
-  if (!token || !session) redirect("/sign-in?error=invalid-link");
+  const token = new URL(request.url).searchParams.get("token");
+  if (!token || !process.env.DATABASE_URL) {
+    redirect("/sign-in?error=invalid-link");
+  }
 
-  const cookieStore = await cookies();
-  cookieStore.set(
+  const created = await consumeMagicLink(token).catch(() => null);
+  if (!created) redirect("/sign-in?error=invalid-link");
+
+  (await cookies()).set(
     SESSION_COOKIE,
-    createSessionToken({
-      userId: session.userId,
-      siteSlug: session.siteSlug,
-    }),
-    {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 30 * 24 * 60 * 60,
-    path: "/",
-    },
+    created.token,
+    sessionCookieOptions(created.session.expiresAt),
   );
-  redirect(searchParams.get("destination") === "admin" ? "/admin" : "/dashboard");
+  redirect(
+    created.session.purpose === "ADMIN"
+      ? "/admin"
+      : created.session.purpose === "WORKSPACE_SELECTION"
+        ? "/workspace/select"
+        : "/dashboard",
+  );
 }
