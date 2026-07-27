@@ -6,36 +6,45 @@ import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaura
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { restaurantThemeGallerySurface } from "@/lib/theme-gallery-surface";
 import { restaurantThemeFixtures } from "@/lib/site-themes/restaurant/fixtures";
 import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
 import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
-import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
+import { resolveRequestOrigin } from "@/lib/verticals/request-site";
+import styles from "./theme-gallery.module.css";
 
-export const metadata: Metadata = {
-  title: { absolute: "Restaurant themes | Restofront" },
-  description:
-    "Explore three original restaurant website themes built around reservations, ordering and after-dark hospitality.",
-  alternates: {
-    canonical: "https://restofront.com/themes/restaurant",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const surface = restaurantThemeGallerySurface(await resolveRequestOrigin());
+  return {
+    title: { absolute: `Restaurant themes | ${surface.brand.name}` },
+    description:
+      "Explore three original restaurant website themes built around reservations, ordering and after-dark hospitality.",
+    alternates: {
+      canonical: `${surface.canonicalOrigin}/themes/restaurant`,
+    },
+  };
+}
 
-export default function RestaurantThemeGalleryPage() {
+export default async function RestaurantThemeGalleryPage() {
   const manifests = listRestaurantThemeManifests();
+  const surface = restaurantThemeGallerySurface(await resolveRequestOrigin());
 
   return (
-    <>
+    <div className={surface.inverse ? styles.factorySurface : undefined}>
       <SiteHeader
-        brand={{ ...restaurantMarketing.brand, href: "/" }}
+        brand={{ ...surface.brand, href: "/" }}
+        inverse={surface.inverse}
         links={[
-          { href: "/", label: "Restofront" },
+          { href: "/", label: surface.brand.name },
           { href: "#themes", label: "Themes" },
-          { href: "/#pricing", label: "Pricing" },
+          { href: surface.pricingHref, label: "Pricing" },
         ]}
         createHref="/create?vertical=restaurant"
       />
       <main>
-        <section className="paper-grid border-b">
+        <section
+          className={`${surface.inverse ? styles.factoryGrid : "paper-grid"} border-b`}
+        >
           <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-28">
             <Badge
               variant="secondary"
@@ -49,8 +58,9 @@ export default function RestaurantThemeGalleryPage() {
               </h1>
               <div className="max-w-xl lg:justify-self-end">
                 <p className="text-lg leading-8 text-muted-foreground">
-                  Restofront matches service model, customer intent, menu shape,
-                  brand character and photography—not cuisine stereotypes.
+                  {surface.brand.name} matches service model, customer intent,
+                  menu shape, brand character and photography—not cuisine
+                  stereotypes.
                 </p>
                 <div className="mt-6 flex items-start gap-3 rounded-2xl border bg-card p-4 text-sm leading-6 text-muted-foreground">
                   <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
@@ -131,7 +141,11 @@ export default function RestaurantThemeGalleryPage() {
           })}
         </section>
 
-        <section className="border-t bg-[#1d241f] text-white">
+        <section
+          className={`border-t text-white ${
+            surface.inverse ? "bg-[#080808]" : "bg-[#1d241f]"
+          }`}
+        >
           <div className="mx-auto flex max-w-7xl flex-col gap-8 px-5 py-16 md:flex-row md:items-end md:justify-between lg:px-8">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#dc8d6d]">
@@ -153,6 +167,6 @@ export default function RestaurantThemeGalleryPage() {
           </div>
         </section>
       </main>
-    </>
+    </div>
   );
 }
