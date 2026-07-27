@@ -293,6 +293,121 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     });
   });
 
+  test("persists menu order, availability, currency and approved imagery", async () => {
+    const firstSection = sampleSiteDraft.catalogSections[0];
+    const secondSection = sampleSiteDraft.catalogSections[1];
+    const editedDraft = {
+      ...sampleSiteDraft,
+      slug,
+      catalogSections: [
+        {
+          ...secondSection,
+          items: [...secondSection.items].reverse(),
+        },
+        {
+          ...firstSection,
+          items: firstSection.items.map((item, index) =>
+            index === 0
+              ? {
+                  ...item,
+                  price: 8.5,
+                  currency: "GBP" as const,
+                  available: false,
+                  imageUrl: "/approved/menu-item.webp",
+                  originalImageUrl: "/approved/menu-item.webp",
+                  imageProvenance: "owner" as const,
+                }
+              : item,
+          ),
+        },
+      ],
+    };
+
+    await updateSiteDraft(slug, editedDraft, Vertical.RESTAURANT);
+    const reloaded = await findSiteView(slug);
+    expect(
+      reloaded?.draft.catalogSections.map((section) => section.name),
+    ).toEqual([
+      secondSection.name,
+      firstSection.name,
+    ]);
+    expect(reloaded?.draft.catalogSections[0].items.map((item) => item.name))
+      .toEqual([...secondSection.items].reverse().map((item) => item.name));
+    expect(reloaded?.draft.catalogSections[1].items[0]).toMatchObject({
+      price: 8.5,
+      currency: "GBP",
+      available: false,
+      imageUrl: "/approved/menu-item.webp",
+    });
+  });
+
+  test("refuses to publish stale translated copy without moving the live pointer", async () => {
+    const current = await findSiteView(slug);
+    if (!current) throw new Error("Expected the persisted restaurant draft");
+    const staleDraft = {
+      ...current.draft,
+      autoEnhanceImages: sampleSiteDraft.autoEnhanceImages,
+      translations: [
+        {
+          locale: "fr" as const,
+          status: "stale" as const,
+          attributes: {
+            cuisine: current.draft.attributes.cuisine,
+          },
+          eyebrow: current.draft.eyebrow,
+          description: current.draft.description,
+          catalogSections: current.draft.catalogSections.map((section) => ({
+            name: section.name,
+            description: section.description,
+            items: section.items.map((item) => ({
+              name: item.name,
+              description: item.description,
+              attributes: {
+                dietaryLabels: item.attributes.dietaryLabels,
+              },
+            })),
+          })),
+          integrationLabels: current.draft.integrations.map(
+            (integration) => integration.label,
+          ),
+        },
+      ],
+    };
+    await updateSiteDraft(slug, staleDraft, Vertical.RESTAURANT);
+    const before = await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: {
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true, auditEvents: true } },
+      },
+    });
+
+    await expect(
+      publishSiteDraft({
+        siteId,
+        slug,
+        vertical: Vertical.RESTAURANT,
+        actor,
+        changeSummary: "Stale translation must not publish",
+      }),
+    ).rejects.toThrow("Review every stale translation before publishing");
+
+    expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: {
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true, auditEvents: true } },
+        },
+      }),
+    ).toEqual(before);
+    await updateSiteDraft(
+      slug,
+      { ...staleDraft, translations: [] },
+      Vertical.RESTAURANT,
+    );
+  });
+
   test("leaves the live pointer untouched when persisted draft validation fails", async () => {
     const before = await db.site.findUniqueOrThrow({
       where: { id: siteId },

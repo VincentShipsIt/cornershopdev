@@ -1,6 +1,8 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
+import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
 import {
   projectSiteDraft,
   siteDraftRelations,
@@ -35,6 +37,13 @@ export class SitePublicationStateError extends Error {
   constructor() {
     super("Only claimed or live sites can be published");
     this.name = "SitePublicationStateError";
+  }
+}
+
+export class SitePublicationTranslationError extends Error {
+  constructor() {
+    super("Review every stale translation before publishing");
+    this.name = "SitePublicationTranslationError";
   }
 }
 
@@ -81,6 +90,18 @@ export async function publishSiteDraft(
           // here before any write means validation failure cannot create a
           // version, move the pointer, change status, or write an audit row.
           const loaded = projectSiteDraft(site);
+          if (
+            loaded.vertical === Vertical.RESTAURANT &&
+            hasUnreviewedRestaurantTranslations(
+              loaded.draft as {
+                translations: Array<{
+                  status: "current" | "stale" | "draft";
+                }>;
+              },
+            )
+          ) {
+            throw new SitePublicationTranslationError();
+          }
           const draft = loaded.draft as Prisma.InputJsonValue;
           const latest = await tx.siteVersion.findFirst({
             where: { siteId: input.siteId },

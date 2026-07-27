@@ -172,7 +172,7 @@ export function AfterDarkTheme({
                   </p>
                 </div>
                 <div className="divide-y divide-current/15">
-                  {section.items.map((item) => (
+                  {section.items.filter((item) => item.available).map((item) => (
                     <div
                       key={item.name}
                       className="grid grid-cols-[1fr_auto] gap-5 py-5"

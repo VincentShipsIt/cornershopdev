@@ -30,11 +30,27 @@ export const siteImageUrlSchema = z.union([
   z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
 ]);
 
+export const supportedCurrencySchema = z.enum([
+  "EUR",
+  "USD",
+  "GBP",
+  "CHF",
+  "CAD",
+  "AUD",
+  "NZD",
+  "JPY",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+]);
+
 export const catalogItemSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(320).default(""),
   price: z.number().nonnegative().nullable().default(null),
-  currency: z.string().length(3).default("EUR"),
+  currency: supportedCurrencySchema.default("EUR"),
+  available: z.boolean().default(true),
   imageUrl: siteImageUrlSchema.nullable().default(null),
   originalImageUrl: siteImageUrlSchema.nullable().optional(),
   imageProvenance: imageProvenanceSchema.nullable().optional(),

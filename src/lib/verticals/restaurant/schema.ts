@@ -50,7 +50,14 @@ export const menuSectionSchema = catalogSectionSchema.extend({
   items: z.array(menuItemSchema).max(40),
 });
 
+export const restaurantTranslationStatusSchema = z.enum([
+  "current",
+  "stale",
+  "draft",
+]);
+
 const restaurantSiteTranslationSchema = baseSiteTranslationSchema.extend({
+  status: restaurantTranslationStatusSchema.default("current"),
   attributes: restaurantAttributesSchema.pick({ cuisine: true }),
   catalogSections: z.array(
     translatedCatalogSectionSchema.extend({
@@ -65,6 +72,7 @@ const restaurantSiteTranslationSchema = baseSiteTranslationSchema.extend({
 
 export const restaurantTranslationSchema = z.object({
   locale: localeSchema,
+  status: restaurantTranslationStatusSchema.default("current"),
   cuisine: z.string().max(80),
   eyebrow: z.string().max(100),
   description: z.string().min(20).max(500),
@@ -83,6 +91,12 @@ export const restaurantTranslationSchema = z.object({
   ),
   integrationLabels: z.array(z.string().min(1).max(60)).max(12),
 });
+
+export const restaurantTranslationCandidateSchema =
+  restaurantTranslationSchema.omit({
+    locale: true,
+    status: true,
+  });
 
 export const restaurantSiteDraftSchema = z
   .object({
@@ -113,7 +127,7 @@ export const restaurantDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     ...restaurantAttributesSchema.shape,
-  translations: z.array(restaurantTranslationSchema).max(8).default([]),
+    translations: z.array(restaurantTranslationSchema).max(8).default([]),
     menuSections: z.array(menuSectionSchema).min(1).max(12),
   })
   .superRefine((draft, context) => {
@@ -139,6 +153,9 @@ export type RestaurantItemAttributes = z.infer<
   typeof restaurantItemAttributesSchema
 >;
 export type RestaurantDraft = z.infer<typeof restaurantDraftSchema>;
+export type RestaurantTranslation = z.infer<
+  typeof restaurantTranslationSchema
+>;
 export type RestaurantSiteDraft = z.infer<typeof restaurantSiteDraftSchema>;
 export type RestaurantLocale = z.infer<typeof localeSchema>;
 
@@ -268,6 +285,7 @@ export function toRestaurantDraft(
     defaultLocale: draft.defaultLocale,
     translations: draft.translations.map((translation) => ({
       locale: translation.locale,
+      status: translation.status,
       cuisine: translation.attributes.cuisine,
       eyebrow: translation.eyebrow,
       description: translation.description,
@@ -290,6 +308,7 @@ export function toRestaurantDraft(
         description: item.description,
         price: item.price,
         currency: item.currency,
+        available: item.available,
         dietaryLabels: item.attributes.dietaryLabels,
         imageUrl: item.imageUrl,
         originalImageUrl: item.originalImageUrl,
@@ -325,6 +344,7 @@ export function fromRestaurantDraft(
     defaultLocale: draft.defaultLocale,
     translations: draft.translations.map((translation) => ({
       locale: translation.locale,
+      status: translation.status,
       attributes: {
         cuisine: translation.cuisine,
       },
@@ -351,6 +371,7 @@ export function fromRestaurantDraft(
         description: item.description,
         price: item.price,
         currency: item.currency,
+        available: item.available,
         attributes: {
           dietaryLabels: item.dietaryLabels,
         },

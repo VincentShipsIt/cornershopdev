@@ -35,6 +35,7 @@ export type SiteCatalogItemView = {
   description: string;
   price: number | null;
   currency: string;
+  available: boolean;
   imageUrl: string | null;
   attributes: Record<string, unknown>;
 };

@@ -135,7 +135,7 @@ export function TerroirEditorialTheme({
                   </p>
                 </div>
                 <div className="divide-y divide-current/12">
-                  {section.items.map((item) => (
+                  {section.items.filter((item) => item.available).map((item) => (
                     <div
                       key={item.name}
                       className="grid gap-4 py-6 sm:grid-cols-[1fr_auto]"

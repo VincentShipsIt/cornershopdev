@@ -50,6 +50,7 @@ export type PersistableSiteDraft = {
       description: string;
       price: number | null;
       currency: string;
+      available: boolean;
       attributes: Record<string, unknown>;
       imageUrl: string | null;
       originalImageUrl?: string | null;
@@ -629,6 +630,7 @@ function catalogSectionCreateData(
         description: item.description,
         price: item.price,
         currency: item.currency,
+        available: item.available,
         attributes: config.itemAttributesSchema.parse(
           item.attributes,
         ) as Prisma.InputJsonValue,

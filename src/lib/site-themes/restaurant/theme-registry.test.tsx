@@ -262,6 +262,7 @@ describe("restaurant theme compatibility", () => {
       translations: [
         {
           locale: "fr",
+          status: "current" as const,
           cuisine: "Méditerranéenne de saison",
           eyebrow: "Le champ, le feu et la saison maltaise",
           description:
@@ -364,5 +365,28 @@ describe("restaurant theme renderers", () => {
     expect(html).not.toContain("Drinks from 18:00");
     expect(html).not.toContain("late kitchen");
     expect(html).toContain("Tonight’s programme");
+  });
+
+  it("does not render unavailable menu items", () => {
+    const fixture = restaurantThemeFixtures["counter-service"];
+    const unavailableName = fixture.catalogSections[0].items[0].name;
+    const selection = restaurantThemeSelectionSchema.parse(
+      fixture.attributes.themeSelection,
+    );
+    const draft = {
+      ...fixture,
+      catalogSections: fixture.catalogSections.map((section, sectionIndex) => ({
+        ...section,
+        items: section.items.map((item, itemIndex) => ({
+          ...item,
+          available: sectionIndex === 0 && itemIndex === 0 ? false : true,
+        })),
+      })),
+    };
+    const html = renderToStaticMarkup(
+      <RestaurantThemeRenderer draft={draft} selection={selection} />,
+    );
+
+    expect(html).not.toContain(unavailableName);
   });
 });
