@@ -128,11 +128,15 @@ export function SiteHeader({
                 <SheetClose
                   key={link.href}
                   render={<Link href={link.href} />}
+                  nativeButton={false}
                 >
                   {link.label}
                 </SheetClose>
               ))}
-              <SheetClose render={<Link href="/dashboard" />}>
+              <SheetClose
+                render={<Link href="/dashboard" />}
+                nativeButton={false}
+              >
                 Sign in
               </SheetClose>
               <Button
