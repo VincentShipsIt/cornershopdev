@@ -7,7 +7,6 @@ import {
   BookOpenText,
   Check,
   CircleCheck,
-  Copy,
   CreditCard,
   ExternalLink,
   Eye,
@@ -25,9 +24,7 @@ import {
   Save,
   Settings,
   Sparkles,
-  Trash2,
   TrendingUp,
-  TriangleAlert,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { AccountActions } from "@/components/account-actions";
@@ -75,22 +72,7 @@ import {
   validateRestaurantMenuDraft,
   type RestaurantMenuMutation,
 } from "@/lib/restaurant-menu-editor";
-
-type DomainSetup = {
-  hostname: string;
-  hostnames: string[];
-  attached: boolean;
-  verified: boolean;
-  records: Array<{ type: string; name: string; value: string }>;
-  tls: {
-    status: "PENDING" | "READY" | "ERROR";
-    checkedAt: string | null;
-    message: string;
-  };
-  siteStatus: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
-  previewPath: string;
-  publicUrl: string;
-};
+import type { DomainSetup } from "@/app/dashboard/dashboard-types";
 
 type ClientPublicationHistoryItem = Omit<
   SitePublicationHistoryItem,
@@ -646,10 +628,14 @@ export function Dashboard({
     setDomainError(null);
     setDomainNotice(null);
     try {
-      const response = await fetch(
-        `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
-        { cache: "no-store" },
-      );
+      const response = await fetch("/api/domains", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hostname: domainSetup.hostname,
+          siteSlug: draft.slug,
+        }),
+      });
       const result = (await response.json()) as DomainSetup & {
         error?: string;
       };
@@ -1614,8 +1600,7 @@ export function Dashboard({
                     )}
                   </CardContent>
                 </Card>
-              </div>
-            </TabsContent>
+              </div>            </TabsContent>
 
             <TabsContent value="settings" className="mt-0">
               <PageHeading

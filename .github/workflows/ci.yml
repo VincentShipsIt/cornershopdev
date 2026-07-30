@@ -14,12 +14,29 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: cornershopdev_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d cornershopdev_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      # Prisma Client generation validates that DATABASE_URL exists but does not
-      # connect to this placeholder. Runtime readiness is checked separately.
+      # Real Postgres for unit + opt-in integration suites. Prisma generate only
+      # needs the URL shape; migrate + postgres tests exercise the service.
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/cornershopdev_ci
       BETTER_AUTH_SECRET: ci-only-better-auth-secret-32-bytes
       WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
+      SITE_PUBLICATION_POSTGRES_TEST: "1"
+      ANALYTICS_POSTGRES_TEST: "1"
+      SOURCE_MONITORING_POSTGRES_TEST: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -28,6 +45,7 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - run: bunx --bun prisma migrate deploy
       - run: bun run test
       - run: bun run lint
       - run: bun run design:lint

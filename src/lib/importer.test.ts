@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { assertPublicUrl, isPrivateAddress } from "@/lib/importer";
+import {
+  assertPublicUrl,
+  isPrivateAddress,
+  resolvePublicAddresses,
+} from "@/lib/importer";
 
 describe("importer SSRF guards", () => {
   it.each([
@@ -65,5 +69,14 @@ describe("importer SSRF guards", () => {
     await expect(
       assertPublicUrl(new URL("http://[::1]/")),
     ).rejects.toThrow(/private/i);
+  });
+
+  it("returns public literal addresses for pin-after-resolve", async () => {
+    await expect(resolvePublicAddresses("8.8.8.8")).resolves.toEqual([
+      "8.8.8.8",
+    ]);
+    await expect(resolvePublicAddresses("169.254.169.254")).rejects.toThrow(
+      /private/i,
+    );
   });
 });

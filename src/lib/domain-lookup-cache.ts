@@ -52,3 +52,15 @@ export function setCachedDomainRecords(
 export function clearDomainLookupCache(): void {
   cache.clear();
 }
+
+/** Drop every cache key that mentions one of these hostnames. */
+export function invalidateDomainLookupHostnames(hostnames: string[]): void {
+  if (hostnames.length === 0) return;
+  const wanted = new Set(hostnames.map((value) => value.toLowerCase()));
+  for (const key of cache.keys()) {
+    const parts = key.split("|");
+    if (parts.some((part) => wanted.has(part))) {
+      cache.delete(key);
+    }
+  }
+}
