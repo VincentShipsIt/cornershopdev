@@ -20,7 +20,9 @@ import {
   type DomainHostnamePlan,
 } from "@/lib/domain-routing";
 import { checkDomainTls } from "@/lib/domain-tls";
+import { invalidateDomainLookupHostnames } from "@/lib/domain-lookup-cache";
 import { isFactoryHostname } from "@/lib/hostnames";
+import { isSameOriginMutation } from "@/lib/request-origin";
 
 const hostnameSchema = z
   .string()
@@ -60,6 +62,9 @@ function getDomainTarget() {
 
 export async function POST(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;
@@ -129,6 +134,7 @@ export async function POST(request: Request) {
       }),
     ]);
     if (!site) throw new Error("Site not found");
+    invalidateDomainLookupHostnames(plan.hostnames);
     return Response.json(
       domainSetup(plan, rows, target, site.status, access.site.slug, false),
     );
@@ -137,35 +143,65 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Read-only listing. DNS/TLS verification is intentionally not a GET side effect
+ * (safe methods must not mutate); use PATCH to recheck a hostname.
+ */
 export async function GET(request: Request) {
   try {
     const searchParams = new URL(request.url).searchParams;
-    const requestedHostname = searchParams.get("hostname");
+    if (searchParams.get("hostname")) {
+      return Response.json(
+        {
+          error:
+            "Use PATCH /api/domains with { hostname, siteSlug } to recheck DNS",
+        },
+        { status: 405, headers: { Allow: "GET, POST, PATCH, DELETE" } },
+      );
+    }
     const siteSlug = siteSlugSchema.parse(searchParams.get("siteSlug"));
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);
 
     const db = getDb();
     const target = getDomainTarget();
-    if (!requestedHostname) {
-      const [rows, site] = await Promise.all([
-        db.domain.findMany({
-          where: { siteId: access.site.id },
-          select: domainRowSelect,
-          orderBy: { createdAt: "asc" },
-        }),
-        db.site.findUnique({
-          where: { id: access.site.id },
-          select: { status: true },
-        }),
-      ]);
-      if (!site) throw new Error("Site not found");
-      return Response.json({
-        domains: domainSetups(rows, target, site.status, access.site.slug),
-      });
-    }
+    const [rows, site] = await Promise.all([
+      db.domain.findMany({
+        where: { siteId: access.site.id },
+        select: domainRowSelect,
+        orderBy: { createdAt: "asc" },
+      }),
+      db.site.findUnique({
+        where: { id: access.site.id },
+        select: { status: true },
+      }),
+    ]);
+    if (!site) throw new Error("Site not found");
+    return Response.json({
+      domains: domainSetups(rows, target, site.status, access.site.slug),
+    });
+  } catch (error) {
+    return domainFailure(error, "Domains could not be loaded");
+  }
+}
 
-    const hostname = hostnameSchema.parse(requestedHostname);
+/** Recheck DNS + TLS for an attached hostname and persist the result. */
+export async function PATCH(request: Request) {
+  try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const body = (await request.json()) as {
+      hostname?: string;
+      siteSlug?: string;
+    };
+    const hostname = hostnameSchema.parse(body.hostname);
+    const siteSlug = siteSlugSchema.parse(body.siteSlug);
+    const access = await getSiteAccess(siteSlug);
+    if (!access.ok) return accessFailureResponse(access);
+
+    const db = getDb();
+    const target = getDomainTarget();
     const plan = planDomainHostnames(hostname);
     const existing = await db.domain.findMany({
       where: {
@@ -228,6 +264,7 @@ export async function GET(request: Request) {
       { isolationLevel: "Serializable" },
     );
 
+    invalidateDomainLookupHostnames(plan.hostnames);
     return Response.json(
       domainSetup(plan, checked, target, siteStatus, access.site.slug, true),
     );
@@ -238,6 +275,9 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;
@@ -294,6 +334,7 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "Domain not found" }, { status: 404 });
     }
 
+    invalidateDomainLookupHostnames(result.hostnames);
     return Response.json({
       removed: true,
       hostnames: result.hostnames,

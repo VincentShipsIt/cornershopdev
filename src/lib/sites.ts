@@ -267,15 +267,20 @@ export async function findSiteView(slug: string): Promise<SiteView | null> {
 }
 
 /**
- * Same as `findSiteView`, but falls back to the sample site under the requested
- * slug so surfaces that must always render something (the dashboard) have a draft.
+ * Same as `findSiteView`, but falls back to the **sample** site only when the
+ * requested slug is the sample's own slug. Arbitrary owner slugs never receive
+ * invented Osteria Luna content.
  */
 export async function getSiteView(slug: string): Promise<SiteView> {
   const site = await findSiteView(slug);
   if (site) return site;
 
+  if (slug !== sampleSiteDraft.slug) {
+    throw new Error(`Site not found: ${slug}`);
+  }
+
   const config = resolveVerticalConfig(Vertical.RESTAURANT);
-  const draft = { ...sampleSiteDraft, slug };
+  const draft = sampleSiteDraft;
   const attributes = config.attributesSchema.parse(draft.attributes);
   return {
     vertical: Vertical.RESTAURANT,

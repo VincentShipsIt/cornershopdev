@@ -5,6 +5,7 @@ import {
   SourceMonitoringConflictError,
 } from "@/lib/source-monitoring";
 import { getSourceMonitoringAccess } from "@/lib/source-monitoring-access";
+import { isSameOriginMutation } from "@/lib/request-origin";
 
 const reviewSchema = z.object({
   action: z.enum(["accept", "reject"]),
@@ -20,6 +21,9 @@ export async function PATCH(
     "/api/sites/[slug]/source-monitoring/suggestions/[suggestionId]"
   >,
 ) {
+  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { slug, suggestionId } = await params;
   const access = await getSourceMonitoringAccess(slug);
   if (!access.ok) return accessFailureResponse(access);

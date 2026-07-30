@@ -6,6 +6,7 @@ import {
 } from "@/lib/authorization";
 import { getDb } from "@/lib/db";
 import { fetchPublicImage } from "@/lib/importer";
+import { isSameOriginMutation } from "@/lib/request-origin";
 import { storeSiteImage } from "@/lib/storage/images";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
@@ -24,6 +25,9 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const { sourceImageUrl, siteSlug, siteName, enhancementNotes } =
       requestSchema.parse(await request.json());
     const access = await getSiteAccess(siteSlug);

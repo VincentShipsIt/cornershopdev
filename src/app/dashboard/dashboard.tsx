@@ -7,7 +7,6 @@ import {
   BookOpenText,
   Check,
   CircleCheck,
-  Copy,
   CreditCard,
   ExternalLink,
   Eye,
@@ -25,9 +24,7 @@ import {
   Save,
   Settings,
   Sparkles,
-  Trash2,
   TrendingUp,
-  TriangleAlert,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { AccountActions } from "@/components/account-actions";
@@ -75,21 +72,8 @@ import {
   validateRestaurantMenuDraft,
   type RestaurantMenuMutation,
 } from "@/lib/restaurant-menu-editor";
-
-type DomainSetup = {
-  hostname: string;
-  hostnames: string[];
-  attached: boolean;
-  verified: boolean;
-  records: Array<{ type: string; name: string; value: string }>;
-  tls: {
-    status: "PENDING" | "READY" | "ERROR";
-    checkedAt: string | null;
-    message: string;
-  };
-  siteStatus: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
-  previewPath: string;
-};
+import type { DomainSetup } from "@/app/dashboard/dashboard-types";
+import { DomainPanel } from "@/app/dashboard/domain-panel";
 
 type ClientPublicationHistoryItem = Omit<
   SitePublicationHistoryItem,
@@ -230,11 +214,17 @@ export function Dashboard({
         const response = await fetch(`/api/sites/${draft.slug}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft),
+          body: JSON.stringify({
+            ...draft,
+            ...(savedRevision !== null
+              ? { expectedRevision: savedRevision }
+              : {}),
+          }),
         });
         const result = (await response.json()) as {
           error?: string;
           revision?: number;
+          code?: string;
         };
         if (!response.ok) {
           throw new Error(result.error ?? "Save failed");
@@ -629,10 +619,14 @@ export function Dashboard({
     setDomainError(null);
     setDomainNotice(null);
     try {
-      const response = await fetch(
-        `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
-        { cache: "no-store" },
-      );
+      const response = await fetch("/api/domains", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hostname: domainSetup.hostname,
+          siteSlug: draft.slug,
+        }),
+      });
       const result = (await response.json()) as DomainSetup & {
         error?: string;
       };
@@ -1395,183 +1389,17 @@ export function Dashboard({
             </TabsContent>
 
             <TabsContent value="domain" className="mt-0">
-              <PageHeading
-                eyebrow="Go live"
-                title="Connect the restaurant's domain."
-                copy="The old website stays live until these records are changed. Email and booking systems remain untouched."
+              <DomainPanel
+                domain={domain}
+                domainSetup={domainSetup}
+                domainError={domainError}
+                domainNotice={domainNotice}
+                domainLoading={domainLoading}
+                onDomainChange={setDomain}
+                onConnect={() => void connectDomain()}
+                onCheck={() => void checkDomain()}
+                onRemove={() => void removeDomain()}
               />
-              <div className="mt-8 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Restaurant domain</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Label htmlFor="domain">Domain name</Label>
-                    <Input
-                      id="domain"
-                      value={domain}
-                      onChange={(event) => setDomain(event.target.value)}
-                      placeholder="restaurant.com"
-                      className="mt-2 h-11"
-                    />
-                    {domainError ? (
-                      <p
-                        className="mt-3 text-xs text-destructive"
-                        role="alert"
-                      >
-                        {domainError}
-                      </p>
-                    ) : null}
-                    {domainNotice ? (
-                      <p
-                        className="mt-3 text-xs text-muted-foreground"
-                        role="status"
-                      >
-                        {domainNotice}
-                      </p>
-                    ) : null}
-                    <Button
-                      className="mt-4 w-full"
-                      onClick={() => void connectDomain()}
-                      disabled={!domain || domainLoading}
-                    >
-                      {domainLoading ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : (
-                        <Globe2 />
-                      )}
-                      Add domain
-                    </Button>
-                    <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                      Cornershopdev authorizes the domain for automatic SSL before
-                      asking for DNS changes.
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      {domainSetup
-                        ? "DNS records to copy"
-                        : "What happens next"}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {domainSetup ? (
-                      <div className="space-y-3">
-                        {domainSetup.records.map((record) => (
-                          <div
-                            key={`${record.type}-${record.name}`}
-                            className="grid grid-cols-[70px_1fr_auto] items-center gap-3 rounded-xl border bg-muted/35 p-3"
-                          >
-                            <Badge variant="outline">{record.type}</Badge>
-                            <div className="min-w-0">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                {record.name}
-                              </p>
-                              <p className="truncate font-mono text-xs">
-                                {record.value}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() =>
-                                navigator.clipboard.writeText(record.value)
-                              }
-                            >
-                              <Copy />
-                            </Button>
-                          </div>
-                        ))}
-                        <div className="grid gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-2">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                              DNS
-                            </p>
-                            <p className="mt-1 flex items-center gap-2 text-xs font-medium">
-                              {domainSetup.verified ? (
-                                <CircleCheck className="size-4 text-emerald-500" />
-                              ) : (
-                                <RefreshCcw className="size-4 text-muted-foreground" />
-                              )}
-                              {domainSetup.verified
-                                ? "Verified"
-                                : "Waiting for records"}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                              HTTPS
-                            </p>
-                            <p className="mt-1 flex items-center gap-2 text-xs font-medium">
-                              {domainSetup.tls.status === "READY" ? (
-                                <CircleCheck className="size-4 text-emerald-500" />
-                              ) : domainSetup.tls.status === "ERROR" ? (
-                                <TriangleAlert className="size-4 text-amber-500" />
-                              ) : (
-                                <RefreshCcw className="size-4 text-muted-foreground" />
-                              )}
-                              {domainSetup.tls.status === "READY"
-                                ? "Secure connection ready"
-                                : domainSetup.tls.status === "ERROR"
-                                  ? "Needs attention"
-                                  : "Certificate pending"}
-                            </p>
-                          </div>
-                          <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
-                            {domainSetup.tls.message}
-                          </p>
-                        </div>
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => void checkDomain()}
-                          disabled={domainLoading}
-                        >
-                          <RefreshCcw
-                            className={domainLoading ? "animate-spin" : ""}
-                          />
-                          {domainSetup.verified
-                            ? "Check HTTPS again"
-                            : "Check DNS again"}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="w-full text-destructive hover:text-destructive"
-                          onClick={() => void removeDomain()}
-                          disabled={domainLoading}
-                        >
-                          <Trash2 />
-                          Remove domain
-                        </Button>
-                        <p className="text-xs leading-5 text-muted-foreground">
-                          Removing the domain immediately revokes public routing.
-                          Your private preview and published version are kept.
-                        </p>
-                      </div>
-                    ) : (
-                      <ol className="space-y-5 text-sm">
-                        {[
-                          "Cornershopdev authorizes the domain on the production host.",
-                          "The exact DNS record appears here for copying into your DNS provider.",
-                          "Once DNS resolves, SSL is issued and the new site becomes live.",
-                        ].map((step, index) => (
-                          <li key={step} className="flex gap-3">
-                            <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[10px]">
-                              {index + 1}
-                            </span>
-                            <span className="leading-6 text-muted-foreground">
-                              {step}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
             </TabsContent>
 
             <TabsContent value="settings" className="mt-0">

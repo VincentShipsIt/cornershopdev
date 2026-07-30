@@ -39,7 +39,16 @@ export async function POST(
   }
 
   try {
+    if (access.site.vertical !== "RESTAURANT") {
+      return Response.json(
+        { error: "Translation regeneration is only available for restaurants" },
+        { status: 409 },
+      );
+    }
     const draft = await getRestaurantDraft(access.site.slug);
+    if (!draft) {
+      return Response.json({ error: "Restaurant not found" }, { status: 404 });
+    }
     if (
       !draft.translations.some(
         (translation) => translation.locale === locale.data,

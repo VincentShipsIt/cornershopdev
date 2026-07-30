@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
+import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
 import type {
   LinkClassificationHint,
@@ -58,56 +59,142 @@ const privateIpv4Patterns = [
   /^2[4-5]\d\./,
 ];
 
-function isPrivateAddress(address: string): boolean {
+/** Exported for unit tests and shared private-host checks. */
+export function isPrivateAddress(address: string): boolean {
   const normalized = address.toLowerCase();
   if (
     normalized === "::" ||
     normalized === "::1" ||
-    normalized.startsWith("::") ||
     normalized.startsWith("::ffff:") ||
     normalized.startsWith("64:ff9b:") ||
     normalized.startsWith("2001:db8:") ||
     normalized.startsWith("fc") ||
     normalized.startsWith("fd") ||
+    normalized.startsWith("fe80:") ||
     normalized.startsWith("ff")
   ) {
     return true;
   }
-  if (normalized.startsWith("fe80:")) return true;
+  // Mapped IPv4 in IPv6 form (::ffff:a.b.c.d)
+  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped?.[1] && isPrivateAddress(mapped[1])) return true;
   return privateIpv4Patterns.some((pattern) => pattern.test(address));
 }
 
-async function assertPublicUrl(url: URL): Promise<void> {
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("Only http and https URLs are supported");
-  }
+function normalizeHostname(hostname: string): string {
+  // WHATWG URL keeps brackets on IPv6 hostnames (`[::1]`); strip them before
+  // IP classification so link-local and loopback literals are not sent to DNS.
+  return hostname.toLowerCase().replace(/^\[|\]$/g, "");
+}
 
-  const hostname = url.hostname.toLowerCase();
+/**
+ * Resolves A/AAAA records and rejects the host if any answer is private.
+ * Returns the public addresses so the connect path can pin to one of them.
+ */
+export async function resolvePublicAddresses(
+  hostname: string,
+): Promise<string[]> {
+  const normalized = normalizeHostname(hostname);
   if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".internal") ||
+    normalized === "metadata.google.internal"
   ) {
     throw new Error("Local network addresses are not supported");
   }
 
-  if (isIP(hostname)) {
-    if (isPrivateAddress(hostname)) {
+  if (isIP(normalized)) {
+    if (isPrivateAddress(normalized)) {
       throw new Error("Private network addresses are not supported");
     }
-    return;
+    return [normalized];
   }
 
   const addresses = (
-    await Promise.allSettled([resolve4(hostname), resolve6(hostname)])
+    await Promise.allSettled([resolve4(normalized), resolve6(normalized)])
   ).flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
   if (addresses.length === 0) {
-    throw new Error("The restaurant website could not be resolved");
+    throw new Error("The website could not be resolved");
   }
 
   if (addresses.some(isPrivateAddress)) {
     throw new Error("Private network addresses are not supported");
+  }
+  return addresses;
+}
+
+/**
+ * Resolves and rejects private / link-local / metadata destinations before the
+ * importer opens a connection.
+ */
+export async function assertPublicUrl(url: URL): Promise<void> {
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http and https URLs are supported");
+  }
+  await resolvePublicAddresses(url.hostname);
+}
+
+/**
+ * Connects to a public IP that was resolved for this hostname, with SNI/Host
+ * still set to the original name. That closes the classic DNS-rebinding window
+ * between resolve and TCP connect (the OS resolver is not consulted again).
+ */
+async function fetchPublicResponse(
+  url: URL,
+  init: RequestInit,
+): Promise<Response> {
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http and https URLs are supported");
+  }
+
+  const hostname = normalizeHostname(url.hostname);
+  const addresses = await resolvePublicAddresses(hostname);
+  // Prefer IPv4 when available; many restaurant origins still lack AAAA.
+  const pinnedIp =
+    addresses.find((address) => isIP(address) === 4) ?? addresses[0];
+  const family = isIP(pinnedIp) === 6 ? 6 : 4;
+
+  const agent = new Agent({
+    connect: {
+      lookup(_host, _options, callback) {
+        callback(null, pinnedIp, family);
+      },
+      servername: hostname,
+    },
+  });
+
+  try {
+    const headers = new Headers(init.headers);
+    if (!headers.has("host")) {
+      headers.set(
+        "host",
+        url.port && url.port !== "80" && url.port !== "443"
+          ? `${hostname}:${url.port}`
+          : hostname,
+      );
+    }
+    // undici's RequestInit/Response types diverge slightly from DOM fetch;
+    // cast at the boundary — runtime behaviour matches for status/body reads.
+    return (await undiciFetch(url, {
+      method: init.method,
+      headers,
+      body: init.body as never,
+      redirect: init.redirect ?? "manual",
+      signal: init.signal as never,
+      dispatcher: agent,
+    })) as unknown as Response;
+  } finally {
+    // undici Agent cleanup differs across runtimes (Node vs Bun).
+    const closer = agent as { destroy?: () => void; close?: () => void };
+    try {
+      closer.destroy?.();
+      closer.close?.();
+    } catch {
+      // Best-effort; short-lived agents are GC'd with the request.
+    }
   }
 }
 
@@ -139,8 +226,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
   let url = initialUrl;
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
@@ -158,7 +244,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
     }
 
     if (!response.ok) {
-      throw new Error(`The restaurant website returned HTTP ${response.status}`);
+      throw new Error(`The website returned HTTP ${response.status}`);
     }
 
     const contentType = response.headers.get("content-type") ?? "";
@@ -169,7 +255,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
     return { html: await readLimitedBody(response), finalUrl: url };
   }
 
-  throw new Error("The restaurant website redirected too many times");
+  throw new Error("The website redirected too many times");
 }
 
 export async function fetchPublicImage(rawUrl: string): Promise<{
@@ -179,8 +265,7 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
   let url = new URL(rawUrl);
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg",
         "User-Agent":
@@ -253,8 +338,7 @@ export async function inspectPublicLink(rawUrl: string): Promise<{
   const originalUrl = new URL(rawUrl).toString();
   let url = new URL(originalUrl);
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       method: "HEAD",
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),

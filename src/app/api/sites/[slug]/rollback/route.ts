@@ -4,9 +4,14 @@ import {
   getSiteAccess,
 } from "@/lib/authorization";
 import {
+  billingAccessFailureResponse,
+  getSiteBillingAccess,
+} from "@/lib/billing-access";
+import {
   rollbackPublishedSiteVersion,
   SitePublicationStateError,
 } from "@/lib/site-publication";
+import { isSameOriginMutation } from "@/lib/request-origin";
 
 const rollbackRequestSchema = z
   .object({
@@ -18,9 +23,14 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
+  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
+  const billing = await getSiteBillingAccess(access.site.id);
+  if (!billing.ok) return billingAccessFailureResponse(billing);
 
   const parsed = rollbackRequestSchema.safeParse(
     await request.json().catch(() => null),

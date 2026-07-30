@@ -82,11 +82,29 @@ export type OwnerDraftSaveOptions = {
     email: string;
   };
   auditType?: "site.draft.saved" | "site.translation.regenerated";
+  /**
+   * When set, the save fails with DraftRevisionConflictError unless the row
+   * still carries this revision. Multi-tab editors use the value returned by
+   * the previous save so a stale full-replace cannot silently clobber newer work.
+   */
+  expectedRevision?: number;
 };
 
 export type OwnerDraftSaveResult = {
   revision: number;
 };
+
+export class DraftRevisionConflictError extends Error {
+  readonly currentRevision: number | null;
+
+  constructor(currentRevision: number | null = null) {
+    super(
+      "This draft was updated elsewhere. Reload before saving again.",
+    );
+    this.name = "DraftRevisionConflictError";
+    this.currentRevision = currentRevision;
+  }
+}
 
 export class ImportDatabaseUnavailableError extends Error {
   constructor() {
@@ -533,8 +551,21 @@ export async function updateSiteDraft(
     try {
       return await db.$transaction(
         async (tx) => {
-          const updated = await tx.site.update({
+          // Serializable + explicit revision check: updateMany cannot nest
+          // relation replaces, so the optimistic guard is a read-then-update.
+          const current = await tx.site.findFirst({
             where: { slug, vertical },
+            select: { id: true, draftRevision: true },
+          });
+          if (!current) throw new Error("Site not found");
+          if (
+            options.expectedRevision !== undefined &&
+            current.draftRevision !== options.expectedRevision
+          ) {
+            throw new DraftRevisionConflictError(current.draftRevision);
+          }
+          const updated = await tx.site.update({
+            where: { id: current.id },
             data: {
               ...editableSiteScalarData(parsed, vertical),
               ...siteRelationReplaceData(parsed, vertical),
@@ -564,6 +595,7 @@ export async function updateSiteDraft(
         { isolationLevel: "Serializable" },
       );
     } catch (error) {
+      if (error instanceof DraftRevisionConflictError) throw error;
       if (attempt < 2 && isRetryablePrismaError(error)) continue;
       throw error;
     }
