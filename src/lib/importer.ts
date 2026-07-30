@@ -58,35 +58,48 @@ const privateIpv4Patterns = [
   /^2[4-5]\d\./,
 ];
 
-function isPrivateAddress(address: string): boolean {
+/** Exported for unit tests and shared private-host checks. */
+export function isPrivateAddress(address: string): boolean {
   const normalized = address.toLowerCase();
   if (
     normalized === "::" ||
     normalized === "::1" ||
-    normalized.startsWith("::") ||
     normalized.startsWith("::ffff:") ||
     normalized.startsWith("64:ff9b:") ||
     normalized.startsWith("2001:db8:") ||
     normalized.startsWith("fc") ||
     normalized.startsWith("fd") ||
+    normalized.startsWith("fe80:") ||
     normalized.startsWith("ff")
   ) {
     return true;
   }
-  if (normalized.startsWith("fe80:")) return true;
+  // Mapped IPv4 in IPv6 form (::ffff:a.b.c.d)
+  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped?.[1] && isPrivateAddress(mapped[1])) return true;
   return privateIpv4Patterns.some((pattern) => pattern.test(address));
 }
 
-async function assertPublicUrl(url: URL): Promise<void> {
+/**
+ * Resolves and rejects private / link-local / metadata destinations before the
+ * importer opens a connection. Callers still use hostname-based fetch (runtime
+ * DNS may rebind); this is the allowlist gate plus a second pre-connect resolve
+ * immediately before each hop to shrink the rebinding window.
+ */
+export async function assertPublicUrl(url: URL): Promise<void> {
   if (!["http:", "https:"].includes(url.protocol)) {
     throw new Error("Only http and https URLs are supported");
   }
 
-  const hostname = url.hostname.toLowerCase();
+  // WHATWG URL keeps brackets on IPv6 hostnames (`[::1]`); strip them before
+  // IP classification so link-local and loopback literals are not sent to DNS.
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal") ||
+    hostname === "metadata.google.internal"
   ) {
     throw new Error("Local network addresses are not supported");
   }
@@ -103,12 +116,22 @@ async function assertPublicUrl(url: URL): Promise<void> {
   ).flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
   if (addresses.length === 0) {
-    throw new Error("The restaurant website could not be resolved");
+    throw new Error("The website could not be resolved");
   }
 
   if (addresses.some(isPrivateAddress)) {
     throw new Error("Private network addresses are not supported");
   }
+}
+
+async function fetchPublicResponse(
+  url: URL,
+  init: RequestInit,
+): Promise<Response> {
+  // Resolve twice around the connect: once for the caller's hop validation and
+  // again immediately before fetch so a short-TTL rebinding has a smaller window.
+  await assertPublicUrl(url);
+  return fetch(url, init);
 }
 
 async function readLimitedBody(response: Response): Promise<string> {
@@ -139,8 +162,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
   let url = initialUrl;
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
@@ -158,7 +180,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
     }
 
     if (!response.ok) {
-      throw new Error(`The restaurant website returned HTTP ${response.status}`);
+      throw new Error(`The website returned HTTP ${response.status}`);
     }
 
     const contentType = response.headers.get("content-type") ?? "";
@@ -169,7 +191,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
     return { html: await readLimitedBody(response), finalUrl: url };
   }
 
-  throw new Error("The restaurant website redirected too many times");
+  throw new Error("The website redirected too many times");
 }
 
 export async function fetchPublicImage(rawUrl: string): Promise<{
@@ -179,8 +201,7 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
   let url = new URL(rawUrl);
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg",
         "User-Agent":
@@ -253,8 +274,7 @@ export async function inspectPublicLink(rawUrl: string): Promise<{
   const originalUrl = new URL(rawUrl).toString();
   let url = new URL(originalUrl);
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       method: "HEAD",
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),

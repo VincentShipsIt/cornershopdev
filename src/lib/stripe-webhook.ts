@@ -293,7 +293,7 @@ async function synchronizeSubscription(
   snapshot: StripeSubscriptionSnapshot,
 ) {
   const eventCreatedAt = stripeTimestamp(event.created);
-  await tx.subscription.updateMany({
+  const updated = await tx.subscription.updateMany({
     where: {
       stripeSubscriptionId: snapshot.stripeSubscriptionId,
       OR: [
@@ -308,6 +308,76 @@ async function synchronizeSubscription(
       currentPeriodEnd: snapshot.currentPeriodEnd,
       cancelAtPeriodEnd: snapshot.cancelAtPeriodEnd,
       lastStripeEventAt: eventCreatedAt,
+    },
+  });
+  if (updated.count === 0) return;
+
+  const subscription = await tx.subscription.findFirst({
+    where: { stripeSubscriptionId: snapshot.stripeSubscriptionId },
+    select: {
+      siteId: true,
+      site: {
+        select: {
+          status: true,
+          publishedSiteVersionId: true,
+        },
+      },
+    },
+  });
+  if (!subscription) return;
+
+  // Paid live delivery follows Stripe status. ACTIVE restores a billing pause;
+  // PAST_DUE / CANCELED pause claimed or live sites so custom domains stop
+  // serving until payment is restored. INCOMPLETE is left alone so checkout
+  // mid-flight does not thrash site status.
+  if (snapshot.status === "ACTIVE") {
+    if (subscription.site.status !== "PAUSED") return;
+    await tx.site.update({
+      where: { id: subscription.siteId },
+      data: {
+        status: subscription.site.publishedSiteVersionId ? "LIVE" : "CLAIMED",
+      },
+    });
+    await tx.auditEvent.create({
+      data: {
+        type: "billing.site.restored",
+        actor: "stripe-webhook",
+        siteId: subscription.siteId,
+        metadata: {
+          stripeEventId: event.id,
+          subscriptionStatus: snapshot.status,
+          restoredTo: subscription.site.publishedSiteVersionId
+            ? "LIVE"
+            : "CLAIMED",
+        },
+      },
+    });
+    return;
+  }
+
+  if (snapshot.status !== "PAST_DUE" && snapshot.status !== "CANCELED") {
+    return;
+  }
+  if (
+    subscription.site.status !== "CLAIMED" &&
+    subscription.site.status !== "LIVE"
+  ) {
+    return;
+  }
+  await tx.site.update({
+    where: { id: subscription.siteId },
+    data: { status: "PAUSED" },
+  });
+  await tx.auditEvent.create({
+    data: {
+      type: "billing.site.paused",
+      actor: "stripe-webhook",
+      siteId: subscription.siteId,
+      metadata: {
+        stripeEventId: event.id,
+        subscriptionStatus: snapshot.status,
+        previousStatus: subscription.site.status,
+      },
     },
   });
 }

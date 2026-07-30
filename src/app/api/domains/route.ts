@@ -21,6 +21,7 @@ import {
 } from "@/lib/domain-routing";
 import { checkDomainTls } from "@/lib/domain-tls";
 import { isFactoryHostname } from "@/lib/hostnames";
+import { isSameOriginMutation } from "@/lib/request-origin";
 
 const hostnameSchema = z
   .string()
@@ -60,6 +61,9 @@ function getDomainTarget() {
 
 export async function POST(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;
@@ -238,6 +242,9 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;

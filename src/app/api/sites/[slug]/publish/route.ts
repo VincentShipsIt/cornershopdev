@@ -4,11 +4,16 @@ import {
   getSiteAccess,
 } from "@/lib/authorization";
 import {
+  billingAccessFailureResponse,
+  getSiteBillingAccess,
+} from "@/lib/billing-access";
+import {
   publishSiteDraft,
   SitePublicationStateError,
   SitePublicationTranslationError,
 } from "@/lib/site-publication";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
+import { isSameOriginMutation } from "@/lib/request-origin";
 
 const publishRequestSchema = z.object({
   changeSummary: z.string().trim().min(3).max(280),
@@ -18,9 +23,14 @@ export async function POST(
   request: Request,
   { params }: RouteContext<"/api/sites/[slug]/publish">,
 ) {
+  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
+  const billing = await getSiteBillingAccess(access.site.id);
+  if (!billing.ok) return billingAccessFailureResponse(billing);
 
   const parsed = publishRequestSchema.safeParse(
     await request.json().catch(() => null),
