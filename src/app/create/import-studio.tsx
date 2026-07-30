@@ -208,7 +208,7 @@ export function ImportStudio({
       }
 
       const events = new EventSource(
-        `/api/workflows/${encodeURIComponent(result.runId)}/events`,
+        `/api/workflows/${encodeURIComponent(result.runId)}/events?importJobId=${encodeURIComponent(result.importJobId)}`,
       );
       events.onmessage = (event) => {
         let update:

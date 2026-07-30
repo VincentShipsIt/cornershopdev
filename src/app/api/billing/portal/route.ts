@@ -4,6 +4,7 @@ import {
   getSiteAccess,
 } from "@/lib/authorization";
 import { getDb } from "@/lib/db";
+import { isSameOriginMutation } from "@/lib/request-origin";
 import { getStripe } from "@/lib/stripe";
 
 const requestSchema = z.object({
@@ -12,6 +13,9 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const { siteSlug } = requestSchema.parse(await request.json());
     const access = await getSiteAccess(siteSlug);
     if (!access.ok) return accessFailureResponse(access);

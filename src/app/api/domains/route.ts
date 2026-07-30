@@ -27,6 +27,7 @@ import {
   isReservedPlatformHostname,
   parsePlatformSubdomain,
 } from "@/lib/hostnames";
+import { isSameOriginMutation } from "@/lib/request-origin";
 import { previewCacheTagFor } from "@/lib/site-surface";
 import type { VerticalId } from "@/lib/verticals/types";
 
@@ -68,6 +69,9 @@ function getDomainTarget() {
 
 export async function POST(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;
@@ -276,6 +280,9 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    if (!isSameOriginMutation(request, { requireOrigin: true })) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
     const body = (await request.json()) as {
       hostname?: string;
       siteSlug?: string;

@@ -1,6 +1,5 @@
 import { Vertical } from "@/generated/prisma/enums";
 import {
-  sampleRestaurant,
   toRestaurantDraft,
   type RestaurantDraft,
   type RestaurantSiteDraft,
@@ -11,16 +10,15 @@ import { findSiteView } from "@/lib/sites";
  * Flat restaurant-shaped view over the generic site read path. The renderer and the
  * preview/claim pages are vertical-agnostic now; this remains for the dashboard and
  * the marketing surfaces, which still edit the legacy flat `RestaurantDraft`.
+ *
+ * Never invents a sample restaurant under an arbitrary slug. Callers that need a
+ * demo fixture must use `sampleRestaurant` from `@/lib/restaurant` explicitly so a
+ * beauty (or missing) site cannot be shown or saved as Osteria Luna.
  */
 export async function getRestaurantDraft(
   slug: string,
-): Promise<RestaurantDraft> {
-  return (
-    (await findRestaurantDraft(slug)) ?? {
-      ...sampleRestaurant,
-      slug,
-    }
-  );
+): Promise<RestaurantDraft | null> {
+  return findRestaurantDraft(slug);
 }
 
 export async function findRestaurantDraft(

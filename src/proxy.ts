@@ -8,6 +8,10 @@ import {
   type CustomerHostDecision,
 } from "@/lib/domain-routing";
 import {
+  getCachedDomainRecords,
+  setCachedDomainRecords,
+} from "@/lib/domain-lookup-cache";
+import {
   parsePlatformSubdomain,
   platformHostnames,
   requestHostname,
@@ -142,28 +146,34 @@ export async function proxy(request: NextRequest) {
   }
 
   const plan = planDomainHostnames(hostname);
-  const domains = await getDb().domain.findMany({
-    where: { hostname: { in: plan.hostnames } },
-    select: {
-      hostname: true,
-      verified: true,
-      site: {
-        select: {
-          id: true,
-          slug: true,
-          status: true,
-          publishedSiteVersionId: true,
-          publishedSiteVersion: {
-            select: {
-              id: true,
-              siteId: true,
-              publishedAt: true,
+  const cachedDomains = getCachedDomainRecords(plan.hostnames);
+  const domains =
+    cachedDomains ??
+    (await getDb().domain.findMany({
+      where: { hostname: { in: plan.hostnames } },
+      select: {
+        hostname: true,
+        verified: true,
+        site: {
+          select: {
+            id: true,
+            slug: true,
+            status: true,
+            publishedSiteVersionId: true,
+            publishedSiteVersion: {
+              select: {
+                id: true,
+                siteId: true,
+                publishedAt: true,
+              },
             },
           },
         },
       },
-    },
-  });
+    }));
+  if (!cachedDomains) {
+    setCachedDomainRecords(plan.hostnames, domains);
+  }
   const decision = decideCustomerHostRoute({
     hostname,
     pathname: request.nextUrl.pathname,

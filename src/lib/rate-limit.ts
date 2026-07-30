@@ -50,10 +50,15 @@ async function limitByIp(
     };
   }
 
+  // Prefer the single hop our reverse proxy sets (Caddy X-Real-IP). Falling
+  // back to the left-most X-Forwarded-For hop is only for misconfigured local
+  // stacks — clients can spoof XFF when the app is reachable without a trusted
+  // edge, so production must overwrite these headers at the proxy.
+  const realIp = request.headers.get("x-real-ip")?.trim();
   const forwardedFor = request.headers.get("x-forwarded-for");
   const address =
-    request.headers.get("x-real-ip") ??
-    forwardedFor?.split(",")[0]?.trim() ??
+    realIp ||
+    forwardedFor?.split(",")[0]?.trim() ||
     "unknown";
   const identifier = createHash("sha256").update(address).digest("hex");
   try {

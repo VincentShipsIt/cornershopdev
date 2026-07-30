@@ -241,11 +241,17 @@ export function Dashboard({
         const response = await fetch(`/api/sites/${draft.slug}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft),
+          body: JSON.stringify({
+            ...draft,
+            ...(savedRevision !== null
+              ? { expectedRevision: savedRevision }
+              : {}),
+          }),
         });
         const result = (await response.json()) as {
           error?: string;
           revision?: number;
+          code?: string;
         };
         if (!response.ok) {
           throw new Error(result.error ?? "Save failed");
