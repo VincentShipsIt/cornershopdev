@@ -24,8 +24,13 @@ export function UnsupportedVerticalDashboard({
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border/70">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-4">
-          <Brand brand={brand} />
-          <AccountActions email={email} />
+          <Brand {...brand} />
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              {email}
+            </span>
+            <AccountActions canSwitch />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-6 py-12">

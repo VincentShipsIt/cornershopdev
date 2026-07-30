@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
+import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
 import type {
   LinkClassificationHint,
@@ -80,39 +81,39 @@ export function isPrivateAddress(address: string): boolean {
   return privateIpv4Patterns.some((pattern) => pattern.test(address));
 }
 
-/**
- * Resolves and rejects private / link-local / metadata destinations before the
- * importer opens a connection. Callers still use hostname-based fetch (runtime
- * DNS may rebind); this is the allowlist gate plus a second pre-connect resolve
- * immediately before each hop to shrink the rebinding window.
- */
-export async function assertPublicUrl(url: URL): Promise<void> {
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("Only http and https URLs are supported");
-  }
-
+function normalizeHostname(hostname: string): string {
   // WHATWG URL keeps brackets on IPv6 hostnames (`[::1]`); strip them before
   // IP classification so link-local and loopback literals are not sent to DNS.
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return hostname.toLowerCase().replace(/^\[|\]$/g, "");
+}
+
+/**
+ * Resolves A/AAAA records and rejects the host if any answer is private.
+ * Returns the public addresses so the connect path can pin to one of them.
+ */
+export async function resolvePublicAddresses(
+  hostname: string,
+): Promise<string[]> {
+  const normalized = normalizeHostname(hostname);
   if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    hostname.endsWith(".internal") ||
-    hostname === "metadata.google.internal"
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".internal") ||
+    normalized === "metadata.google.internal"
   ) {
     throw new Error("Local network addresses are not supported");
   }
 
-  if (isIP(hostname)) {
-    if (isPrivateAddress(hostname)) {
+  if (isIP(normalized)) {
+    if (isPrivateAddress(normalized)) {
       throw new Error("Private network addresses are not supported");
     }
-    return;
+    return [normalized];
   }
 
   const addresses = (
-    await Promise.allSettled([resolve4(hostname), resolve6(hostname)])
+    await Promise.allSettled([resolve4(normalized), resolve6(normalized)])
   ).flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
   if (addresses.length === 0) {
@@ -122,16 +123,79 @@ export async function assertPublicUrl(url: URL): Promise<void> {
   if (addresses.some(isPrivateAddress)) {
     throw new Error("Private network addresses are not supported");
   }
+  return addresses;
 }
 
+/**
+ * Resolves and rejects private / link-local / metadata destinations before the
+ * importer opens a connection.
+ */
+export async function assertPublicUrl(url: URL): Promise<void> {
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http and https URLs are supported");
+  }
+  await resolvePublicAddresses(url.hostname);
+}
+
+/**
+ * Connects to a public IP that was resolved for this hostname, with SNI/Host
+ * still set to the original name. That closes the classic DNS-rebinding window
+ * between resolve and TCP connect (the OS resolver is not consulted again).
+ */
 async function fetchPublicResponse(
   url: URL,
   init: RequestInit,
 ): Promise<Response> {
-  // Resolve twice around the connect: once for the caller's hop validation and
-  // again immediately before fetch so a short-TTL rebinding has a smaller window.
-  await assertPublicUrl(url);
-  return fetch(url, init);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http and https URLs are supported");
+  }
+
+  const hostname = normalizeHostname(url.hostname);
+  const addresses = await resolvePublicAddresses(hostname);
+  // Prefer IPv4 when available; many restaurant origins still lack AAAA.
+  const pinnedIp =
+    addresses.find((address) => isIP(address) === 4) ?? addresses[0];
+  const family = isIP(pinnedIp) === 6 ? 6 : 4;
+
+  const agent = new Agent({
+    connect: {
+      lookup(_host, _options, callback) {
+        callback(null, pinnedIp, family);
+      },
+      servername: hostname,
+    },
+  });
+
+  try {
+    const headers = new Headers(init.headers);
+    if (!headers.has("host")) {
+      headers.set(
+        "host",
+        url.port && url.port !== "80" && url.port !== "443"
+          ? `${hostname}:${url.port}`
+          : hostname,
+      );
+    }
+    // undici's RequestInit/Response types diverge slightly from DOM fetch;
+    // cast at the boundary — runtime behaviour matches for status/body reads.
+    return (await undiciFetch(url, {
+      method: init.method,
+      headers,
+      body: init.body as never,
+      redirect: init.redirect ?? "manual",
+      signal: init.signal as never,
+      dispatcher: agent,
+    })) as unknown as Response;
+  } finally {
+    // undici Agent cleanup differs across runtimes (Node vs Bun).
+    const closer = agent as { destroy?: () => void; close?: () => void };
+    try {
+      closer.destroy?.();
+      closer.close?.();
+    } catch {
+      // Best-effort; short-lived agents are GC'd with the request.
+    }
+  }
 }
 
 async function readLimitedBody(response: Response): Promise<string> {
