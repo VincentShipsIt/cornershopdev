@@ -19,7 +19,11 @@ module.exports = {
         "http://127.0.0.1:4173/",
         "http://127.0.0.1:4173/niche/restaurant",
       ],
-      numberOfRuns: 1,
+      // 3 runs so assertions check the median (LHCI's default aggregation),
+      // not a single noisy sample — `ubuntu-latest` CI runners are
+      // materially slower/noisier than a local machine, and a lone run can
+      // land a spurious long task during an otherwise-fine build.
+      numberOfRuns: 3,
       // `next.config.ts` sets `output: "standalone"`, which `next start` (and
       // therefore `bun run start`) does not support — Next itself warns
       // `"next start" does not work with "output: standalone"`. The
@@ -43,6 +47,23 @@ module.exports = {
     },
     assert: {
       assertions: {
+        // A prior CI run (ubuntu-latest, numberOfRuns: 1) failed here —
+        // performance 0.82 and TBT 335ms on `/`, driven by `mainthread-work-
+        // breakdown`/`bootup-time` showing the mobile-nav `Sheet` (wraps
+        // `@base-ui/react/dialog`, the header's single biggest client-only
+        // dependency) bundled eagerly into every route's main chunk. Fixed
+        // by code-splitting it via `next/dynamic` in `site-header.tsx` (see
+        // `site-header-mobile-nav.tsx`) so its portal/focus-trap JS isn't on
+        // the critical hydration path. Reproduced locally at
+        // `cpuSlowdownMultiplier: 8` (close to ubuntu-latest's throttle
+        // relative to a fast local CPU) both before and after that fix and
+        // never got below 0.90 performance or above ~54ms TBT on either
+        // route — the CI failure looks like `numberOfRuns: 1` catching a
+        // genuinely noisy sample (GC pause / neighboring-job contention on a
+        // shared runner) rather than a real regression. `numberOfRuns: 3`
+        // above (LHCI asserts the median) is the primary fix for that.
+        // Kept these two as `error`, not `warn`, since local 8x throttling
+        // never reproduced a sub-budget score after the real fix landed.
         "categories:performance": ["error", { minScore: 0.9 }],
         // Measured baseline on this build is ~3.32s on both routes (LCP
         // element is the H1 hero text on `/`, already server-rendered with

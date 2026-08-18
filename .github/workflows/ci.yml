@@ -36,6 +36,12 @@ jobs:
       - name: Show Lighthouse server log
         if: failure()
         run: cat .next/lighthouse-server.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouseci
+          path: .lighthouseci/
+          retention-days: 14
       - run: shellcheck deploy/aws/*.sh
       - run: bash deploy/aws/test-host-launcher.sh
 
