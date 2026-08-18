@@ -32,6 +32,7 @@ jobs:
       - run: bun run lint
       - run: bun run design:lint
       - run: bun run build
+      - run: bun run lighthouse
       - run: shellcheck deploy/aws/*.sh
       - run: bash deploy/aws/test-host-launcher.sh
 

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { resolve4, resolveCname } from "node:dns/promises";
+import { revalidateTag } from "next/cache";
 import type { Prisma } from "@/generated/prisma/client";
 import type { DomainTlsStatus, SiteStatus } from "@/generated/prisma/enums";
 import { z } from "zod";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/domain-routing";
 import { checkDomainTls } from "@/lib/domain-tls";
 import { isFactoryHostname } from "@/lib/hostnames";
+import { previewCacheTagFor } from "@/lib/site-surface";
 
 const hostnameSchema = z
   .string()
@@ -227,6 +229,10 @@ export async function GET(request: Request) {
       },
       { isolationLevel: "Serializable" },
     );
+    // Unconditional: this DNS check already spent seconds on network I/O, so
+    // an extra revalidateTag call is negligible, and it is the only place a
+    // verification (or a verified domain going stale) is discovered.
+    revalidateTag(previewCacheTagFor(access.site.slug), { expire: 0 });
 
     return Response.json(
       domainSetup(plan, checked, target, siteStatus, access.site.slug, true),
@@ -293,6 +299,10 @@ export async function DELETE(request: Request) {
     if (!result) {
       return Response.json({ error: "Domain not found" }, { status: 404 });
     }
+    // Removing a verified domain can drop the site's last verified hostname,
+    // flipping status away from LIVE; the cached live surface must reflect
+    // that immediately rather than on its next natural revalidation.
+    revalidateTag(previewCacheTagFor(access.site.slug), { expire: 0 });
 
     return Response.json({
       removed: true,

@@ -1,8 +1,10 @@
 import "server-only";
+import { revalidateTag } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
+import { previewCacheTagFor } from "@/lib/site-surface";
 import {
   projectPublishedSiteVersion,
   projectSiteDraft,
@@ -82,7 +84,7 @@ export async function publishSiteDraft(
   const db = getDb();
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await db.$transaction(
+      const published = await db.$transaction(
         async (tx) => {
           const site = await tx.site.findFirst({
             where: {
@@ -195,6 +197,12 @@ export async function publishSiteDraft(
         },
         { isolationLevel: "Serializable" },
       );
+      // Immediate expiry, not the `"max"` stale-while-revalidate profile: an
+      // owner who just published expects the live surface to reflect it on
+      // their very next request, the same "external trigger" case the Next.js
+      // docs call out `{ expire: 0 }` for.
+      revalidateTag(previewCacheTagFor(input.slug), { expire: 0 });
+      return published;
     } catch (error) {
       if (attempt < 2 && isRetryablePublishError(error)) continue;
       throw error;
@@ -278,7 +286,7 @@ export async function rollbackPublishedSiteVersion(input: {
   const db = getDb();
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await db.$transaction(
+      const published = await db.$transaction(
         async (tx) => {
           const site = await tx.site.findFirst({
             where: {
@@ -394,6 +402,8 @@ export async function rollbackPublishedSiteVersion(input: {
         },
         { isolationLevel: "Serializable" },
       );
+      revalidateTag(previewCacheTagFor(input.slug), { expire: 0 });
+      return published;
     } catch (error) {
       if (attempt < 2 && isRetryablePublishError(error)) continue;
       throw error;
