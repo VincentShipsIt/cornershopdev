@@ -11,7 +11,7 @@
     "test": "bun test",
     "lighthouse": "lhci autorun",
     "lighthouse:assemble": "rm -rf .next/standalone/public .next/standalone/.next/static && cp -r public .next/standalone/public && cp -r .next/static .next/standalone/.next/static",
-    "lighthouse:serve": "bun run lighthouse:assemble && PORT=4173 HOSTNAME=127.0.0.1 PLATFORM_HOSTNAMES=127.0.0.1 bun .next/standalone/server.js",
+    "lighthouse:serve": "bun run lighthouse:assemble && PORT=4173 HOSTNAME=127.0.0.1 PLATFORM_HOSTNAMES=127.0.0.1 bun .next/standalone/server.js 2>&1 | tee .next/lighthouse-server.log",
     "db:migrate:status": "bunx --bun prisma migrate status",
     "db:migrate:deploy": "bunx --bun prisma migrate deploy",
     "operator:grant-superadmin": "bun scripts/grant-superadmin.ts",

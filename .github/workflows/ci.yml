@@ -33,6 +33,9 @@ jobs:
       - run: bun run design:lint
       - run: bun run build
       - run: bun run lighthouse
+      - name: Show Lighthouse server log
+        if: failure()
+        run: cat .next/lighthouse-server.log || true
       - run: shellcheck deploy/aws/*.sh
       - run: bash deploy/aws/test-host-launcher.sh
 

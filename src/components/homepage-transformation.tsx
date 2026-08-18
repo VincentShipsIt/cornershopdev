@@ -13,6 +13,27 @@ const menuItems = sampleRestaurant.menuSections
   .slice(0, 3);
 
 /**
+ * `sampleRestaurant.heroImageUrl` is sourced at a width tuned for a full-bleed
+ * hero (see other Unsplash usages in `verticals/restaurant/schema.ts`), but this
+ * component only ever renders it inside browser-chrome mockups a few hundred
+ * pixels wide. `images.unoptimized: true` (next.config.ts) means Next never
+ * downsizes it for us, so request a variant sized for where it actually lands
+ * here — otherwise every visitor downloads the full ~1800px asset for a ~300px
+ * frame, which is exactly the kind of oversized, high-priority fetch that can
+ * push out the page's real LCP element under Lighthouse's simulated throttling.
+ */
+function unsplashSrc(url: string, width: number, quality = 75): string {
+  try {
+    const resized = new URL(url);
+    resized.searchParams.set("w", String(width));
+    resized.searchParams.set("q", String(quality));
+    return resized.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
  * A before/after mock of a real restaurant site, so it is the restaurant niche's
  * hero and nothing else — `VerticalMarketing.heroVisual` opts in. The brand name
  * is a prop because the "after" label names whoever is selling the page, which
@@ -42,7 +63,7 @@ export function HomepageTransformation({ brandName }: { brandName: string }) {
           </div>
           <div className="relative h-32 overflow-hidden border-b border-foreground/10">
             <Image
-              src={sampleRestaurant.heroImageUrl ?? ""}
+              src={unsplashSrc(sampleRestaurant.heroImageUrl ?? "", 560)}
               alt=""
               fill
               sizes="(max-width: 640px) 48vw, 280px"
@@ -99,12 +120,12 @@ export function HomepageTransformation({ brandName }: { brandName: string }) {
             <div className="absolute left-1/2 top-2 z-30 h-4 w-16 -translate-x-1/2 rounded-full bg-[#171914]" />
             <div className="relative h-60 overflow-hidden sm:h-72">
               <Image
-                src={sampleRestaurant.heroImageUrl ?? ""}
+                src={unsplashSrc(sampleRestaurant.heroImageUrl ?? "", 700)}
                 alt={`${sampleRestaurant.name} dining room`}
                 fill
                 sizes="(max-width: 640px) 58vw, 350px"
                 className="object-cover"
-                priority
+                loading="eager"
               />
               <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(12,17,14,0.85),rgba(12,17,14,0.05)_72%)]" />
               <div className="absolute inset-x-0 top-0 flex items-center justify-between p-5 pt-7 text-white">
