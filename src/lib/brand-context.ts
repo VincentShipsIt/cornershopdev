@@ -39,12 +39,25 @@ export function brandContextForVertical(
   const marketing = vertical
     ? resolveVerticalConfig(vertical).marketing
     : null;
+  // No launched domain means no storefront to speak as: hand back the
+  // factory as one complete identity rather than mixing a registered
+  // vertical's (already-designed) wordmark with the factory's own URL and
+  // mailbox. Covers both an explicit factory request (`vertical: null`) and
+  // a registered vertical — Salonfront, say — that has not launched its own
+  // domain yet.
+  if (!marketing?.domain) {
+    return {
+      ...FACTORY_BRAND,
+      vertical: null,
+      homeUrl: FACTORY_HOME_URL,
+      supportEmail: emailReplyTo(null),
+      fromAddress: emailSender(null),
+    };
+  }
   return {
-    ...(marketing?.brand ?? FACTORY_BRAND),
+    ...marketing.brand,
     vertical,
-    homeUrl: marketing?.domain
-      ? `https://${marketing.domain}`
-      : FACTORY_HOME_URL,
+    homeUrl: `https://${marketing.domain}`,
     supportEmail: emailReplyTo(vertical),
     fromAddress: emailSender(vertical),
   };

@@ -39,9 +39,18 @@ describe("brandContextForVertical", () => {
     expect(context.fromAddress).toBe(emailSender(null));
   });
 
-  it("falls back to the factory for a registered vertical with no domain yet", () => {
+  it("falls back to the complete factory identity for a registered vertical with no domain yet", () => {
+    // Salonfront (BEAUTY) has its own wordmark in the registry already, but no
+    // launched domain. The context must not mix that wordmark with the
+    // factory's URL and mailbox — it should read as Cornershopdev throughout,
+    // the same as an explicit `vertical: null` request.
     const context = brandContextForVertical(Vertical.BEAUTY);
+    expect(context.name).toBe(FACTORY_BRAND.name);
+    expect(context.initials).toBe(FACTORY_BRAND.initials);
+    expect(context.vertical).toBeNull();
     expect(context.homeUrl).toBe("https://cornershop.dev");
+    expect(context.supportEmail).toBe(emailReplyTo(null));
+    expect(context.fromAddress).toBe(emailSender(null));
   });
 });
 

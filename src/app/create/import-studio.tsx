@@ -25,7 +25,7 @@ import type { BrandContext } from "@/lib/brand-context";
 import { sampleSiteDraft } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/import-identity";
 import type { SiteDraftView } from "@/lib/site-draft";
-import { listVerticalIds, resolveVerticalConfig } from "@/lib/verticals/registry";
+import { listVerticalIds } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 type Stage = {
@@ -129,10 +129,12 @@ type ImportResponse =
  * sent them, not a guess. It only seeds the picker: the visitor can still change
  * it here, and whatever is selected at submit is what the lead is attached to.
  *
- * `initialBrand` is the Host header's brand, resolved server-side. It only
- * matters when it is the factory's own (`vertical: null`): the picker still
- * has to default to a real trade to preselect, so `initialVertical` can never
- * itself say "no niche" the way a hostname can.
+ * `initialBrand` is the Host header's brand, resolved server-side, and stays
+ * the rendered brand for the whole session: the page's `generateMetadata`
+ * already committed to it, so the header can't drift from the metadata just
+ * because the visitor toggles the vertical picker. `initialVertical` is a
+ * separate, changeable seed for the picker — it can never itself say "no
+ * niche" the way a hostname can, which is why the two are split.
  */
 export function ImportStudio({
   initialSource,
@@ -162,17 +164,14 @@ export function ImportStudio({
 
   const copy = verticalCopy[vertical];
   const stages = buildStages(copy);
-  // On a niche hostname the studio wears the selected trade's storefront
-  // brand: someone who arrived from restofront.com should not find themselves
-  // talking to the factory's own name halfway through. On the factory's own
-  // hostname there is no niche to wear — the picker still needs a real trade
-  // preselected, but the header stays the factory's regardless of which
-  // button is toggled. The back link stays "/" because host-based routing
-  // already resolves it to whichever site they came from.
-  const brand =
-    initialBrand.vertical === null
-      ? initialBrand
-      : resolveVerticalConfig(vertical).marketing.brand;
+  // The header always wears the request-host brand, not the vertical the
+  // picker currently has selected: `src/app/create/page.tsx` already
+  // resolved `initialBrand` from the Host header for this page's metadata,
+  // and toggling the picker must not make the chrome disagree with it. The
+  // picker still drives the copy and import behavior below via `vertical`.
+  // The back link stays "/" because host-based routing already resolves it
+  // to whichever site they came from.
+  const brand = initialBrand;
 
   async function runImport(value = source) {
     const cleanSource = value.trim();
