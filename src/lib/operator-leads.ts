@@ -6,6 +6,7 @@ import {
   importFailureMessage,
   normalizeImportSource,
 } from "@/lib/import-identity";
+import { mutableLeadStatuses } from "@/lib/lead-status";
 import {
   createImportJob,
   persistSiteImport,
@@ -18,7 +19,12 @@ import {
 } from "@/lib/site-pipeline";
 import type { VerticalId } from "@/lib/verticals/types";
 
-const mutableLeadStatuses = new Set(["PROSPECT", "PREVIEW_READY"]);
+/**
+ * Lead statuses that a site may still be reopened or outreached from.
+ * Re-exported from `@/lib/lead-status` (see that module for why it lives on
+ * its own) so existing importers of this rule from here keep working.
+ */
+export { mutableLeadStatuses };
 
 export class OperatorLeadError extends Error {
   constructor(

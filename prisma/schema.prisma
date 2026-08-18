@@ -78,6 +78,7 @@ enum OperatorAlertKind {
   CHECKOUT_WEBHOOK_FAILURE
   PUBLISH_FAILURE
   PUBLIC_SITE_HEALTH_FAILURE
+  OUTREACH_SEND_FAILURE
 }
 
 enum OperatorAlertStatus {
@@ -89,6 +90,21 @@ enum OperatorAlertStatus {
 enum ClaimProofMethod {
   DOMAIN_EMAIL
   OPERATOR_APPROVAL
+}
+
+enum OutreachDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum OutreachStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  FAILED
+  RECEIVED
 }
 
 enum AuthLinkDestination {
@@ -206,6 +222,7 @@ model Site {
   domains                  Domain[]
   siteVersions             SiteVersion[]
   claimInvitations         ClaimInvitation[]
+  outreachMessages         OutreachMessage[]
   subscription             Subscription?
   auditEvents              AuditEvent[]
   bookingRequests          BookingRequest[]
@@ -448,6 +465,29 @@ model ClaimInvitation {
   @@index([siteId, email, expiresAt])
 }
 
+model OutreachMessage {
+  id                String            @id @default(cuid())
+  siteId            String
+  site              Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  direction         OutreachDirection @default(OUTBOUND)
+  provider          String            @default("resend")
+  providerMessageId String?           @unique
+  fromAddress       String
+  toAddress         String
+  subject           String
+  textBody          String            @db.Text
+  htmlBody          String?           @db.Text
+  template          String?
+  status            OutreachStatus    @default(QUEUED)
+  error             String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([siteId, createdAt])
+}
+
 model Subscription {
   id                   String             @id @default(cuid())
   stripeCustomerId     String
@@ -474,6 +514,19 @@ model StripeWebhookEvent {
   status          String   @default("PROCESSED")
   failureReason   String?
   processedAt     DateTime @default(now())
+}
+
+/**
+ * Minimal key-value store for operator-controlled global switches. The
+ * outreach kill switch (`outreach.paused`) is the first user; nothing else
+ * in the schema is a good home for a flag that isn't scoped to one site.
+ */
+model OperatorSetting {
+  key       String   @id
+  value     Json
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AuditEvent {
