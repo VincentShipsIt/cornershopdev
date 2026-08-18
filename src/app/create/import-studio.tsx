@@ -21,6 +21,7 @@ import { SiteRenderer } from "@/components/site-renderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import type { BrandContext } from "@/lib/brand-context";
 import { sampleSiteDraft } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/import-identity";
 import type { SiteDraftView } from "@/lib/site-draft";
@@ -127,13 +128,20 @@ type ImportResponse =
  * `initialVertical` is the niche the lead arrived through — the storefront that
  * sent them, not a guess. It only seeds the picker: the visitor can still change
  * it here, and whatever is selected at submit is what the lead is attached to.
+ *
+ * `initialBrand` is the Host header's brand, resolved server-side. It only
+ * matters when it is the factory's own (`vertical: null`): the picker still
+ * has to default to a real trade to preselect, so `initialVertical` can never
+ * itself say "no niche" the way a hostname can.
  */
 export function ImportStudio({
   initialSource,
   initialVertical,
+  initialBrand,
 }: {
   initialSource: string;
   initialVertical: VerticalId;
+  initialBrand: BrandContext;
 }) {
   const hasInitialSource = Boolean(initialSource.trim());
   const [source, setSource] = useState(initialSource);
@@ -154,11 +162,17 @@ export function ImportStudio({
 
   const copy = verticalCopy[vertical];
   const stages = buildStages(copy);
-  // The studio wears the selected niche's storefront brand rather than the
-  // factory's: someone who arrived from restofront.com should not find themselves
-  // talking to Cornershopdev halfway through. The back link stays "/" because
-  // host-based routing already resolves it to whichever site they came from.
-  const brand = resolveVerticalConfig(vertical).marketing.brand;
+  // On a niche hostname the studio wears the selected trade's storefront
+  // brand: someone who arrived from restofront.com should not find themselves
+  // talking to the factory's own name halfway through. On the factory's own
+  // hostname there is no niche to wear — the picker still needs a real trade
+  // preselected, but the header stays the factory's regardless of which
+  // button is toggled. The back link stays "/" because host-based routing
+  // already resolves it to whichever site they came from.
+  const brand =
+    initialBrand.vertical === null
+      ? initialBrand
+      : resolveVerticalConfig(vertical).marketing.brand;
 
   async function runImport(value = source) {
     const cleanSource = value.trim();
