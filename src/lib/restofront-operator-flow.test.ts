@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  outreachReadinessTestModule,
+  rateLimitTestModule,
+} from "@/lib/complete-test-module-mocks";
 
 mock.module("server-only", () => ({}));
 
@@ -486,14 +490,8 @@ mock.module("@/lib/authorization", () => ({
     email: "operator@example.test",
   }),
 }));
-mock.module("@/lib/rate-limit", () => ({
-  limitOperatorLeadBatch: async () => ({ success: true }),
-  limitOperatorOutreachSend: async () => ({ success: true }),
-  limitOperatorOutreachPause: async () => ({ success: true }),
-}));
-mock.module("@/lib/outreach-readiness", () => ({
-  evaluateOutreachEnvironment: () => ({ ready: true }),
-}));
+mock.module("@/lib/rate-limit", () => rateLimitTestModule);
+mock.module("@/lib/outreach-readiness", () => outreachReadinessTestModule);
 mock.module("workflow/api", () => ({ start: workflowStart }));
 mock.module("@/workflows/lead-outreach", () => ({
   leadOutreachWorkflow: async () => {},

@@ -1,6 +1,21 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  outreachReadinessTestModule,
+  rateLimitTestModule,
+} from "@/lib/complete-test-module-mocks";
 
 mock.module("server-only", () => ({}));
+
+const outreachActual = await import("@/lib/outreach");
+const outreachTestModule = {
+  OutreachError: outreachActual.OutreachError,
+  OutreachDeliveryUnknownError: outreachActual.OutreachDeliveryUnknownError,
+  OutreachTerminalDeliveryError: outreachActual.OutreachTerminalDeliveryError,
+  OUTREACH_DELIVERY_LEASE_MS: outreachActual.OUTREACH_DELIVERY_LEASE_MS,
+  appOrigin: outreachActual.appOrigin,
+  sendLeadEmail: outreachActual.sendLeadEmail,
+  listOutreachMessages: outreachActual.listOutreachMessages,
+};
 
 let reviewed = true;
 let vertical = "RESTAURANT";
@@ -58,19 +73,15 @@ mock.module("@/lib/authorization", () => ({
     email: "operator@example.test",
   }),
 }));
-mock.module("@/lib/rate-limit", () => ({
-  limitOperatorOutreachSend: async () => ({ success: true }),
-  limitOperatorOutreachPause: async () => ({ success: true }),
-}));
-mock.module("@/lib/outreach-readiness", () => ({
-  evaluateOutreachEnvironment: () => ({ ready: true }),
-}));
+mock.module("@/lib/rate-limit", () => rateLimitTestModule);
+mock.module("@/lib/outreach-readiness", () => outreachReadinessTestModule);
 mock.module("@/lib/outreach-dispatch", () => ({
   reserveInitialOutreachDispatch: reserveDispatch,
   markInitialOutreachDispatchStarted: markDispatchStarted,
   markInitialOutreachDispatchFinished: markDispatchFinished,
 }));
 mock.module("@/lib/outreach", () => ({
+  ...outreachTestModule,
   listOutreachMessages: async () => [],
 }));
 mock.module("@/lib/db", () => ({
