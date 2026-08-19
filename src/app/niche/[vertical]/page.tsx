@@ -335,7 +335,13 @@ export default async function NichePage({
               {marketing.pricing.copy}
             </p>
           </div>
-          <div className="mx-auto mt-12 grid max-w-4xl gap-5 md:grid-cols-2">
+          <div
+            className={`mx-auto mt-12 grid gap-5 ${
+              marketing.pricing.plans.length > 1
+                ? "max-w-4xl md:grid-cols-2"
+                : "max-w-xl"
+            }`}
+          >
             {marketing.pricing.plans.map((plan) => (
               <div
                 key={plan.name}

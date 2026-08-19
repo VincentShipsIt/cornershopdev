@@ -32,7 +32,7 @@ export const restaurantMarketing = {
     headline: "Your front door, always current.",
     subheadline:
       "Give us the restaurant. Get back a polished mobile-first website with the menu already inside—and keep the booking and ordering tools that already work.",
-    proofPoints: ["No setup call", "Private preview first", "From $25/month"],
+    proofPoints: ["No setup call", "Private preview first", "€49/month"],
   },
   form: {
     placeholder: "Restaurant website or name",
@@ -67,7 +67,7 @@ export const restaurantMarketing = {
     {
       number: "03",
       title: "Claim it and go live",
-      copy: "Choose a plan, connect the domain, and keep every booking and ordering system already in place.",
+      copy: "Claim the founding plan, connect the domain, and keep every booking and ordering system already in place.",
     },
   ],
   valueProps: {
@@ -82,8 +82,8 @@ export const restaurantMarketing = {
       },
       {
         icon: "imagery",
-        title: "Food imagery that fits",
-        copy: "Recover the best existing photography and generate missing editorial images without inventing dishes.",
+        title: "The restaurant's own photography",
+        copy: "Live pages use source photos or images the owner has approved—not invented dishes sold as a paid extra.",
       },
       {
         icon: "booking",
@@ -101,9 +101,9 @@ export const restaurantMarketing = {
     imageUrl:
       "https://images.unsplash.com/photo-1515003197210-e0cd71810b5f?auto=format&fit=crop&w=1400&q=85",
     imageAlt: "Restaurant dish photographed in natural light",
-    eyebrow: "Credible imagery, not fantasy food",
-    headline: "Fill the visual gaps without faking the restaurant.",
-    copy: "Restofrontapp prioritises real source photography, then creates complementary editorial images for missing categories. Every generated asset stays reviewable before publishing.",
+    eyebrow: "Real photography, not fantasy food",
+    headline: "Show the restaurant as it is.",
+    copy: "Restofrontapp recovers the restaurant's existing photography. Anything that was not on the source site stays off the live page until the owner approves it.",
     assurances: [
       {
         icon: "shield",
@@ -111,40 +111,29 @@ export const restaurantMarketing = {
       },
       {
         icon: "cursor",
-        copy: "One click to regenerate, replace or remove any image",
+        copy: "Owner review before any image goes live",
       },
     ],
   },
   pricing: {
-    eyebrow: "Simple ongoing care",
+    eyebrow: "The founding offer",
     headline: "Less than one empty table.",
-    copy: "Preview first. Pay only when the restaurant wants to claim and publish it.",
+    copy: "Preview first. Pay only when the restaurant wants to claim and publish it. One plan, no setup fee. VAT is added when applicable.",
     plans: [
       {
-        name: "Starter",
-        price: "$25",
+        name: "Founding",
+        price: "€49",
         cadence: "/month",
-        copy: "The always-current essentials for one independent restaurant.",
+        copy: "One maintained, mobile-first restaurant website on the restaurant's own domain.",
         features: [
           "Mobile-first website and menu",
           "Existing booking and ordering links",
           "Custom domain and SSL",
-          "Monthly source checks",
-        ],
-      },
-      {
-        name: "Growth",
-        price: "$50",
-        cadence: "/month",
-        copy: "For restaurants that change often and want the work handled.",
-        features: [
-          "Everything in Starter",
-          "Weekly menu and hours monitoring",
-          "AI-assisted food imagery",
-          "Priority human review queue",
+          "Owner workspace and menu edits",
+          "Hosting, booking-request inbox, and first-party reporting",
         ],
         featured: true,
-        badge: "Most useful",
+        badge: "Founding offer",
       },
     ],
   },

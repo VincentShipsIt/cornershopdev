@@ -14,34 +14,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SiteDraftView } from "@/lib/site-draft";
+import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 import type { VerticalId } from "@/lib/verticals/types";
 
-const plans = [
-  {
-    id: "starter" as const,
-    name: "Starter",
-    price: 25,
-    description: "For restaurants with a menu that changes occasionally.",
-    features: [
-      "Mobile-first website and menu",
-      "Custom domain and SSL",
-      "Existing booking and ordering",
-      "Monthly source checks",
-    ],
-  },
-  {
-    id: "growth" as const,
-    name: "Growth",
-    price: 50,
-    description: "For active restaurants that want the work handled.",
-    features: [
-      "Everything in Starter",
-      "Weekly menu and hours monitoring",
-      "AI-assisted food imagery",
-      "Priority review queue",
-    ],
-  },
-];
+/**
+ * Launch sells one founding plan. Checkout still uses STRIPE_STARTER_PRICE_ID.
+ * Growth remains in configuredBillingPlans for legacy webhook mapping.
+ */
+const CLAIM_CHECKOUT_PLAN_ID = "starter" as const;
+const foundingPlan = restaurantMarketing.pricing.plans[0];
 
 export function ClaimPanel({
   slug,
@@ -58,7 +39,6 @@ export function ClaimPanel({
   } | null;
 }) {
   const draft = fallbackDraft;
-  const [plan, setPlan] = useState<"starter" | "growth">("growth");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(Boolean(checkoutReturn));
   const [invitationSent, setInvitationSent] = useState(false);
@@ -181,7 +161,7 @@ export function ClaimPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          plan,
+          plan: CLAIM_CHECKOUT_PLAN_ID,
           siteSlug: slug,
           invitationToken,
         }),
@@ -257,49 +237,38 @@ export function ClaimPanel({
             </p>
           ) : null}
 
-          <div className="mt-8 grid gap-3">
-            {plans.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setPlan(item.id)}
-                className={`rounded-2xl border p-5 text-left transition ${
-                  plan === item.id
-                    ? "border-primary bg-primary/5 ring-2 ring-primary/12"
-                    : "bg-card hover:border-foreground/25"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-5">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold">{item.name}</span>
-                      {item.id === "growth" ? (
-                        <Badge className="text-[10px]">Recommended</Badge>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {item.description}
-                    </p>
+          <div className="mt-8">
+            <div className="rounded-2xl border border-primary bg-primary/5 p-5 ring-2 ring-primary/12">
+              <div className="flex items-start justify-between gap-5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{foundingPlan.name}</span>
+                    {foundingPlan.badge ? (
+                      <Badge className="text-[10px]">{foundingPlan.badge}</Badge>
+                    ) : null}
                   </div>
-                  <span className="font-display text-4xl">
-                    ${item.price}
-                    <small className="font-sans text-xs text-muted-foreground">
-                      /mo
-                    </small>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {foundingPlan.copy}
+                  </p>
+                </div>
+                <span className="font-display text-4xl">
+                  {foundingPlan.price}
+                  <small className="font-sans text-xs text-muted-foreground">
+                    {foundingPlan.cadence}
+                  </small>
+                </span>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {foundingPlan.features.map((feature) => (
+                  <span
+                    key={feature}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    <Check className="size-3 text-primary" /> {feature}
                   </span>
-                </div>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {item.features.map((feature) => (
-                    <span
-                      key={feature}
-                      className="flex items-center gap-1.5 text-xs"
-                    >
-                      <Check className="size-3 text-primary" /> {feature}
-                    </span>
-                  ))}
-                </div>
-              </button>
-            ))}
+                ))}
+              </div>
+            </div>
           </div>
 
           {invitationToken ? (

@@ -65,7 +65,7 @@ const verticalCopy = {
     emptyStatePrompt:
       "Start with a website or restaurant name. No account is needed to see the result.",
     claimHint:
-      "Review the menu and existing links, then choose a plan to keep this site current.",
+      "Review the menu and existing links, then claim the founding plan to keep this site current.",
     catalogStage: "Recover menu and details",
     integrationsStage: "Preserve booking and ordering",
   },

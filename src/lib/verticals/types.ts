@@ -107,6 +107,9 @@ export type MarketingPlan = {
   badge?: string;
 };
 
+/** At least one public plan. A vertical may sell a single featured founding offer. */
+export type MarketingPlans = [MarketingPlan, ...MarketingPlan[]];
+
 /**
  * Everything a niche's own marketing site prints. The whole point is that a new
  * niche domain — nails, barbers, dog grooming — is a config entry and a DNS
@@ -190,7 +193,11 @@ export type VerticalMarketing = {
     eyebrow: string;
     headline: string;
     copy: string;
-    plans: MarketingPlan[];
+    /**
+     * A vertical may sell one featured founding plan. Do not pad a dummy
+     * second tier just to fill a two-column grid.
+     */
+    plans: MarketingPlans;
   };
   closing: { headline: string; copy: string };
   footerTagline: string;

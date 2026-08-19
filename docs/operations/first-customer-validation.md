@@ -57,11 +57,10 @@ owner uploads, or explicitly permissioned customer imagery may go live.
 | Secure, owner-bound invitation | Upcoming, blocked by #13 | Do not send a claim URL or accept an email as ownership proof. |
 | Durable one-plan billing lifecycle | Upcoming, blocked by #8 and #13 | Do not initiate a live checkout until the authorized claim and webhook lifecycle pass. |
 
-The live Restofront marketing page still advertises `$25` Starter and `$50`
-Growth plans and claims generated imagery. That page conflicts with this offer.
-It must be aligned to the single €49 plan and authentic-image policy before it
-is used in a sales conversation. Until then, this runbook is the source of truth
-for the validation offer.
+Public Restofront marketing and the claim UI sell this same €49/month founding
+plan and authentic-image policy. Live Stripe still has to match: set the Starter
+price to €49 (or equivalent) and SSM `STRIPE_STARTER_PRICE_ID`. Code cannot
+change the Stripe dashboard.
 
 ## Production evidence snapshot
 
