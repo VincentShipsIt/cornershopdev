@@ -40,6 +40,11 @@ export type CustomerHostDecision =
       kind: "public_api";
       slug: string;
       versionId: string;
+    }
+  | {
+      kind: "opengraph";
+      slug: string;
+      versionId: string;
     };
 
 /**
@@ -89,7 +94,9 @@ export function planDomainHostnames(hostname: string): DomainHostnamePlan {
  *
  * All owner/operator routes and unrelated public APIs are denied here before
  * Next's filesystem router can see them. The two public write endpoints remain
- * available because the live renderer needs analytics and booking requests.
+ * available because the live renderer needs analytics and booking requests,
+ * and the generated Open Graph image is passed through so a crawler can fetch
+ * it from the customer host.
  */
 export function decideCustomerHostRoute(input: {
   hostname: string;
@@ -136,6 +143,13 @@ export function decideCustomerHostRoute(input: {
       versionId,
     };
   }
+  if (surface.kind === "opengraph") {
+    return {
+      kind: "opengraph",
+      slug: exact.site.slug,
+      versionId,
+    };
+  }
   return {
     kind: "page",
     slug: exact.site.slug,
@@ -178,6 +192,7 @@ function customerSurface(
 ):
   | { kind: "page"; locale: string | null }
   | { kind: "public_api" }
+  | { kind: "opengraph" }
   | { kind: "blocked" } {
   if (pathname === "/") return { kind: "page", locale: null };
   const locale = pathname.match(/^\/([a-z]{2})\/?$/i)?.[1];
@@ -189,5 +204,23 @@ function customerSurface(
   ) {
     return { kind: "public_api" };
   }
+  // Live metadataBase is the customer host, so crawlers fetch the sibling
+  // `/preview/<slug>/opengraph-image` there. Pass that file through; keep
+  // the HTML preview path itself blocked.
+  if (isSiteOgImagePath(pathname, slug)) return { kind: "opengraph" };
   return { kind: "blocked" };
+}
+
+function isSiteOgImagePath(pathname: string, slug: string): boolean {
+  const segments = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+  if (segments[0] !== "preview" || segments[1] !== slug) return false;
+  const file = segments.at(-1)?.toLowerCase();
+  const isOgFile =
+    file === "opengraph-image" ||
+    file === "twitter-image" ||
+    file === "opengraph-image.png" ||
+    file === "twitter-image.png";
+  if (!isOgFile) return false;
+  if (segments.length === 3) return true;
+  return segments.length === 4 && /^[a-z]{2}$/i.test(segments[2] ?? "");
 }

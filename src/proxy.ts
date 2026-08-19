@@ -130,7 +130,7 @@ export async function proxy(request: NextRequest) {
 
   upstreamHeaders.set(LIVE_SITE_SLUG_HEADER, decision.slug);
   upstreamHeaders.set(LIVE_SITE_VERSION_HEADER, decision.versionId);
-  if (decision.kind === "public_api") {
+  if (decision.kind === "public_api" || decision.kind === "opengraph") {
     return NextResponse.next({ request: { headers: upstreamHeaders } });
   }
   const destination = decision.locale
