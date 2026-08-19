@@ -2,7 +2,9 @@
 api.cornershop.dev {
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy api-cornershop-dev:3000
+	reverse_proxy api-cornershop-dev:3000 {
+		header_up X-Real-IP {http.request.remote.host}
+	}
 }
 
 domains.cornershop.dev {
@@ -31,6 +33,8 @@ https:// {
 	}
 	@workflowHandlers path /.well-known/workflow/v1/flow* /.well-known/workflow/v1/step*
 	respond @workflowHandlers 404
-	reverse_proxy api-cornershop-dev:3000
+	reverse_proxy api-cornershop-dev:3000 {
+		header_up X-Real-IP {http.request.remote.host}
+	}
 }
 # END CORNERSHOPDEV
