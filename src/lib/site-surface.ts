@@ -25,3 +25,14 @@ export function localeHref(
   if (locale === defaultLocale) return basePath;
   return `${basePath.replace(/\/$/, "")}/${locale}`;
 }
+
+/**
+ * The `unstable_cache` tag for a site's cached live-surface data.
+ *
+ * One tag per slug, not per version: a rollback or republish moves which
+ * version is current for the slug, so invalidation must key on the slug
+ * regardless of which immutable `SiteVersion` row is being served.
+ */
+export function previewCacheTagFor(slug: string): string {
+  return `preview-site:${slug}`;
+}

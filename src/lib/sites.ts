@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
@@ -8,6 +9,7 @@ import type {
   SiteThemeView,
 } from "@/lib/site-draft";
 import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
+import { previewCacheTagFor } from "@/lib/site-surface";
 import {
   restaurantRendererVersionId,
   restaurantSiteTheme,
@@ -19,6 +21,15 @@ import {
   type ErasedVerticalConfig,
 } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+
+/**
+ * How long a customer domain's live-surface fetch may serve a cached
+ * `SiteVersion` before revalidating from the database on its own. Publish,
+ * rollback, and domain-verification changes invalidate this early via
+ * `revalidateTag(previewCacheTagFor(slug), ...)`, so this window only bounds
+ * staleness for state changes those call sites don't cover directly.
+ */
+const PUBLISHED_SITE_VIEW_REVALIDATE_SECONDS = 300;
 
 export const siteDraftRelations = {
   integrations: {
@@ -205,6 +216,34 @@ export async function findPublishedSiteView(
         })
       )?.publishedSiteVersion;
   return version ? projectPublishedSiteVersion(version) : null;
+}
+
+/**
+ * Cached front door for the live surface a verified customer domain serves.
+ *
+ * `proxy.ts` only sets the version-id header for a hostname that is verified
+ * and points at a `LIVE` site, so this is the ISR-equivalent path: content
+ * for a given `(slug, versionId)` pair is immutable once published, and
+ * `previewCacheTagFor(slug)` lets publish/rollback/domain-verification bust
+ * the entry the instant the currently-serving version changes.
+ *
+ * `unstable_cache` is called fresh on every invocation deliberately — that is
+ * what lets `tags` be computed per slug instead of being fixed once at
+ * module load, which is the documented pattern for per-key tag invalidation.
+ */
+export function getCachedPublishedSiteView(
+  slug: string,
+  versionId: string,
+): Promise<SiteView | null> {
+  const cached = unstable_cache(
+    () => findPublishedSiteView(slug, versionId),
+    ["published-site-view", slug, versionId],
+    {
+      revalidate: PUBLISHED_SITE_VIEW_REVALIDATE_SECONDS,
+      tags: [previewCacheTagFor(slug)],
+    },
+  );
+  return cached();
 }
 
 export function projectPublishedSiteVersion(

@@ -8,7 +8,10 @@ export async function register() {
     startAnalyticsRetentionScheduler();
   }
 
-  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+  if (
+    process.env.WORKFLOW_ENABLED === "true" &&
+    process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres"
+  ) {
     const { getWorld } = await import("workflow/runtime");
     await getWorld().start?.();
   }

@@ -11,8 +11,8 @@ import {
 import { getSiteLocales, localizeSiteDraft } from "@/lib/site-draft";
 import { liveSiteVersionId } from "@/lib/site-surface";
 import {
-  findPublishedSiteView,
   findSiteView,
+  getCachedPublishedSiteView,
 } from "@/lib/sites";
 
 type PageProps = {
@@ -26,7 +26,7 @@ export async function generateMetadata({
   const requestHeaders = await headers();
   const versionId = liveSiteVersionId(requestHeaders, slug);
   const site = versionId
-    ? await findPublishedSiteView(slug, versionId)
+    ? await getCachedPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
   if (!site) notFound();
   const isLiveSurface = versionId !== null;
@@ -58,7 +58,7 @@ export default async function LocalizedPreviewPage({ params }: PageProps) {
   const { slug, locale } = await params;
   const versionId = liveSiteVersionId(await headers(), slug);
   const site = versionId
-    ? await findPublishedSiteView(slug, versionId)
+    ? await getCachedPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
   if (!site) notFound();
   const isLiveSurface = versionId !== null;
