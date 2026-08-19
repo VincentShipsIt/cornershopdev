@@ -9,6 +9,9 @@ import {
 } from "bun:test";
 
 mock.module("server-only", () => ({}));
+mock.module("next/cache", () => ({
+  revalidateTag: () => undefined,
+}));
 
 const enabled = process.env.SITE_PUBLICATION_POSTGRES_TEST === "1";
 const siteId = `site-publication-${randomUUID()}`;
