@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SiteAnalytics } from "@/components/site-analytics";
 import { localizeIntegrationUrl } from "@/lib/site-i18n";
 import { localeHref } from "@/lib/site-surface";
+import { serializeRestaurantJsonLd } from "@/lib/restaurant-json-ld";
 import type { SiteDraftView, SiteIntegrationView } from "@/lib/site-draft";
 import type {
   RestaurantThemeSelection,
@@ -58,6 +59,22 @@ export function ThemeAnalytics({
   enabled: boolean;
 }) {
   return enabled ? <SiteAnalytics siteSlug={draft.slug} /> : null;
+}
+
+export function RestaurantStructuredData({
+  draft,
+  enabled,
+}: {
+  draft: SiteDraftView;
+  enabled: boolean;
+}) {
+  if (!enabled) return null;
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: serializeRestaurantJsonLd(draft) }}
+    />
+  );
 }
 
 export function ThemeHeroImage({

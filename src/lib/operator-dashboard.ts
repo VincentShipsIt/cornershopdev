@@ -18,6 +18,13 @@ import {
   type SiteAnalyticsRowDto,
 } from "@/lib/analytics";
 import { getDb } from "@/lib/db";
+import {
+  compareOperatorSitesByDiscoveryScore,
+  toOperatorLeadDiscoveryView,
+  toOperatorLocalSeoAuditView,
+  type OperatorLeadDiscoveryView,
+  type OperatorLocalSeoAuditView,
+} from "@/lib/operator-lead-attributes";
 
 export type OperatorSiteRow = {
   id: string;
@@ -64,6 +71,8 @@ export type OperatorSiteRow = {
   analytics30d: SiteAnalyticsRowDto;
   pendingSourceSuggestionCount: number;
   sourceMonitorLastSuccessAt: Date | null;
+  discovery: OperatorLeadDiscoveryView | null;
+  localSeoAudit: OperatorLocalSeoAuditView | null;
 };
 
 export type OperatorDashboardData = {
@@ -123,6 +132,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         defaultLocale: true,
         translations: true,
         publishedSiteVersionId: true,
+        attributes: true,
         organization: {
           select: {
             _count: { select: { memberships: true } },
@@ -323,8 +333,10 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           site._count.sourceMonitorSuggestions,
         sourceMonitorLastSuccessAt:
           site.sourceMonitorState?.lastSuccessAt ?? null,
+        discovery: toOperatorLeadDiscoveryView(site.attributes),
+        localSeoAudit: toOperatorLocalSeoAuditView(site.attributes),
       };
-    }),
+    }).sort(compareOperatorSitesByDiscoveryScore),
   };
 }
 

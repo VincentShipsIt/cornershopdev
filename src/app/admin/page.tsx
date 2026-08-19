@@ -169,10 +169,14 @@ export default async function AdminPage() {
             <CardTitle>All sites</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
-            <table className="w-full min-w-[2200px] text-left text-sm">
+            <table className="w-full min-w-[2600px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-5 py-3 font-medium">Business</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Score</th>
+                  <th scope="col" className="px-5 py-3 font-medium">City</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Discovered</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Local SEO</th>
                   <th scope="col" className="px-5 py-3 font-medium">Lifecycle</th>
                   <th scope="col" className="px-5 py-3 font-medium">Signup</th>
                   <th scope="col" className="px-5 py-3 font-medium">Subscription</th>
@@ -249,6 +253,42 @@ function SiteRow({ site }: { site: OperatorSiteRow }) {
         <p className="mt-1 text-[11px] text-muted-foreground">
           TLS: {humanize(site.tlsReadiness)}
         </p>
+      </td>
+      <td className="px-5 py-4">
+        {site.discovery ? (
+          <>
+            <p className="font-medium">{site.discovery.score}</p>
+            <p className="mt-1 max-w-56 text-[11px] text-muted-foreground">
+              {site.discovery.reasons.slice(0, 2).join(" · ") || "No scoring deductions"}
+            </p>
+          </>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-5 py-4">
+        {site.discovery?.city ?? (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-5 py-4 text-muted-foreground">
+        {site.discovery?.discoveredAt
+          ? formatDate(site.discovery.discoveredAt)
+          : "—"}
+      </td>
+      <td className="px-5 py-4">
+        {site.localSeoAudit ? (
+          <div className="grid min-w-52 gap-1">
+            <p className="font-medium">{site.localSeoAudit.score}</p>
+            {site.localSeoAudit.topFixes.slice(0, 5).map((fix) => (
+              <p key={fix.id} className="text-[11px] text-muted-foreground">
+                {fix.title}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </td>
       <td className="px-5 py-4">
         <Badge variant="outline">{humanize(site.status)}</Badge>
