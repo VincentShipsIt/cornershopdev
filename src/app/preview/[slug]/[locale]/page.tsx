@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { SiteRenderer } from "@/components/site-renderer";
+import { FACTORY_BRAND } from "@/lib/brand";
+import {
+  customerHostname,
+  factoryMetadataOrigin,
+  previewMetadata,
+} from "@/lib/preview-metadata";
 import { getSiteLocales, localizeSiteDraft } from "@/lib/site-draft";
 import { liveSiteVersionId } from "@/lib/site-surface";
 import {
@@ -17,44 +23,35 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug, locale } = await params;
-  const versionId = liveSiteVersionId(await headers(), slug);
+  const requestHeaders = await headers();
+  const versionId = liveSiteVersionId(requestHeaders, slug);
   const site = versionId
     ? await findPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
   if (!site) notFound();
-  const liveSurface = versionId !== null;
+  const isLiveSurface = versionId !== null;
   const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();
+  const draft = localizeSiteDraft(site.draft, locale);
 
-  return {
-    title: liveSurface
-      ? site.draft.name
-      : `${site.draft.name} — Private preview`,
-    robots: liveSurface
-      ? { index: true, follow: true }
-      : { index: false, follow: false },
-    alternates: {
-      canonical: liveSurface
-        ? locale === site.draft.defaultLocale
-          ? "/"
-          : `/${locale}`
-        : locale === site.draft.defaultLocale
-          ? `/preview/${slug}`
-          : `/preview/${slug}/${locale}`,
-      languages: Object.fromEntries(
-        locales.map((availableLocale) => [
-          availableLocale,
-          liveSurface
-            ? availableLocale === site.draft.defaultLocale
-              ? "/"
-              : `/${availableLocale}`
-            : availableLocale === site.draft.defaultLocale
-              ? `/preview/${slug}`
-              : `/preview/${slug}/${availableLocale}`,
-        ]),
-      ),
+  return previewMetadata(
+    {
+      name: site.draft.name,
+      description: draft.description,
+      slug: site.draft.slug,
+      defaultLocale: site.draft.defaultLocale,
     },
-  };
+    {
+      isLiveSurface,
+      locale,
+      locales,
+      verifiedHostname: isLiveSurface
+        ? customerHostname(requestHeaders)
+        : null,
+      factoryOrigin: factoryMetadataOrigin(),
+      factoryName: FACTORY_BRAND.name,
+    },
+  );
 }
 
 export default async function LocalizedPreviewPage({ params }: PageProps) {
@@ -64,7 +61,7 @@ export default async function LocalizedPreviewPage({ params }: PageProps) {
     ? await findPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
   if (!site) notFound();
-  const liveSurface = versionId !== null;
+  const isLiveSurface = versionId !== null;
   const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();
 
@@ -74,9 +71,9 @@ export default async function LocalizedPreviewPage({ params }: PageProps) {
       vertical={site.vertical}
       theme={site.theme}
       locale={locale}
-      localeBasePath={liveSurface ? "/" : `/preview/${slug}`}
+      localeBasePath={isLiveSurface ? "/" : `/preview/${slug}`}
       availableLocales={locales}
-      analyticsEnabled={liveSurface}
+      analyticsEnabled={isLiveSurface}
     />
   );
 }

@@ -37,7 +37,7 @@ describe("custom-domain hostname plans", () => {
 });
 
 describe("customer host isolation", () => {
-  it("serves only root, locales and the two public site endpoints", () => {
+  it("serves only root, locales, public site endpoints and the OG image", () => {
     const records = livePair();
     expect(
       decideCustomerHostRoute({
@@ -77,6 +77,24 @@ describe("customer host isolation", () => {
         records,
       }).kind,
     ).toBe("public_api");
+    expect(
+      decideCustomerHostRoute({
+        hostname: "example.com",
+        pathname: "/preview/chez-lea/opengraph-image",
+        records,
+      }),
+    ).toEqual({
+      kind: "opengraph",
+      slug: "chez-lea",
+      versionId: "version_1",
+    });
+    expect(
+      decideCustomerHostRoute({
+        hostname: "example.com",
+        pathname: "/preview/chez-lea/fr/opengraph-image",
+        records,
+      }).kind,
+    ).toBe("opengraph");
 
     for (const pathname of [
       "/dashboard",
@@ -84,6 +102,7 @@ describe("customer host isolation", () => {
       "/sign-in",
       "/create",
       "/preview/chez-lea",
+      "/preview/other-site/opengraph-image",
       "/api/domains",
       "/api/sites/another/booking-requests",
     ]) {
