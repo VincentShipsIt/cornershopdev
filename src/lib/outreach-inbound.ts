@@ -14,7 +14,7 @@ import {
   parseRfcMessageIds,
   type InboundAddressFields,
 } from "@/lib/outreach-thread";
-import { fetchReceivedResendEmail } from "@/lib/resend";
+import { fetchReceivedResendEmail } from "@/lib/resend-receiving";
 
 export type RecordInboundOutreachResult = {
   handled: boolean;

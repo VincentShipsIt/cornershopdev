@@ -530,7 +530,6 @@ mock.module("@/lib/operator-alerts", () => ({
 mock.module("@/lib/resend", () => ({
   getResend: () => ({ emails: { send: providerSend } }),
   sendBoundedResendEmail: providerSend,
-  fetchReceivedResendEmail: async () => null,
   emailSender: (vertical?: string | null) =>
     vertical === "RESTAURANT"
       ? "Vincent from Restofrontapp <vincent@send.restofront.com>"
