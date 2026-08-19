@@ -11,6 +11,16 @@ import {
 mock.module("server-only", () => ({}));
 mock.module("next/cache", () => ({
   revalidateTag: () => undefined,
+  revalidatePath: () => undefined,
+  updateTag: () => undefined,
+  refresh: () => undefined,
+  unstable_cache: <T extends (...args: never[]) => unknown>(callback: T): T =>
+    callback,
+  unstable_noStore: () => undefined,
+  cacheLife: () => undefined,
+  cacheTag: () => undefined,
+  unstable_cacheLife: () => undefined,
+  unstable_cacheTag: () => undefined,
 }));
 
 const enabled = process.env.SITE_PUBLICATION_POSTGRES_TEST === "1";
@@ -157,6 +167,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
   });
 
   afterAll(async () => {
+    if (!db) return;
     await db.site.deleteMany({ where: { id: siteId } });
     await db.organization.deleteMany({ where: { id: organizationId } });
     await db.user.deleteMany({ where: { id: userId } });
