@@ -1,12 +1,15 @@
 ---
-last_verified: 2026-07-26
+last_verified: 2026-08-20
 status: durable
 ---
 
 # Production deploy — mechanism and gotchas
 
-Host `i-00e74422e719396c3` (us-west-1), single container `cornershopdev` behind
-`shipshit-caddy`, single-origin on `cornershop.dev`.
+Host `i-00e74422e719396c3` (us-west-1), single container `api-cornershop-dev`
+behind `shipshit-caddy`. Single-origin: `cornershop.dev`, `restofront.com`,
+platform subdomains, and customer custom domains all hit that container
+(`PUBLIC_APP_IP` `52.8.153.188`). This is not a Vercel frontend. Do not
+split it — see `hosting-single-origin.md`.
 
 Production application data and Workflow state both use the PostgreSQL database
 `cornershopdev` on RDS `api-shipshit-dev`. It was renamed in place from
@@ -104,3 +107,13 @@ on 2026-07-26:
 
 Do not treat other `restofront.com` records as cleanup targets. Restofront is
 the active restaurant niche, and its email/DKIM records remain intentional.
+`restofront.com` and `www.restofront.com` A-record to the same Caddy IP as
+`cornershop.dev`. A stale Caddy comment that "restofront.com is served
+elsewhere" is false.
+
+## Vercel is not this app
+
+The leftover Vercel Git project `restofrontcom` was disconnected 2026-08-19
+and deleted 2026-08-20. It never served `restofront.com` or `cornershop.dev`.
+Do not recreate it. Do not `vercel link` this repo. Detail:
+`hosting-single-origin.md`.
