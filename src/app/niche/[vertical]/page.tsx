@@ -68,18 +68,37 @@ export async function generateMetadata({
   if (!id) return {};
   const { marketing } = resolveVerticalConfig(id);
   const { mark } = marketing.brand;
+  const title = `${marketing.brand.name} — ${marketing.hero.headline}`;
+  const description = marketing.hero.subheadline;
+  const canonical = marketing.domain ? `https://${marketing.domain}` : undefined;
   return {
     // Absolute so the root layout's "| Cornershopdev" template stays off a niche
     // storefront: a visitor on restofront.com should never see the factory's name
     // in their tab, and this page is the only public, indexed one that inherits it.
-    title: { absolute: `${marketing.brand.name} — ${marketing.hero.headline}` },
-    description: marketing.hero.subheadline,
+    title: { absolute: title },
+    description,
+    // Metadata objects merge shallowly, so a niche that leaves `openGraph` or
+    // `twitter` unset inherits the factory's card wholesale — restofront.com
+    // used to unfurl as "Cornershopdev" on X and Slack for exactly that reason.
+    // Both are restated in full here, and the sibling `opengraph-image.tsx`
+    // supplies the picture, so the card names the niche and nothing else.
+    openGraph: {
+      title,
+      description,
+      siteName: marketing.brand.name,
+      type: "website",
+      ...(canonical ? { url: canonical } : {}),
+    },
+    twitter: { card: "summary_large_image", title, description },
+    // Relative image URLs (the sibling opengraph-image) resolve against this,
+    // so a launched niche's card is fetched from its own domain rather than the
+    // factory's. The proxy passes non-root paths on a niche hostname straight
+    // through, which is what makes that URL reachable there.
+    ...(canonical ? { metadataBase: new URL(canonical) } : {}),
     // A launched niche is served at both its own domain and this internal path.
     // The domain is the one that should rank, so it is declared canonical from
     // whichever of the two a crawler happens to reach.
-    alternates: marketing.domain
-      ? { canonical: `https://${marketing.domain}` }
-      : undefined,
+    alternates: canonical ? { canonical } : undefined,
     // A niche with its own identity also owns its browser chrome. The factory
     // favicon remains the fallback for verticals that have not selected a mark.
     icons: mark
