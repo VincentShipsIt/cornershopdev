@@ -34,34 +34,124 @@ let paused = false;
 const auditEvents: Array<Record<string, unknown>> = [];
 const operatorAuditEvents: Array<Record<string, unknown>> = [];
 const workflowStart = mock(async () => ({ runId: "wrun_test_1" }));
-let dispatchReserved = false;
-const reserveDispatch = mock(async () => {
-  if (existingDispatch) {
-    return { ...existingDispatch, attempt: 1, acquired: false };
-  }
-  if (dispatchReserved) {
-    return {
-      id: "dispatch_1",
-      status: "QUEUED" as const,
-      workflowRunId: null,
-      attempt: 1,
-      acquired: false,
-    };
-  }
-  dispatchReserved = true;
-  auditEvents.push({ type: "outreach.initial.requested" });
+
+type DispatchRow = {
+  id: string;
+  idempotencyKey: string;
+  status: "QUEUED" | "SENT" | "FAILED";
+  workflowRunId: string | null;
+  attempt: number;
+  updatedAt: Date;
+};
+
+let dispatchRow: DispatchRow | null = null;
+let transactionTail: Promise<unknown> = Promise.resolve();
+
+function selectDispatch(row: DispatchRow) {
   return {
-    id: "dispatch_1",
-    status: "QUEUED" as const,
-    workflowRunId: null,
-    attempt: 1,
-    acquired: true,
+    id: row.id,
+    status: row.status,
+    workflowRunId: row.workflowRunId,
+    attempt: row.attempt,
+    updatedAt: row.updatedAt,
   };
-});
-const markDispatchStarted = mock(async () => {
-  auditEvents.push({ type: "outreach.initial.queued" });
-});
-const markDispatchFinished = mock(async () => {});
+}
+
+function dispatchFromExisting(): DispatchRow | null {
+  if (!existingDispatch) return null;
+  return {
+    id: existingDispatch.id,
+    idempotencyKey: "lead-outreach:site_1:preview_ready",
+    status: existingDispatch.status as DispatchRow["status"],
+    workflowRunId: existingDispatch.workflowRunId,
+    attempt: 1,
+    updatedAt: new Date(),
+  };
+}
+
+function whereMatches(
+  row: DispatchRow,
+  where: Record<string, unknown>,
+): boolean {
+  if (where.id && row.id !== where.id) return false;
+  if (where.status && row.status !== where.status) return false;
+  if ("workflowRunId" in where && row.workflowRunId !== where.workflowRunId) {
+    return false;
+  }
+  if (where.attempt !== undefined && row.attempt !== where.attempt) {
+    return false;
+  }
+  const updatedAt = where.updatedAt;
+  if (
+    updatedAt &&
+    typeof updatedAt === "object" &&
+    updatedAt !== null &&
+    "lte" in updatedAt &&
+    row.updatedAt.getTime() > (updatedAt as { lte: Date }).lte.getTime()
+  ) {
+    return false;
+  }
+  return true;
+}
+
+const outreachDispatchApi = {
+  upsert: async ({
+    where,
+    create,
+  }: {
+    where: { idempotencyKey: string };
+    create: { id: string; idempotencyKey: string };
+  }) => {
+    if (!dispatchRow) dispatchRow = dispatchFromExisting();
+    if (!dispatchRow) {
+      dispatchRow = {
+        id: create.id,
+        idempotencyKey: create.idempotencyKey ?? where.idempotencyKey,
+        status: "QUEUED",
+        workflowRunId: null,
+        attempt: 1,
+        updatedAt: new Date(),
+      };
+    }
+    return selectDispatch(dispatchRow);
+  },
+  updateMany: async ({
+    where,
+    data,
+  }: {
+    where: Record<string, unknown>;
+    data: Record<string, unknown>;
+  }) => {
+    if (!dispatchRow || !whereMatches(dispatchRow, where)) {
+      return { count: 0 };
+    }
+    const attempt = data.attempt;
+    if (
+      attempt &&
+      typeof attempt === "object" &&
+      attempt !== null &&
+      "increment" in attempt
+    ) {
+      dispatchRow.attempt += Number(
+        (attempt as { increment: number }).increment,
+      );
+    } else if (typeof attempt === "number") {
+      dispatchRow.attempt = attempt;
+    }
+    for (const [key, value] of Object.entries(data)) {
+      if (key === "attempt") continue;
+      (dispatchRow as unknown as Record<string, unknown>)[key] = value;
+    }
+    dispatchRow.updatedAt = new Date();
+    return { count: 1 };
+  },
+  findUniqueOrThrow: async ({ where }: { where: { id: string } }) => {
+    if (!dispatchRow || dispatchRow.id !== where.id) {
+      throw new Error("OutreachDispatch not found");
+    }
+    return selectDispatch(dispatchRow);
+  },
+};
 
 mock.module("workflow/api", () => ({ start: workflowStart }));
 mock.module("@/workflows/lead-outreach", () => ({
@@ -75,11 +165,6 @@ mock.module("@/lib/authorization", () => ({
 }));
 mock.module("@/lib/rate-limit", () => rateLimitTestModule);
 mock.module("@/lib/outreach-readiness", () => outreachReadinessTestModule);
-mock.module("@/lib/outreach-dispatch", () => ({
-  reserveInitialOutreachDispatch: reserveDispatch,
-  markInitialOutreachDispatchStarted: markDispatchStarted,
-  markInitialOutreachDispatchFinished: markDispatchFinished,
-}));
 mock.module("@/lib/outreach", () => ({
   ...outreachTestModule,
   listOutreachMessages: async () => [],
@@ -125,11 +210,18 @@ mock.module("@/lib/db", () => ({
         return data;
       },
     },
+    outreachDispatch: outreachDispatchApi,
     $transaction: async (
       operation:
         | Array<Promise<unknown>>
         | ((transaction: {
             $queryRaw: () => Promise<Array<{ acquired: boolean }>>;
+            outreachDispatch: typeof outreachDispatchApi;
+            auditEvent: {
+              create: (input: {
+                data: Record<string, unknown>;
+              }) => Promise<Record<string, unknown>>;
+            };
             operatorSetting: {
               upsert: (input: {
                 update: { value: boolean };
@@ -143,22 +235,37 @@ mock.module("@/lib/db", () => ({
             };
           }) => Promise<unknown>),
     ) => {
-      if (Array.isArray(operation)) return Promise.all(operation);
-      return operation({
-        $queryRaw: async () => [{ acquired: true }],
-        operatorSetting: {
-          upsert: async ({ update, create }) => {
-            paused = (paused ? update : create).value;
-            return { value: paused };
+      const run = () => {
+        if (Array.isArray(operation)) return Promise.all(operation);
+        return operation({
+          $queryRaw: async () => [{ acquired: true }],
+          outreachDispatch: outreachDispatchApi,
+          auditEvent: {
+            create: async ({ data }) => {
+              auditEvents.push(data);
+              return data;
+            },
           },
-        },
-        operatorAuditEvent: {
-          create: async ({ data }) => {
-            operatorAuditEvents.push(data);
-            return data;
+          operatorSetting: {
+            upsert: async ({ update, create }) => {
+              paused = (paused ? update : create).value;
+              return { value: paused };
+            },
           },
-        },
-      });
+          operatorAuditEvent: {
+            create: async ({ data }) => {
+              operatorAuditEvents.push(data);
+              return data;
+            },
+          },
+        });
+      };
+      const queued = transactionTail.then(run, run);
+      transactionTail = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
     },
   }),
 }));
@@ -177,13 +284,10 @@ describe("explicit operator outreach action", () => {
     existingMessage = null;
     existingDispatch = null;
     paused = false;
+    dispatchRow = null;
     auditEvents.length = 0;
     operatorAuditEvents.length = 0;
-    dispatchReserved = false;
     workflowStart.mockClear();
-    reserveDispatch.mockClear();
-    markDispatchStarted.mockClear();
-    markDispatchFinished.mockClear();
   });
 
   it("persists and audits the global pause before returning success", async () => {
@@ -233,7 +337,7 @@ describe("explicit operator outreach action", () => {
       "site_1",
       {
         actor: "operator:operator_1",
-        dispatchId: "dispatch_1",
+        dispatchId: expect.any(String),
         dispatchAttempt: 1,
         recipient: "owner@example.test",
         reviewedAt: "2026-08-19T08:01:00.000Z",
@@ -264,7 +368,6 @@ describe("explicit operator outreach action", () => {
       workflowRunId: "wrun_existing",
       status: "QUEUED",
     });
-    expect(reserveDispatch).toHaveBeenCalledTimes(1);
     expect(workflowStart).not.toHaveBeenCalled();
   });
 
@@ -275,7 +378,6 @@ describe("explicit operator outreach action", () => {
     ]);
 
     expect([first.status, duplicate.status].sort()).toEqual([200, 202]);
-    expect(reserveDispatch).toHaveBeenCalledTimes(2);
     expect(workflowStart).toHaveBeenCalledTimes(1);
     expect(auditEvents.map((event) => event.type)).toEqual([
       "outreach.initial.requested",
@@ -291,7 +393,6 @@ describe("explicit operator outreach action", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(reserveDispatch).not.toHaveBeenCalled();
     expect(workflowStart).not.toHaveBeenCalled();
   });
 

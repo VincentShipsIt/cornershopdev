@@ -44,6 +44,15 @@ const fetchReceived = mock(
 
 mock.module("@/lib/resend", () => ({
   fetchReceivedResendEmail: fetchReceived,
+  sendBoundedResendEmail: async () => ({
+    data: null,
+    error: { message: "unused", statusCode: null },
+  }),
+  getResend: () => ({ emails: { send: async () => ({ data: null, error: null }) } }),
+  emailSender: () =>
+    "Vincent from Restofrontapp <vincent@send.restofront.com>",
+  emailReplyTo: () => "vincent@restofront.com",
+  RESEND_SEND_TIMEOUT_MS: 8_000,
 }));
 mock.module("@/lib/operator-alerts", () => ({
   captureOperatorAlert: async (input: Record<string, unknown>) => {
