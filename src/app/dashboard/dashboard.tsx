@@ -7,6 +7,7 @@ import {
   BookOpenText,
   Check,
   CircleCheck,
+  Copy,
   CreditCard,
   ExternalLink,
   Eye,
@@ -24,7 +25,9 @@ import {
   Save,
   Settings,
   Sparkles,
+  Trash2,
   TrendingUp,
+  TriangleAlert,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { AccountActions } from "@/components/account-actions";
