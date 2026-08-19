@@ -165,10 +165,7 @@ mock.module("@/lib/authorization", () => ({
 }));
 mock.module("@/lib/rate-limit", () => rateLimitTestModule);
 mock.module("@/lib/outreach-readiness", () => outreachReadinessTestModule);
-mock.module("@/lib/outreach", () => ({
-  ...outreachTestModule,
-  listOutreachMessages: async () => [],
-}));
+mock.module("@/lib/outreach", () => outreachTestModule);
 mock.module("@/lib/db", () => ({
   getDb: () => ({
     site: {
