@@ -13,18 +13,33 @@ import {
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import { evaluateOutreachEnvironment } from "@/lib/outreach-readiness";
-import { listOutreachMessages } from "@/lib/outreach";
+import {
+  listOutreachMessages,
+  OutreachError,
+  sendLeadEmail,
+} from "@/lib/outreach";
 import { limitOperatorOutreachSend } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { leadOutreachWorkflow } from "@/workflows/lead-outreach";
 
 export const runtime = "nodejs";
 
-const requestSchema = z.object({
-  action: z.literal("send_initial"),
-  recipient: z.string().trim().email().transform((value) => value.toLowerCase()),
-  reviewedAt: z.string().datetime({ offset: true }),
-});
+const requestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("send_initial"),
+    recipient: z
+      .string()
+      .trim()
+      .email()
+      .transform((value) => value.toLowerCase()),
+    reviewedAt: z.string().datetime({ offset: true }),
+  }),
+  z.object({
+    action: z.literal("reply"),
+    body: z.string().trim().min(1).max(8000),
+    inReplyToMessageId: z.string().trim().min(1).optional(),
+  }),
+]);
 
 /**
  * Read-only, so unlike the mutating routes in `admin/leads` and
@@ -59,12 +74,16 @@ export async function GET(
         direction: message.direction,
         template: message.template,
         subject: message.subject,
+        textBody: message.textBody,
         toAddress: message.toAddress,
         fromAddress: message.fromAddress,
         status: message.status,
         error: message.error,
+        inReplyTo: message.inReplyTo,
+        threadKey: message.threadKey,
         sentAt: message.sentAt?.toISOString() ?? null,
         deliveredAt: message.deliveredAt?.toISOString() ?? null,
+        receivedAt: message.receivedAt?.toISOString() ?? null,
         createdAt: message.createdAt.toISOString(),
       })),
     },
@@ -100,6 +119,14 @@ export async function POST(
     const input = requestSchema.parse(await request.json());
     const { slug } = await params;
     const db = getDb();
+    if (input.action === "reply") {
+      return sendOperatorThreadReply({
+        slug,
+        operatorId: operator.id,
+        body: input.body,
+        inReplyToMessageId: input.inReplyToMessageId,
+      });
+    }
     const site = await db.site.findUnique({
       where: { slug },
       select: {
@@ -279,5 +306,64 @@ export async function POST(
       { error: "Outreach could not be queued." },
       { status: 503 },
     );
+  }
+}
+
+async function sendOperatorThreadReply(input: {
+  slug: string;
+  operatorId: string;
+  body: string;
+  inReplyToMessageId?: string;
+}) {
+  if (!evaluateOutreachEnvironment(process.env).ready) {
+    return NextResponse.json(
+      { error: "Outreach is not production-ready. Run the preflight." },
+      { status: 503 },
+    );
+  }
+  const site = await getDb().site.findUnique({
+    where: { slug: input.slug },
+    select: {
+      id: true,
+      email: true,
+      vertical: true,
+      status: true,
+    },
+  });
+  if (!site) {
+    return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+  }
+  if (site.vertical !== Vertical.RESTAURANT || !site.email) {
+    return NextResponse.json(
+      { error: "This lead is not eligible for outreach." },
+      { status: 409 },
+    );
+  }
+  try {
+    const sent = await sendLeadEmail({
+      siteId: site.id,
+      template: "operator_reply",
+      body: input.body,
+      actor: `operator:${input.operatorId}`,
+      inReplyToMessageId: input.inReplyToMessageId,
+    });
+    return NextResponse.json(
+      {
+        ok: true,
+        started: false,
+        messageId: sent.id,
+        status: sent.status,
+        deduplicated: sent.deduplicated,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    if (error instanceof OutreachError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+    throw error;
   }
 }

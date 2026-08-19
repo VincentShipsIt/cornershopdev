@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   evaluateOutreachEnvironment,
+  hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
+  REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
   REQUIRED_RESEND_WEBHOOK_EVENTS,
 } from "@/lib/outreach-readiness";
 
@@ -35,6 +37,8 @@ describe("outreach environment readiness", () => {
       },
       missingOrInvalid: [],
       webhookEndpoint: "https://cornershop.dev/api/webhooks/resend",
+      inboundWebhookEndpoint:
+        "https://cornershop.dev/api/webhooks/resend/inbound",
     });
   });
 
@@ -120,6 +124,18 @@ describe("Resend webhook readiness", () => {
           },
         ],
         "https://cornershop.dev/api/webhooks/resend",
+      ),
+    ).toBe(true);
+    expect(
+      hasRequiredResendInboundWebhook(
+        [
+          {
+            endpoint: "https://cornershop.dev/api/webhooks/resend/inbound",
+            status: "enabled",
+            events: [...REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS],
+          },
+        ],
+        "https://cornershop.dev/api/webhooks/resend/inbound",
       ),
     ).toBe(true);
   });

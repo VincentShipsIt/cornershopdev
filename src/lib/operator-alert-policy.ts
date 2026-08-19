@@ -8,7 +8,8 @@ export type OperatorAlertKind =
   | "CHECKOUT_WEBHOOK_FAILURE"
   | "PUBLISH_FAILURE"
   | "PUBLIC_SITE_HEALTH_FAILURE"
-  | "OUTREACH_SEND_FAILURE";
+  | "OUTREACH_SEND_FAILURE"
+  | "OUTREACH_REPLY";
 
 type Environment = Record<string, string | undefined>;
 

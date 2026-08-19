@@ -37,15 +37,17 @@ type MessageStatus =
   | "DELIVERED"
   | "BOUNCED"
   | "COMPLAINED"
-  | "FAILED";
+  | "FAILED"
+  | "RECEIVED";
 
 type OutreachMessage = {
   id: string;
   idempotencyKey: string;
   siteId: string;
-  direction: "OUTBOUND";
+  direction: "OUTBOUND" | "INBOUND";
   provider: string;
   providerMessageId: string | null;
+  rfcMessageId: string | null;
   providerEventAt: Date | null;
   providerAttemptedAt: Date | null;
   deliveryLeaseId: string | null;
@@ -57,10 +59,14 @@ type OutreachMessage = {
   textBody: string;
   htmlBody: string | null;
   template: string | null;
+  inReplyTo: string | null;
+  threadKey: string | null;
+  createdByActor: string | null;
   status: MessageStatus;
   error: string | null;
   sentAt: Date | null;
   deliveredAt: Date | null;
+  receivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -299,14 +305,19 @@ const fakeModels = {
         ...input.create,
         provider: "resend",
         providerMessageId: null,
+        rfcMessageId: input.create.rfcMessageId ?? null,
         providerEventAt: null,
         providerAttemptedAt: null,
         deliveryLeaseId: input.create.deliveryLeaseId ?? null,
         deliveryLeaseExpiresAt:
           input.create.deliveryLeaseExpiresAt ?? null,
+        inReplyTo: input.create.inReplyTo ?? null,
+        threadKey: input.create.threadKey ?? null,
+        createdByActor: input.create.createdByActor ?? null,
         error: null,
         sentAt: null,
         deliveredAt: null,
+        receivedAt: input.create.receivedAt ?? null,
         createdAt,
         updatedAt: createdAt,
       };
@@ -342,6 +353,22 @@ const fakeModels = {
       return message;
     },
     findMany: async () => (message ? [message] : []),
+    findFirst: async (input: {
+      where: { id?: string; siteId?: string; direction?: string };
+    }) => {
+      if (!message) return null;
+      if (input.where.id && input.where.id !== message.id) return null;
+      if (input.where.siteId && input.where.siteId !== message.siteId) {
+        return null;
+      }
+      if (
+        input.where.direction &&
+        input.where.direction !== message.direction
+      ) {
+        return null;
+      }
+      return message;
+    },
     updateMany: async (input: {
       where: {
         id: string;
@@ -469,6 +496,7 @@ const providerSend = mock(
       subject: string;
       html?: string;
       text: string;
+      headers?: Record<string, string>;
       tags: Array<{ name: string; value: string }>;
     },
     _idempotencyKey: string,
@@ -666,7 +694,7 @@ describe("mocked Restofront operator delivery flow", () => {
     expect(providerSend).toHaveBeenCalledTimes(1);
     expect(providerSend.mock.calls[0]![0]).toMatchObject({
       from: "Vincent from Restofrontapp <vincent@send.restofront.com>",
-      replyTo: "vincent@restofront.com",
+      replyTo: "vincent+chez-lea@restofront.com",
       to: "owner@chez-lea.test",
     });
     expect(providerSend.mock.calls[0]![0].html).toContain(
@@ -724,6 +752,22 @@ describe("mocked Restofront operator delivery flow", () => {
     expect(operatorAuditEvents.at(-1)).toMatchObject({
       type: "outreach.paused",
       metadata: { paused: true },
+    });
+
+    paused = false;
+    const replyResponse = await queueOutreach(
+      sameOriginRequest(`/api/admin/leads/${site.slug}/outreach`, {
+        action: "reply",
+        body: "Happy to walk through the preview.",
+        inReplyToMessageId: message!.id,
+      }),
+      siteContext(queueOutreach),
+    );
+    expect(replyResponse.status).toBe(200);
+    expect(workflowStart).toHaveBeenCalledTimes(1);
+    expect(providerSend).toHaveBeenCalledTimes(2);
+    expect(providerSend.mock.calls[1]![0].headers).toMatchObject({
+      "In-Reply-To": expect.stringContaining("outreach_"),
     });
   });
 

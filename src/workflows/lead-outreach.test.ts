@@ -90,6 +90,13 @@ describe("isLeadEligibleForOutreach", () => {
     expect(isLeadEligibleForOutreach(site, false, "BOUNCED")).toBe(false);
     expect(isLeadEligibleForOutreach(site, false, "COMPLAINED")).toBe(false);
   });
+
+  it("suppresses further campaign sends after an inbound reply", () => {
+    const site = { status: "PREVIEW_READY", email: "owner@example.com" };
+    expect(isLeadEligibleForOutreach(site, false, "DELIVERED", true)).toBe(
+      false,
+    );
+  });
 });
 
 describe("reviewed Restofront delivery eligibility", () => {

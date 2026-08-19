@@ -105,11 +105,37 @@ export function buildOutreachEmail(
   }
 }
 
-function escapeHtml(value: string): string {
+export function escapeOutreachHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeHtml(value: string): string {
+  return escapeOutreachHtml(value);
+}
+
+export function buildOperatorReplyEmail(input: {
+  vertical: VerticalId;
+  siteName: string;
+  body: string;
+  subject: string;
+}): OutreachEmail {
+  const brand = resolveVerticalConfig(input.vertical).marketing.brand;
+  const safeBody = escapeOutreachHtml(input.body).replaceAll("\n", "<br/>");
+  return {
+    from: emailSender(input.vertical),
+    replyTo: emailReplyTo(input.vertical),
+    subject: input.subject,
+    text: `${input.body}\n\n— ${brand.name}`,
+    html: `<div style="font-family:Arial,sans-serif;background:#f4efe5;padding:40px">
+      <div style="max-width:520px;margin:auto;background:white;border-radius:18px;padding:32px">
+        <p style="font-size:13px;color:#a5482d;font-weight:700">${brand.name.toUpperCase()}</p>
+        <p style="color:#5e5b55;line-height:1.6">${safeBody}</p>
+      </div>
+    </div>`,
+  };
 }

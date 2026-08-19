@@ -16,6 +16,8 @@ const evaluateOutreachEnvironmentActual =
   outreachReadiness.evaluateOutreachEnvironment;
 const hasRequiredResendWebhookActual =
   outreachReadiness.hasRequiredResendWebhook;
+const hasRequiredResendInboundWebhookActual =
+  outreachReadiness.hasRequiredResendInboundWebhook;
 
 export const outreachReadinessTestModule = {
   OUTREACH_MIGRATION: outreachReadiness.OUTREACH_MIGRATION,
@@ -24,7 +26,11 @@ export const outreachReadinessTestModule = {
   REQUIRED_RESEND_WEBHOOK_EVENTS: [
     ...outreachReadiness.REQUIRED_RESEND_WEBHOOK_EVENTS,
   ],
+  REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS: [
+    ...outreachReadiness.REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
+  ],
   hasRequiredResendWebhook: hasRequiredResendWebhookActual,
+  hasRequiredResendInboundWebhook: hasRequiredResendInboundWebhookActual,
   evaluateOutreachEnvironment: (
     env: Parameters<typeof evaluateOutreachEnvironmentActual>[0],
     options?: Parameters<typeof evaluateOutreachEnvironmentActual>[1],
@@ -44,6 +50,8 @@ export const outreachReadinessTestModule = {
         },
         missingOrInvalid: [],
         webhookEndpoint: "https://cornershop.dev/api/webhooks/resend",
+        inboundWebhookEndpoint:
+          "https://cornershop.dev/api/webhooks/resend/inbound",
       };
     }
     return evaluateOutreachEnvironmentActual(env, options);

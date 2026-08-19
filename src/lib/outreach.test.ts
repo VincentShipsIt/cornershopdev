@@ -6,9 +6,10 @@ type StoredMessage = {
   id: string;
   idempotencyKey: string;
   siteId: string;
-  direction: "OUTBOUND";
+  direction: "OUTBOUND" | "INBOUND";
   provider: string;
   providerMessageId: string | null;
+  rfcMessageId?: string | null;
   fromAddress: string;
   replyToAddress: string | null;
   toAddress: string;
@@ -16,10 +17,14 @@ type StoredMessage = {
   textBody: string;
   htmlBody: string | null;
   template: string | null;
-  status: "QUEUED" | "SENT" | "FAILED";
+  inReplyTo?: string | null;
+  threadKey?: string | null;
+  createdByActor?: string | null;
+  status: "QUEUED" | "SENT" | "FAILED" | "RECEIVED";
   error: string | null;
   sentAt: Date | null;
   deliveredAt: Date | null;
+  receivedAt?: Date | null;
   providerEventAt: Date | null;
   providerAttemptedAt: Date | null;
   deliveryLeaseId: string | null;
@@ -44,6 +49,7 @@ const providerSend = mock(
       subject: string;
       html?: string;
       text: string;
+      headers?: Record<string, string>;
       tags: Array<{ name: string; value: string }>;
     },
     _idempotencyKey: string,
@@ -181,6 +187,25 @@ const fakeDb = {
         return existing;
       },
       findMany: async () => [...messages.values()],
+      findFirst: async (input: {
+        where: { id?: string; siteId?: string; direction?: string };
+      }) => {
+        return (
+          [...messages.values()].find((message) => {
+            if (input.where.id && message.id !== input.where.id) return false;
+            if (input.where.siteId && message.siteId !== input.where.siteId) {
+              return false;
+            }
+            if (
+              input.where.direction &&
+              message.direction !== input.where.direction
+            ) {
+              return false;
+            }
+            return true;
+          }) ?? null
+        );
+      },
     },
     outreachDispatch: {
       findUnique: async () => ({
@@ -310,6 +335,45 @@ describe("outreach delivery idempotency", () => {
     expect(providerSend).toHaveBeenCalledTimes(1);
   });
 
+  it("sends an operator reply through the same mailbox with thread headers", async () => {
+    await sendLeadEmail({
+      siteId: "site_1",
+      template: "preview_ready",
+      claimUrl:
+        "https://cornershop.dev/claim/chez-lea#claim_token=stable-stage-token",
+      to: persistedContactEmail,
+      actor: "operator:one",
+      expectedReviewedAt: reviewedAt,
+      claimInvitationId: "invitation_preview",
+      dispatchAuthorization: { dispatchId: "dispatch_1", attempt: 1 },
+    });
+    providerSend.mockClear();
+
+    const reply = await sendLeadEmail({
+      siteId: "site_1",
+      template: "operator_reply",
+      body: "Happy to walk through the preview on a call.",
+      actor: "operator:one",
+    });
+    const stored = [...messages.values()].find(
+      (message) => message.template === "operator_reply",
+    );
+
+    expect(reply.status).toBe("SENT");
+    expect(stored).toMatchObject({
+      direction: "OUTBOUND",
+      toAddress: "owner@chez-lea.test",
+      inReplyTo: expect.stringContaining("outreach_"),
+    });
+    expect(providerSend).toHaveBeenCalledTimes(1);
+    expect(providerSend.mock.calls[0]![0].headers).toMatchObject({
+      "In-Reply-To": expect.stringContaining("outreach_"),
+    });
+    expect(providerSend.mock.calls[0]![0].text).toContain(
+      "Happy to walk through the preview on a call.",
+    );
+  });
+
   it("converges duplicate initial sends on one persisted message and provider call", async () => {
     const first = await sendLeadEmail({
       siteId: "site_1",
@@ -342,7 +406,7 @@ describe("outreach delivery idempotency", () => {
     const [payload, idempotencyKey] = providerSend.mock.calls[0]!;
     expect(payload).toMatchObject({
       from: "Vincent from Restofrontapp <vincent@send.restofront.com>",
-      replyTo: "vincent@restofront.com",
+      replyTo: "vincent+chez-lea@restofront.com",
       to: "owner@chez-lea.test",
       tags: [
         { name: "category", value: "lead_outreach" },

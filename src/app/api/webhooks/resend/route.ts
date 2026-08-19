@@ -1,4 +1,3 @@
-import { Webhook } from "svix";
 import { z } from "zod";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
 import {
@@ -6,6 +5,7 @@ import {
   RESEND_OUTREACH_EVENT_TRANSITIONS,
   type ResendOutreachEventType,
 } from "@/lib/outreach-events";
+import { verifyResendWebhook } from "@/lib/resend-webhook";
 
 export const runtime = "nodejs";
 
@@ -26,47 +26,28 @@ const resendEventSchema = z.object({
 
 /**
  * Delivery-status event types this handler updates `OutreachMessage` from.
- * Inbound replies are a separate, not-yet-built event stream — the
- * `INBOUND`/`RECEIVED` enum members exist for it, but no Resend event
- * carries a reply; that lands via a future dedicated inbound-parsing route.
+ * Inbound replies land on `/api/webhooks/resend/inbound`.
  */
 export async function POST(request: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
-  if (!secret) {
-    await captureOperatorAlert({
-      kind: "OUTREACH_SEND_FAILURE",
-      dedupKey: "webhook-configuration",
-      title: "Resend webhook configuration is missing",
-      message:
-        "A Resend delivery webhook reached the application without a configured signing secret. Restore RESEND_WEBHOOK_SECRET and redeploy.",
-      context: { category: "configuration" },
-    });
-    return Response.json(
-      { error: "Resend webhook is not configured" },
-      { status: 400 },
-    );
-  }
-
-  const svixId = request.headers.get("svix-id");
-  const svixTimestamp = request.headers.get("svix-timestamp");
-  const svixSignature = request.headers.get("svix-signature");
-  if (!svixId || !svixTimestamp || !svixSignature) {
-    return Response.json({ error: "Invalid signature" }, { status: 400 });
-  }
-
   const rawBody = await request.text();
-  let verified: unknown;
-  try {
-    verified = new Webhook(secret).verify(rawBody, {
-      "svix-id": svixId,
-      "svix-timestamp": svixTimestamp,
-      "svix-signature": svixSignature,
-    });
-  } catch {
-    return Response.json({ error: "Invalid signature" }, { status: 400 });
+  const verified = verifyResendWebhook(request, rawBody, secret);
+  if (!verified.ok) {
+    if (verified.error === "Resend webhook is not configured") {
+      await captureOperatorAlert({
+        kind: "OUTREACH_SEND_FAILURE",
+        dedupKey: "webhook-configuration",
+        title: "Resend webhook configuration is missing",
+        message:
+          "A Resend delivery webhook reached the application without a configured signing secret. Restore RESEND_WEBHOOK_SECRET and redeploy.",
+        context: { category: "configuration" },
+      });
+    }
+    return Response.json({ error: verified.error }, { status: verified.status });
   }
+  const svixId = verified.svixId;
 
-  const parsed = resendEventSchema.safeParse(verified);
+  const parsed = resendEventSchema.safeParse(verified.payload);
   if (!parsed.success) {
     return Response.json({ error: "Malformed webhook payload" }, {
       status: 400,

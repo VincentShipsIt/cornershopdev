@@ -80,10 +80,15 @@ export type OperatorSiteRow = {
     id: string;
     direction: string;
     template: string | null;
+    subject: string;
+    textBody: string;
+    fromAddress: string;
+    toAddress: string;
     status: string;
     error: string | null;
     sentAt: Date | null;
     deliveredAt: Date | null;
+    receivedAt: Date | null;
     createdAt: Date;
     retryable: boolean;
   }>;
@@ -190,15 +195,20 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         },
         outreachMessages: {
           orderBy: { createdAt: "desc" },
-          take: 5,
+          take: 50,
           select: {
             id: true,
             direction: true,
             template: true,
+            subject: true,
+            textBody: true,
+            fromAddress: true,
+            toAddress: true,
             status: true,
             error: true,
             sentAt: true,
             deliveredAt: true,
+            receivedAt: true,
             providerEventAt: true,
             createdAt: true,
           },
@@ -397,15 +407,15 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           site.sourceMonitorState?.lastSuccessAt ?? null,
         discovery: toOperatorLeadDiscoveryView(site.attributes),
         localSeoAudit: toOperatorLocalSeoAuditView(site.attributes),
-        outreachMessages: site.outreachMessages.map(
-          ({ providerEventAt, ...message }) => ({
+        outreachMessages: [...site.outreachMessages]
+          .reverse()
+          .map(({ providerEventAt, ...message }) => ({
             ...message,
             retryable: isOutreachMessageRetryable(
               { ...message, providerEventAt },
               loadedAt,
             ),
-          }),
-        ),
+          })),
         outreachDispatch: site.outreachDispatches[0]
           ? {
               ...site.outreachDispatches[0],

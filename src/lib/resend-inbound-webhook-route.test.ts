@@ -1,0 +1,118 @@
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { Webhook } from "svix";
+
+const recordInbound = mock(
+  async (): Promise<{
+    handled: boolean;
+    created: boolean;
+    retry: boolean;
+    siteId: string | null;
+    messageId: string | null;
+  }> => ({
+    handled: true,
+    created: true,
+    retry: false,
+    siteId: "site_1",
+    messageId: "inbound_1",
+  }),
+);
+const captureOperatorAlert = mock(async () => "delivered" as const);
+
+mock.module("@/lib/outreach-inbound", () => ({
+  recordInboundOutreachMessage: recordInbound,
+}));
+mock.module("@/lib/operator-alerts", () => ({ captureOperatorAlert }));
+
+const previousDatabaseUrl = process.env.DATABASE_URL;
+const previousWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+const webhookSecret = `whsec_${Buffer.from(
+  "test-only-webhook-signing-key",
+).toString("base64")}`;
+const { POST } = await import("@/app/api/webhooks/resend/inbound/route");
+
+describe("Resend inbound webhook", () => {
+  beforeEach(() => {
+    process.env.DATABASE_URL = "postgresql://unused-by-mocked-test.invalid/db";
+    process.env.RESEND_WEBHOOK_SECRET = webhookSecret;
+    recordInbound.mockClear();
+    captureOperatorAlert.mockClear();
+  });
+
+  afterAll(() => {
+    restoreEnvironment("DATABASE_URL", previousDatabaseUrl);
+    restoreEnvironment("RESEND_WEBHOOK_SECRET", previousWebhookSecret);
+  });
+
+  it("rejects an invalid signature without storing a reply", async () => {
+    const response = await POST(signedInbound("v1,invalid-signature"));
+
+    expect(response.status).toBe(400);
+    expect(recordInbound).not.toHaveBeenCalled();
+  });
+
+  it("stores a signed inbound reply on the matched lead thread", async () => {
+    const response = await POST(signedInbound());
+    const payload = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      received: true,
+      handled: true,
+      created: true,
+      siteId: "site_1",
+    });
+    expect(recordInbound).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks Resend to retry when the received body is not visible yet", async () => {
+    recordInbound.mockResolvedValueOnce({
+      handled: false,
+      created: false,
+      retry: true,
+      siteId: null,
+      messageId: null,
+    });
+
+    const response = await POST(signedInbound());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Inbound email body is not visible yet",
+    });
+  });
+});
+
+function signedInbound(signatureOverride?: string): Request {
+  const timestamp = new Date();
+  const messageId = "inbound_webhook_1";
+  const body = JSON.stringify({
+    type: "email.received",
+    created_at: timestamp.toISOString(),
+    data: {
+      email_id: "recv_1",
+      from: "owner@chez-lea.test",
+      to: ["vincent@restofront.com"],
+      subject: "Re: your preview",
+      message_id: "<reply@chez-lea.test>",
+    },
+  });
+  const signature =
+    signatureOverride ??
+    new Webhook(webhookSecret).sign(messageId, timestamp, body);
+
+  return new Request("https://cornershop.dev/api/webhooks/resend/inbound", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "svix-id": messageId,
+      "svix-timestamp": String(Math.floor(timestamp.getTime() / 1_000)),
+      "svix-signature": signature,
+    },
+    body,
+  });
+}
+
+function restoreEnvironment(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}

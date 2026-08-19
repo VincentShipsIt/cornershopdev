@@ -2,7 +2,7 @@ import { Vertical } from "@/generated/prisma/enums";
 import { emailReplyTo, emailSender } from "@/lib/resend";
 
 export const OUTREACH_MIGRATION =
-  "20260819084000_outreach_operator_safety";
+  "20260819120000_outreach_inbound_mailbox";
 export const RESTOFRONT_OUTREACH_FROM =
   "Vincent from Restofrontapp <vincent@send.restofront.com>";
 export const RESTOFRONT_OUTREACH_REPLY_TO = "vincent@restofront.com";
@@ -13,6 +13,9 @@ export const REQUIRED_RESEND_WEBHOOK_EVENTS = [
   "email.complained",
   "email.failed",
   "email.suppressed",
+] as const;
+export const REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS = [
+  "email.received",
 ] as const;
 
 type Environment = Record<string, string | undefined>;
@@ -31,6 +34,7 @@ export type OutreachEnvironmentReadiness = {
   };
   missingOrInvalid: string[];
   webhookEndpoint: string | null;
+  inboundWebhookEndpoint: string | null;
 };
 
 export type ResendWebhookSummary = {
@@ -44,6 +48,9 @@ export function evaluateOutreachEnvironment(
   options: { expectedAppOrigin?: string } = {},
 ): OutreachEnvironmentReadiness {
   const webhookEndpoint = resolveWebhookEndpoint(env.NEXT_PUBLIC_APP_URL);
+  const inboundWebhookEndpoint = resolveInboundWebhookEndpoint(
+    env.NEXT_PUBLIC_APP_URL,
+  );
   const checks = {
     database: Boolean(env.DATABASE_URL),
     resendApiKey: Boolean(env.RESEND_API_KEY),
@@ -89,6 +96,7 @@ export function evaluateOutreachEnvironment(
     checks,
     missingOrInvalid,
     webhookEndpoint,
+    inboundWebhookEndpoint,
   };
 }
 
@@ -112,19 +120,55 @@ export function hasRequiredResendWebhook(
   webhooks: ResendWebhookSummary[],
   expectedEndpoint: string,
 ): boolean {
+  return hasWebhookEvents(
+    webhooks,
+    expectedEndpoint,
+    REQUIRED_RESEND_WEBHOOK_EVENTS,
+  );
+}
+
+export function hasRequiredResendInboundWebhook(
+  webhooks: ResendWebhookSummary[],
+  expectedEndpoint: string,
+): boolean {
+  return hasWebhookEvents(
+    webhooks,
+    expectedEndpoint,
+    REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
+  );
+}
+
+function hasWebhookEvents(
+  webhooks: ResendWebhookSummary[],
+  expectedEndpoint: string,
+  requiredEvents: readonly string[],
+): boolean {
   return webhooks.some((webhook) => {
     if (webhook.status !== "enabled" || webhook.endpoint !== expectedEndpoint) {
       return false;
     }
     const events = new Set(webhook.events ?? []);
-    return REQUIRED_RESEND_WEBHOOK_EVENTS.every((event) => events.has(event));
+    return requiredEvents.every((event) => events.has(event));
   });
 }
 
 function resolveWebhookEndpoint(appUrl: string | undefined): string | null {
+  return resolveHttpsPath(appUrl, "/api/webhooks/resend");
+}
+
+function resolveInboundWebhookEndpoint(
+  appUrl: string | undefined,
+): string | null {
+  return resolveHttpsPath(appUrl, "/api/webhooks/resend/inbound");
+}
+
+function resolveHttpsPath(
+  appUrl: string | undefined,
+  pathname: string,
+): string | null {
   if (!appUrl) return null;
   try {
-    const url = new URL("/api/webhooks/resend", appUrl);
+    const url = new URL(pathname, appUrl);
     if (url.protocol !== "https:" || url.username || url.password) return null;
     return url.toString();
   } catch {

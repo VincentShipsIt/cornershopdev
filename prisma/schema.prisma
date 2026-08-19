@@ -79,6 +79,7 @@ enum OperatorAlertKind {
   PUBLISH_FAILURE
   PUBLIC_SITE_HEALTH_FAILURE
   OUTREACH_SEND_FAILURE
+  OUTREACH_REPLY
 }
 
 enum OperatorAlertStatus {
@@ -475,6 +476,7 @@ model OutreachMessage {
   direction              OutreachDirection       @default(OUTBOUND)
   provider               String                  @default("resend")
   providerMessageId      String?                 @unique
+  rfcMessageId           String?                 @unique
   fromAddress            String
   replyToAddress         String?
   toAddress              String
@@ -482,10 +484,14 @@ model OutreachMessage {
   textBody               String                  @db.Text
   htmlBody               String?                 @db.Text
   template               String?
+  inReplyTo              String?
+  threadKey              String?
+  createdByActor         String?
   status                 OutreachStatus          @default(QUEUED)
   error                  String?
   sentAt                 DateTime?
   deliveredAt            DateTime?
+  receivedAt             DateTime?
   providerEventAt        DateTime?
   providerAttemptedAt    DateTime?
   deliveryLeaseId        String?
@@ -495,6 +501,8 @@ model OutreachMessage {
   providerEvents         OutreachProviderEvent[]
 
   @@index([siteId, createdAt])
+  @@index([threadKey, createdAt])
+  @@index([siteId, direction, createdAt])
 }
 
 model OutreachDispatch {

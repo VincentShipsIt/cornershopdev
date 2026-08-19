@@ -223,11 +223,12 @@ export function isLeadEligibleForOutreach(
   site: { status: string; email: string | null } | null,
   paused: boolean,
   latestOutreachStatus: string | null = null,
+  hasInboundReply = false,
 ): boolean {
   if (!site || !mutableLeadStatuses.has(site.status) || !site.email) {
     return false;
   }
-  if (paused) return false;
+  if (paused || hasInboundReply) return false;
   return (
     latestOutreachStatus === null ||
     latestOutreachStatus === "SENT" ||
@@ -273,26 +274,29 @@ async function readEligibleLead(
           select: { createdAt: true },
         },
         outreachMessages: {
-          where: {
-            direction: "OUTBOUND",
-            template: "preview_ready",
-          },
           orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { status: true },
+          take: 20,
+          select: { direction: true, template: true, status: true },
         },
       },
     }),
     db.operatorSetting.findUnique({ where: { key: "outreach.paused" } }),
   ]);
   const paused = setting?.value === true;
+  const hasInboundReply = Boolean(
+    site?.outreachMessages.some((message) => message.direction === "INBOUND"),
+  );
+  const latestPreviewReady =
+    site?.outreachMessages.find(
+      (message) =>
+        message.direction === "OUTBOUND" && message.template === "preview_ready",
+    )?.status ?? null;
   if (
     !isLeadEligibleForOutreach(
       site,
       paused,
-      stage === "follow_up_1"
-        ? (site?.outreachMessages[0]?.status ?? null)
-        : null,
+      stage === "follow_up_1" ? latestPreviewReady : null,
+      hasInboundReply,
     ) ||
     !isReviewedRestofrontLead(
       site,

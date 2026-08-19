@@ -2,6 +2,7 @@ import { Client } from "pg";
 import { getResend } from "@/lib/resend";
 import {
   evaluateOutreachEnvironment,
+  hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
   OUTREACH_MIGRATION,
 } from "@/lib/outreach-readiness";
@@ -14,15 +15,19 @@ try {
     expectedAppOrigin:
       environment === "production" ? "https://cornershop.dev" : undefined,
   });
-  const [database, workflowDatabaseReachable, webhookRegistered] =
+  const [database, workflowDatabaseReachable, webhookRegistered, inboundWebhookRegistered] =
     configuration.ready
     ? await Promise.all([
         checkDatabase(process.env.DATABASE_URL!),
         checkReadOnlyConnection(process.env.WORKFLOW_POSTGRES_URL!),
         checkWebhook(configuration.webhookEndpoint!),
+        configuration.inboundWebhookEndpoint
+          ? checkInboundWebhook(configuration.inboundWebhookEndpoint)
+          : Promise.resolve(false),
       ])
     : [
         { migrationApplied: false, schemaReady: false },
+        false,
         false,
         false,
       ];
@@ -50,6 +55,10 @@ try {
           webhook: {
             endpoint: configuration.webhookEndpoint,
             registered: webhookRegistered,
+          },
+          inboundWebhook: {
+            endpoint: configuration.inboundWebhookEndpoint,
+            registered: inboundWebhookRegistered,
           },
         },
         missingOrInvalid: configuration.missingOrInvalid,
@@ -121,9 +130,10 @@ async function checkDatabase(databaseUrl: string): Promise<{
                AND column_name IN (
                  'idempotencyKey', 'replyToAddress', 'providerEventAt',
                  'providerAttemptedAt', 'deliveryLeaseId',
-                 'deliveryLeaseExpiresAt'
+                 'deliveryLeaseExpiresAt', 'rfcMessageId', 'inReplyTo',
+                 'threadKey', 'createdByActor', 'receivedAt'
                )
-           ) = 6
+           ) = 11
            AND (
              SELECT count(*) FROM information_schema.columns
              WHERE table_schema = current_schema()
@@ -194,6 +204,12 @@ async function checkWebhook(expectedEndpoint: string): Promise<boolean> {
   const result = await getResend().webhooks.list();
   if (result.error || !result.data) throw new Error("webhook list failed");
   return hasRequiredResendWebhook(result.data.data, expectedEndpoint);
+}
+
+async function checkInboundWebhook(expectedEndpoint: string): Promise<boolean> {
+  const result = await getResend().webhooks.list();
+  if (result.error || !result.data) throw new Error("webhook list failed");
+  return hasRequiredResendInboundWebhook(result.data.data, expectedEndpoint);
 }
 
 function parseEnvironment(args: string[]): "preview" | "production" {
