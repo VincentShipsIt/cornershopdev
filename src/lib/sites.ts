@@ -1,6 +1,10 @@
 import { unstable_cache } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
+import {
+  canonicalVerifiedCustomHostname,
+  publicSiteOrigin,
+} from "@/lib/domain-routing";
 import { getDb } from "@/lib/db";
 import { leadSiteDrafts } from "@/lib/lead-drafts";
 import type {
@@ -166,7 +170,9 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
 /**
  * Dereferences the site's one live pointer and validates the immutable snapshot
  * before rendering it. Mutable Site columns and child rows are intentionally not
- * selected, so a Save cannot leak into a public custom domain.
+ * selected, so a Save cannot leak into a public custom domain or platform
+ * subdomain. CLAIMED snapshots are included because a site can be public on
+ * `<slug>.<niche>` before a custom domain makes the row LIVE.
  */
 export async function findPublishedSiteView(
   slug: string,
@@ -181,7 +187,7 @@ export async function findPublishedSiteView(
           publishedAt: { not: null },
           site: {
             slug,
-            status: "LIVE",
+            status: { in: ["CLAIMED", "LIVE"] },
             publishedSiteVersionId: versionId,
           },
         },
@@ -244,6 +250,31 @@ export function getCachedPublishedSiteView(
     },
   );
   return cached();
+}
+
+/**
+ * Canonical origin for a live site surface: verified custom domain when one
+ * exists, otherwise the platform subdomain. Used by `alternates.canonical` and
+ * Open Graph URLs so they follow the same redirect policy as `proxy.ts`.
+ */
+export async function resolveLiveSiteOrigin(
+  slug: string,
+  vertical: VerticalId,
+): Promise<string> {
+  if (!process.env.DATABASE_URL) {
+    return publicSiteOrigin({ slug, vertical });
+  }
+  const rows = await getDb().domain.findMany({
+    where: { verified: true, site: { slug } },
+    select: { hostname: true },
+  });
+  return publicSiteOrigin({
+    slug,
+    vertical,
+    verifiedHostname: canonicalVerifiedCustomHostname(
+      rows.map((row) => ({ hostname: row.hostname, verified: true })),
+    ),
+  });
 }
 
 export function projectPublishedSiteVersion(

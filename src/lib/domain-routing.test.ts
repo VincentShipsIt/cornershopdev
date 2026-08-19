@@ -1,8 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
+  canonicalVerifiedCustomHostname,
   decideCustomerHostRoute,
+  decidePlatformSubdomainRoute,
   planDomainHostnames,
+  publicSiteOrigin,
+  publicSiteUrl,
   siteStatusForDomainState,
+  type PlatformSubdomainSite,
   type PublishedDomainRecord,
 } from "@/lib/domain-routing";
 
@@ -208,6 +213,187 @@ describe("site domain lifecycle", () => {
     ).toBe("PREVIEW_READY");
   });
 });
+
+describe("platform subdomain isolation", () => {
+  it("serves claimed published sites on the niche subdomain", () => {
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: claimedSite(),
+      }),
+    ).toEqual({
+      kind: "page",
+      slug: "chez-lea",
+      versionId: "version_1",
+      locale: null,
+    });
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: claimedSite({ status: "LIVE" }),
+      }).kind,
+    ).toBe("page");
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/fr",
+        site: claimedSite(),
+      }),
+    ).toEqual({
+      kind: "page",
+      slug: "chez-lea",
+      versionId: "version_1",
+      locale: "fr",
+    });
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/api/analytics/events",
+        site: claimedSite(),
+      }).kind,
+    ).toBe("public_api");
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/preview/chez-lea/opengraph-image",
+        site: claimedSite(),
+      }),
+    ).toEqual({
+      kind: "opengraph",
+      slug: "chez-lea",
+      versionId: "version_1",
+    });
+  });
+
+  it("blocks owner and operator paths on the platform subdomain", () => {
+    for (const pathname of [
+      "/dashboard",
+      "/admin",
+      "/sign-in",
+      "/create",
+      "/claim",
+      "/preview/chez-lea",
+      "/api/admin",
+      "/api/domains",
+      "/api/sites/another/booking-requests",
+    ]) {
+      expect(
+        decidePlatformSubdomainRoute({
+          hostname: "chez-lea.restofront.com",
+          pathname,
+          site: claimedSite(),
+        }),
+      ).toEqual({ kind: "not_found" });
+    }
+  });
+
+  it("404s unpublished, prospect, paused, and unknown slugs", () => {
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: claimedSite({ slug: "someone-else" }),
+      }),
+    ).toEqual({ kind: "not_found" });
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: null,
+      }),
+    ).toEqual({ kind: "not_found" });
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: claimedSite({
+          status: "PROSPECT",
+          publishedSiteVersionId: null,
+          publishedSiteVersion: null,
+        }),
+      }),
+    ).toEqual({ kind: "not_found" });
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: claimedSite({ status: "PREVIEW_READY" }),
+      }),
+    ).toEqual({ kind: "not_found" });
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/",
+        site: claimedSite({ status: "PAUSED" }),
+      }),
+    ).toEqual({ kind: "not_found" });
+  });
+
+  it("redirects the platform subdomain to a verified custom domain", () => {
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/fr",
+        site: claimedSite({
+          status: "LIVE",
+          verifiedDomains: [
+            { hostname: "example.com", verified: true },
+            { hostname: "www.example.com", verified: true },
+          ],
+        }),
+      }),
+    ).toEqual({
+      kind: "redirect",
+      canonicalHostname: "example.com",
+    });
+  });
+
+  it("prefers the platform subdomain until a custom domain is verified", () => {
+    expect(
+      publicSiteOrigin({ slug: "chez-lea", vertical: "RESTAURANT" }),
+    ).toBe("https://chez-lea.restofront.com");
+    expect(
+      publicSiteOrigin({
+        slug: "chez-lea",
+        vertical: "RESTAURANT",
+        verifiedHostname: "www.example.com",
+      }),
+    ).toBe("https://example.com");
+    expect(
+      publicSiteUrl({
+        slug: "chez-lea",
+        vertical: "RESTAURANT",
+        pathname: "/fr",
+      }),
+    ).toBe("https://chez-lea.restofront.com/fr");
+    expect(
+      canonicalVerifiedCustomHostname([
+        { hostname: "www.example.com", verified: true },
+        { hostname: "example.com", verified: true },
+      ]),
+    ).toBe("example.com");
+  });
+});
+
+function claimedSite(
+  overrides: Partial<PlatformSubdomainSite> = {},
+): PlatformSubdomainSite {
+  return {
+    id: "site_1",
+    slug: "chez-lea",
+    status: "CLAIMED",
+    publishedSiteVersionId: "version_1",
+    publishedSiteVersion: {
+      id: "version_1",
+      siteId: "site_1",
+      publishedAt: new Date("2026-07-27T00:00:00.000Z"),
+    },
+    verifiedDomains: [],
+    ...overrides,
+  };
+}
 
 function livePair(): PublishedDomainRecord[] {
   const site = {

@@ -17,12 +17,18 @@ import { getDb } from "@/lib/db";
 import { claimDomainSetForSite } from "@/lib/domain-claim";
 import {
   planDomainHostnames,
+  publicSiteOrigin,
   siteStatusForDomainState,
   type DomainHostnamePlan,
 } from "@/lib/domain-routing";
 import { checkDomainTls } from "@/lib/domain-tls";
-import { isFactoryHostname } from "@/lib/hostnames";
+import {
+  isFactoryHostname,
+  isReservedPlatformHostname,
+  parsePlatformSubdomain,
+} from "@/lib/hostnames";
 import { previewCacheTagFor } from "@/lib/site-surface";
+import type { VerticalId } from "@/lib/verticals/types";
 
 const hostnameSchema = z
   .string()
@@ -67,7 +73,11 @@ export async function POST(request: Request) {
       siteSlug?: string;
     };
     const hostname = hostnameSchema.parse(body.hostname);
-    if (isFactoryHostname(hostname)) {
+    if (
+      isFactoryHostname(hostname) ||
+      parsePlatformSubdomain(hostname) !== null ||
+      isReservedPlatformHostname(hostname)
+    ) {
       return Response.json(
         { error: "This hostname is reserved for Cornershopdev" },
         { status: 409 },
@@ -132,7 +142,15 @@ export async function POST(request: Request) {
     ]);
     if (!site) throw new Error("Site not found");
     return Response.json(
-      domainSetup(plan, rows, target, site.status, access.site.slug, false),
+      domainSetup(
+        plan,
+        rows,
+        target,
+        site.status,
+        access.site.slug,
+        access.site.vertical,
+        false,
+      ),
     );
   } catch (error) {
     return domainFailure(error, "Domain could not be added");
@@ -163,7 +181,13 @@ export async function GET(request: Request) {
       ]);
       if (!site) throw new Error("Site not found");
       return Response.json({
-        domains: domainSetups(rows, target, site.status, access.site.slug),
+        domains: domainSetups(
+          rows,
+          target,
+          site.status,
+          access.site.slug,
+          access.site.vertical,
+        ),
       });
     }
 
@@ -235,7 +259,15 @@ export async function GET(request: Request) {
     revalidateTag(previewCacheTagFor(access.site.slug), { expire: 0 });
 
     return Response.json(
-      domainSetup(plan, checked, target, siteStatus, access.site.slug, true),
+      domainSetup(
+        plan,
+        checked,
+        target,
+        siteStatus,
+        access.site.slug,
+        access.site.vertical,
+        true,
+      ),
     );
   } catch (error) {
     return domainFailure(error, "DNS could not be checked");
@@ -309,6 +341,10 @@ export async function DELETE(request: Request) {
       hostnames: result.hostnames,
       siteStatus: result.siteStatus,
       previewPath: `/preview/${access.site.slug}`,
+      publicUrl: publicSiteOrigin({
+        slug: access.site.slug,
+        vertical: access.site.vertical,
+      }),
     });
   } catch (error) {
     return domainFailure(error, "Domain could not be removed");
@@ -328,6 +364,7 @@ function domainSetups(
   target: ReturnType<typeof getDomainTarget>,
   siteStatus: SiteStatus,
   siteSlug: string,
+  vertical: VerticalId,
 ) {
   const plans = new Map<string, DomainHostnamePlan>();
   for (const row of rows) {
@@ -335,7 +372,7 @@ function domainSetups(
     plans.set(plan.canonicalHostname, plan);
   }
   return [...plans.values()].map((plan) =>
-    domainSetup(plan, rows, target, siteStatus, siteSlug, false),
+    domainSetup(plan, rows, target, siteStatus, siteSlug, vertical, false),
   );
 }
 
@@ -345,18 +382,20 @@ function domainSetup(
   target: ReturnType<typeof getDomainTarget>,
   siteStatus: SiteStatus,
   siteSlug: string,
+  vertical: VerticalId,
   dnsChecked: boolean,
 ) {
   const plannedRows = rows.filter((row) => plan.hostnames.includes(row.hostname));
   const verifiedRows = plannedRows.filter((row) => row.verified);
   const tls = aggregateTls(verifiedRows);
+  const verified =
+    plannedRows.length === plan.hostnames.length &&
+    plannedRows.every((row) => row.verified);
   return {
     hostname: plan.canonicalHostname,
     hostnames: plan.hostnames,
     attached: plannedRows.length === plan.hostnames.length,
-    verified:
-      plannedRows.length === plan.hostnames.length &&
-      plannedRows.every((row) => row.verified),
+    verified,
     dnsChecked,
     records: plan.records.map((record) => ({
       type: record.type,
@@ -366,6 +405,11 @@ function domainSetup(
     tls,
     siteStatus,
     previewPath: `/preview/${siteSlug}`,
+    publicUrl: publicSiteOrigin({
+      slug: siteSlug,
+      vertical,
+      verifiedHostname: verified ? plan.canonicalHostname : null,
+    }),
   };
 }
 

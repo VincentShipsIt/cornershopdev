@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { previewCacheTagFor } from "@/lib/site-surface";
+import {
+  liveSiteCanonicalPath,
+  previewCacheTagFor,
+} from "@/lib/site-surface";
 
 describe("previewCacheTagFor", () => {
   it("derives a stable tag from the slug", () => {
@@ -19,5 +22,14 @@ describe("previewCacheTagFor", () => {
 
   it("keeps distinct slugs on distinct tags", () => {
     expect(previewCacheTagFor("site-a")).not.toBe(previewCacheTagFor("site-b"));
+  });
+
+  it("builds absolute live canonicals on the public origin", () => {
+    expect(
+      liveSiteCanonicalPath("https://chez-lea.restofront.com", "en", "en"),
+    ).toBe("https://chez-lea.restofront.com/");
+    expect(
+      liveSiteCanonicalPath("https://chez-lea.restofront.com", "fr", "en"),
+    ).toBe("https://chez-lea.restofront.com/fr");
   });
 });

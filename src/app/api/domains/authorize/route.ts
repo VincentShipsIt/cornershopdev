@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { isFactoryHostname } from "@/lib/hostnames";
+import {
+  isFactoryHostname,
+  parsePlatformSubdomain,
+} from "@/lib/hostnames";
 
 const hostnameSchema = z
   .string()
@@ -19,13 +22,24 @@ export async function GET(request: Request) {
   );
   if (!parsed.success) return new Response(null, { status: 403 });
 
-  // The factory's own hostnames and every registered niche domain are authorized
-  // without consulting the domain table, which only ever holds customer domains.
-  // Answering before the database check is also what lets cornershop.dev and a
-  // niche domain renew their certificates while the database is unreachable.
-  if (isFactoryHostname(parsed.data)) return new Response(null, { status: 200 });
+  // Factory and launched-niche apexes are authorized without the domain table
+  // so cornershop.dev / restofront.com can renew TLS while the database is
+  // unreachable. Customer platform subdomains are not: an unused label under
+  // *.restofront.com must not mint Let's Encrypt certificates (shared quota).
+  if (isFactoryHostname(parsed.data)) {
+    return new Response(null, { status: 200 });
+  }
 
   if (!process.env.DATABASE_URL) return new Response(null, { status: 403 });
+
+  const platform = parsePlatformSubdomain(parsed.data);
+  if (platform) {
+    const site = await getDb().site.findUnique({
+      where: { slug: platform.slug },
+      select: { id: true },
+    });
+    return new Response(null, { status: site ? 200 : 403 });
+  }
 
   const domain = await getDb().domain.findUnique({
     where: { hostname: parsed.data },

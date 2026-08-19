@@ -3,9 +3,15 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import {
   decideCustomerHostRoute,
+  decidePlatformSubdomainRoute,
   planDomainHostnames,
+  type CustomerHostDecision,
 } from "@/lib/domain-routing";
-import { platformHostnames, requestHostname } from "@/lib/hostnames";
+import {
+  parsePlatformSubdomain,
+  platformHostnames,
+  requestHostname,
+} from "@/lib/hostnames";
 import {
   LIVE_SITE_SLUG_HEADER,
   LIVE_SITE_VERSION_HEADER,
@@ -41,7 +47,8 @@ function withEmbedFrameCsp(response: NextResponse) {
 export async function proxy(request: NextRequest) {
   const upstreamHeaders = new Headers(request.headers);
   // Never trust a caller-supplied surface marker. Only the verified-domain
-  // branch below may add it for the rewritten Server Component request.
+  // and platform-subdomain branches below may add it for the rewritten
+  // Server Component request.
   upstreamHeaders.delete(LIVE_SITE_SLUG_HEADER);
   upstreamHeaders.delete(LIVE_SITE_VERSION_HEADER);
 
@@ -86,6 +93,54 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next({ request: { headers: upstreamHeaders } });
   }
 
+  // Claimed sites are reachable at `<slug>.<niche>` (and `<slug>.cornershop.dev`
+  // as a fallback) without the owner touching DNS. This runs before the Domain
+  // table so a platform hostname can never be claimed as a custom domain, and so
+  // a missing Site row 404s instead of falling through to an unknown-host lookup.
+  const platform = parsePlatformSubdomain(hostname);
+  if (platform) {
+    const site = await getDb().site.findUnique({
+      where: { slug: platform.slug },
+      select: {
+        id: true,
+        slug: true,
+        status: true,
+        publishedSiteVersionId: true,
+        publishedSiteVersion: {
+          select: {
+            id: true,
+            siteId: true,
+            publishedAt: true,
+          },
+        },
+        domains: {
+          where: { verified: true },
+          select: { hostname: true, verified: true },
+        },
+      },
+    });
+    return respondForCustomerHost(
+      request,
+      upstreamHeaders,
+      decidePlatformSubdomainRoute({
+        hostname,
+        pathname: request.nextUrl.pathname,
+        parsed: platform,
+        site: site
+          ? {
+              id: site.id,
+              slug: site.slug,
+              status: site.status,
+              publishedSiteVersionId: site.publishedSiteVersionId,
+              publishedSiteVersion: site.publishedSiteVersion,
+              verifiedDomains: site.domains,
+            }
+          : null,
+      }),
+      301,
+    );
+  }
+
   const plan = planDomainHostnames(hostname);
   const domains = await getDb().domain.findMany({
     where: { hostname: { in: plan.hostnames } },
@@ -114,6 +169,15 @@ export async function proxy(request: NextRequest) {
     pathname: request.nextUrl.pathname,
     records: domains,
   });
+  return respondForCustomerHost(request, upstreamHeaders, decision, 308);
+}
+
+function respondForCustomerHost(
+  request: NextRequest,
+  upstreamHeaders: Headers,
+  decision: CustomerHostDecision,
+  redirectStatus: 301 | 308,
+) {
   if (decision.kind === "not_found") {
     return new NextResponse("Not found", {
       status: 404,
@@ -125,7 +189,7 @@ export async function proxy(request: NextRequest) {
     canonical.protocol = "https:";
     canonical.hostname = decision.canonicalHostname;
     canonical.port = "";
-    return NextResponse.redirect(canonical, 308);
+    return NextResponse.redirect(canonical, redirectStatus);
   }
 
   upstreamHeaders.set(LIVE_SITE_SLUG_HEADER, decision.slug);

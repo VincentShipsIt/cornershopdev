@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
   isFactoryHostname,
+  isOnDemandTlsHostname,
+  isReservedPlatformHostname,
+  parsePlatformSubdomain,
   platformHostnames,
+  platformSiteHostname,
+  platformSubdomainParents,
   requestHostname,
 } from "@/lib/hostnames";
 
@@ -77,6 +82,88 @@ describe("isFactoryHostname", () => {
     expect(isFactoryHostname("pizzeria-luigi.com", "")).toBe(false);
     expect(isFactoryHostname("notcornershop.dev", "")).toBe(false);
     expect(isFactoryHostname("cornershop.dev.evil.com", "")).toBe(false);
+    expect(isFactoryHostname("le-petit-meunier.restofront.com", "")).toBe(
+      false,
+    );
     expect(isFactoryHostname("", "")).toBe(false);
+  });
+});
+
+describe("platform subdomains", () => {
+  it("derives parents from launched niche domains and the factory apex", () => {
+    expect(platformSubdomainParents("")).toEqual([
+      "cornershop.dev",
+      "restofront.com",
+    ]);
+    expect(platformSiteHostname("chez-lea", "RESTAURANT", "")).toBe(
+      "chez-lea.restofront.com",
+    );
+    expect(platformSiteHostname("atelier-coupe", "BEAUTY", "")).toBe(
+      "atelier-coupe.cornershop.dev",
+    );
+  });
+
+  it("parses a customer slug under a launched niche or the factory apex", () => {
+    expect(parsePlatformSubdomain("Chez-Lea.RestoFront.com:443", "")).toEqual({
+      slug: "chez-lea",
+      parentHostname: "restofront.com",
+    });
+    expect(parsePlatformSubdomain("chez-lea.cornershop.dev", "")).toEqual({
+      slug: "chez-lea",
+      parentHostname: "cornershop.dev",
+    });
+  });
+
+  it("never treats apex, reserved, or extra labels as a customer slug", () => {
+    expect(parsePlatformSubdomain("restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("www.restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("api.restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("assets.restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("domains.restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("send.restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("foo.bar.restofront.com", "")).toBeNull();
+    expect(parsePlatformSubdomain("www.cornershop.dev", "")).toBeNull();
+    expect(isReservedPlatformHostname("api.restofront.com", "")).toBe(true);
+    expect(isReservedPlatformHostname("send.restofront.com", "")).toBe(true);
+    expect(isReservedPlatformHostname("chez-lea.restofront.com", "")).toBe(
+      false,
+    );
+  });
+});
+
+/**
+ * This is the gate Caddy asks before issuing a certificate under on-demand TLS.
+ * Apex and www stay 200 so the factory and niche marketing sites keep serving.
+ * A customer slug is 200 even if the Site row does not exist yet, so a brand-new
+ * publish can obtain a cert. Arbitrary extra labels and unrelated hosts stay 403.
+ */
+describe("isOnDemandTlsHostname", () => {
+  it("authorizes factory, niche apex/www, and customer platform slugs", () => {
+    expect(isOnDemandTlsHostname("cornershop.dev", "")).toBe(true);
+    expect(isOnDemandTlsHostname("www.cornershop.dev", "")).toBe(true);
+    expect(isOnDemandTlsHostname("restofront.com", "")).toBe(true);
+    expect(isOnDemandTlsHostname("www.restofront.com", "")).toBe(true);
+    expect(isOnDemandTlsHostname("le-petit-meunier.restofront.com", "")).toBe(
+      true,
+    );
+    expect(isOnDemandTlsHostname("le-petit-meunier.cornershop.dev", "")).toBe(
+      true,
+    );
+  });
+
+  it("does not authorize unrelated hosts or extra labels", () => {
+    expect(isOnDemandTlsHostname("not-a-site.evil.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("pizzeria-luigi.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("foo.bar.restofront.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("cornershop.dev.evil.com", "")).toBe(false);
+  });
+
+  it("does not accidentally open operator hosts on a niche domain", () => {
+    expect(isOnDemandTlsHostname("api.restofront.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("assets.restofront.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("domains.restofront.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("send.restofront.com", "")).toBe(false);
+    expect(isOnDemandTlsHostname("api.cornershop.dev", "")).toBe(true);
+    expect(isOnDemandTlsHostname("domains.cornershop.dev", "")).toBe(true);
   });
 });

@@ -1,3 +1,10 @@
+import {
+  parsePlatformSubdomain,
+  platformSiteHostname,
+  type PlatformSubdomain,
+} from "@/lib/hostnames";
+import type { VerticalId } from "@/lib/verticals/types";
+
 export type DomainHostnamePlan = {
   canonicalHostname: string;
   hostnames: string[];
@@ -46,6 +53,15 @@ export type CustomerHostDecision =
       slug: string;
       versionId: string;
     };
+
+export type PlatformSubdomainSite = {
+  id: string;
+  slug: string;
+  status: PublishedDomainRecord["site"]["status"];
+  publishedSiteVersionId: string | null;
+  publishedSiteVersion: PublishedDomainRecord["site"]["publishedSiteVersion"];
+  verifiedDomains: Array<{ hostname: string; verified: boolean }>;
+};
 
 /**
  * Cornershop's explicit apex/www policy.
@@ -156,6 +172,117 @@ export function decideCustomerHostRoute(input: {
     versionId,
     locale: surface.locale,
   };
+}
+
+/**
+ * Resolves a factory/niche platform subdomain (`<slug>.restofront.com` or
+ * `<slug>.cornershop.dev`) onto the same public surfaces as a verified custom
+ * domain. CLAIMED and LIVE snapshots both serve; unpublished prospects stay
+ * private on the factory `/preview/<slug>` path. A verified custom domain
+ * becomes the canonical host.
+ */
+export function decidePlatformSubdomainRoute(input: {
+  hostname: string;
+  pathname: string;
+  parsed?: PlatformSubdomain | null;
+  site: PlatformSubdomainSite | null;
+}): CustomerHostDecision {
+  const parsed = input.parsed ?? parsePlatformSubdomain(input.hostname);
+  if (!parsed || !input.site || input.site.slug !== parsed.slug) {
+    return { kind: "not_found" };
+  }
+  if (!hasPublicPublishedSnapshot(input.site)) return { kind: "not_found" };
+
+  const surface = customerSurface(input.pathname, input.site.slug);
+  if (surface.kind === "blocked") return { kind: "not_found" };
+
+  const canonicalCustom = canonicalVerifiedCustomHostname(
+    input.site.verifiedDomains,
+  );
+  if (canonicalCustom) {
+    return {
+      kind: "redirect",
+      canonicalHostname: canonicalCustom,
+    };
+  }
+
+  const versionId = input.site.publishedSiteVersionId;
+  if (!versionId) return { kind: "not_found" };
+  if (surface.kind === "public_api") {
+    return {
+      kind: "public_api",
+      slug: input.site.slug,
+      versionId,
+    };
+  }
+  if (surface.kind === "opengraph") {
+    return {
+      kind: "opengraph",
+      slug: input.site.slug,
+      versionId,
+    };
+  }
+  return {
+    kind: "page",
+    slug: input.site.slug,
+    versionId,
+    locale: surface.locale,
+  };
+}
+
+/**
+ * A claimed site is public on its platform subdomain once a snapshot exists.
+ * Custom domains still require LIVE via `hasValidPublishedSite`.
+ */
+export function hasPublicPublishedSnapshot(site: {
+  id: string;
+  status: PublishedDomainRecord["site"]["status"];
+  publishedSiteVersionId: string | null;
+  publishedSiteVersion: PublishedDomainRecord["site"]["publishedSiteVersion"];
+}): boolean {
+  const version = site.publishedSiteVersion;
+  return (
+    (site.status === "CLAIMED" || site.status === "LIVE") &&
+    Boolean(site.publishedSiteVersionId) &&
+    version?.id === site.publishedSiteVersionId &&
+    version.siteId === site.id &&
+    version.publishedAt instanceof Date
+  );
+}
+
+export function canonicalVerifiedCustomHostname(
+  domains: Array<{ hostname: string; verified: boolean }>,
+): string | null {
+  const verified = domains.filter((row) => row.verified);
+  if (!verified.length) return null;
+  const canonicals = verified.filter(
+    (row) =>
+      row.hostname === planDomainHostnames(row.hostname).canonicalHostname,
+  );
+  return canonicals[0]?.hostname ?? verified[0]?.hostname ?? null;
+}
+
+export function publicSiteOrigin(input: {
+  slug: string;
+  vertical?: VerticalId;
+  verifiedHostname?: string | null;
+}): string {
+  if (input.verifiedHostname) {
+    return `https://${planDomainHostnames(input.verifiedHostname).canonicalHostname}`;
+  }
+  return `https://${platformSiteHostname(input.slug, input.vertical)}`;
+}
+
+export function publicSiteUrl(input: {
+  slug: string;
+  vertical?: VerticalId;
+  verifiedHostname?: string | null;
+  pathname?: string;
+}): string {
+  const origin = publicSiteOrigin(input);
+  const pathname = input.pathname ?? "/";
+  if (pathname === "/") return `${origin}/`;
+  return `${origin}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
 }
 
 export function siteStatusForDomainState(input: {
