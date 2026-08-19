@@ -11,6 +11,18 @@ export type RateLimitResult = {
   reason?: "limited" | "unavailable";
 };
 
+/**
+ * Production Caddy overwrites X-Real-IP with the connecting client. Prefer
+ * that hop; fall back to the left-most X-Forwarded-For only for local stacks
+ * that do not set X-Real-IP. Direct-to-app traffic can still spoof these
+ * headers — the trusted edge is the gate.
+ */
+export function clientIpFromHeaders(headers: Headers): string {
+  const realIp = headers.get("x-real-ip")?.trim();
+  const forwardedFor = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return realIp || forwardedFor || "unknown";
+}
+
 const slidingWindowScript = `
 redis.call("ZREMRANGEBYSCORE", KEYS[1], 0, ARGV[1] - ARGV[2])
 local count = redis.call("ZCARD", KEYS[1])
@@ -50,11 +62,7 @@ async function limitByIp(
     };
   }
 
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  const address =
-    request.headers.get("x-real-ip") ??
-    forwardedFor?.split(",")[0]?.trim() ??
-    "unknown";
+  const address = clientIpFromHeaders(request.headers);
   const identifier = createHash("sha256").update(address).digest("hex");
   try {
     const now = Date.now();

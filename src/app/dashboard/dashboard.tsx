@@ -75,22 +75,7 @@ import {
   validateRestaurantMenuDraft,
   type RestaurantMenuMutation,
 } from "@/lib/restaurant-menu-editor";
-
-type DomainSetup = {
-  hostname: string;
-  hostnames: string[];
-  attached: boolean;
-  verified: boolean;
-  records: Array<{ type: string; name: string; value: string }>;
-  tls: {
-    status: "PENDING" | "READY" | "ERROR";
-    checkedAt: string | null;
-    message: string;
-  };
-  siteStatus: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
-  previewPath: string;
-  publicUrl: string;
-};
+import type { DomainSetup } from "@/app/dashboard/dashboard-types";
 
 type ClientPublicationHistoryItem = Omit<
   SitePublicationHistoryItem,
@@ -241,11 +226,17 @@ export function Dashboard({
         const response = await fetch(`/api/sites/${draft.slug}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft),
+          body: JSON.stringify({
+            ...draft,
+            ...(savedRevision !== null
+              ? { expectedRevision: savedRevision }
+              : {}),
+          }),
         });
         const result = (await response.json()) as {
           error?: string;
           revision?: number;
+          code?: string;
         };
         if (!response.ok) {
           throw new Error(result.error ?? "Save failed");
@@ -640,10 +631,14 @@ export function Dashboard({
     setDomainError(null);
     setDomainNotice(null);
     try {
-      const response = await fetch(
-        `/api/domains?hostname=${encodeURIComponent(domainSetup.hostname)}&siteSlug=${encodeURIComponent(draft.slug)}`,
-        { cache: "no-store" },
-      );
+      const response = await fetch("/api/domains", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hostname: domainSetup.hostname,
+          siteSlug: draft.slug,
+        }),
+      });
       const result = (await response.json()) as DomainSetup & {
         error?: string;
       };
@@ -1608,8 +1603,7 @@ export function Dashboard({
                     )}
                   </CardContent>
                 </Card>
-              </div>
-            </TabsContent>
+              </div>            </TabsContent>
 
             <TabsContent value="settings" className="mt-0">
               <PageHeading

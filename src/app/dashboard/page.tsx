@@ -7,6 +7,7 @@ import { getSiteAccess } from "@/lib/authorization";
 import { getBookingRequestInbox } from "@/lib/booking-request-inbox";
 import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
+import { Vertical } from "@/generated/prisma/enums";
 import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
@@ -14,6 +15,7 @@ import { getSitePublicationHistory } from "@/lib/site-publication";
 import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
+import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
 
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await resolveRequestBrand();
@@ -38,6 +40,17 @@ export default async function DashboardPage({
   const access =
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
+
+  if (access?.ok && access.site.vertical !== Vertical.RESTAURANT) {
+    return (
+      <UnsupportedVerticalDashboard
+        email={access.user.email}
+        slug={access.site.slug}
+        vertical={access.site.vertical}
+        brand={await resolveRequestBrand()}
+      />
+    );
+  }
 
   const [
     draft,
@@ -81,9 +94,15 @@ export default async function DashboardPage({
         },
       ];
 
+  // A claimed restaurant without a loadable draft is a data integrity problem,
+  // not a cue to invent sample content under the owner's real slug.
+  if (access?.ok && !draft) {
+    redirect("/sign-in");
+  }
+
   return (
     <Dashboard
-      initialDraft={draft}
+      initialDraft={draft ?? sampleRestaurant}
       email={access?.ok ? access.user.email : "demo@cornershop.dev"}
       checkoutComplete={query.checkout === "success"}
       demo={!session}

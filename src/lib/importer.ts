@@ -1,5 +1,6 @@
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
+import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
 import type {
   LinkClassificationHint,
@@ -41,73 +42,185 @@ export type ExtractedSite = {
 
 export type ExtractedRestaurant = ExtractedSite;
 
-const privateIpv4Patterns = [
-  /^0\./,
-  /^10\./,
-  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
-  /^127\./,
-  /^169\.254\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.0\.0\./,
-  /^192\.0\.2\./,
-  /^192\.168\./,
-  /^198\.(1[89])\./,
-  /^198\.51\.100\./,
-  /^203\.0\.113\./,
-  /^2(2[4-9]|3\d)\./,
-  /^2[4-5]\d\./,
-];
+const privateNets = new BlockList();
+privateNets.addSubnet("0.0.0.0", 8, "ipv4");
+privateNets.addSubnet("10.0.0.0", 8, "ipv4");
+privateNets.addSubnet("100.64.0.0", 10, "ipv4");
+privateNets.addSubnet("127.0.0.0", 8, "ipv4");
+privateNets.addSubnet("169.254.0.0", 16, "ipv4");
+privateNets.addSubnet("172.16.0.0", 12, "ipv4");
+privateNets.addSubnet("192.0.0.0", 24, "ipv4");
+privateNets.addSubnet("192.0.2.0", 24, "ipv4");
+privateNets.addSubnet("192.168.0.0", 16, "ipv4");
+privateNets.addSubnet("198.18.0.0", 15, "ipv4");
+privateNets.addSubnet("198.51.100.0", 24, "ipv4");
+privateNets.addSubnet("203.0.113.0", 24, "ipv4");
+privateNets.addSubnet("224.0.0.0", 4, "ipv4");
+privateNets.addSubnet("240.0.0.0", 4, "ipv4");
+privateNets.addAddress("::", "ipv6");
+privateNets.addSubnet("::1", 128, "ipv6");
+privateNets.addSubnet("fc00::", 7, "ipv6");
+privateNets.addSubnet("fe80::", 10, "ipv6");
+privateNets.addSubnet("ff00::", 8, "ipv6");
+privateNets.addSubnet("2001:db8::", 32, "ipv6");
 
-function isPrivateAddress(address: string): boolean {
-  const normalized = address.toLowerCase();
-  if (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("::") ||
-    normalized.startsWith("::ffff:") ||
-    normalized.startsWith("64:ff9b:") ||
-    normalized.startsWith("2001:db8:") ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    normalized.startsWith("ff")
-  ) {
-    return true;
-  }
-  if (normalized.startsWith("fe80:")) return true;
-  return privateIpv4Patterns.some((pattern) => pattern.test(address));
+function hexPairToIpv4(high: string, low: string): string {
+  const hi = Number.parseInt(high, 16);
+  const lo = Number.parseInt(low, 16);
+  return `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`;
 }
 
-async function assertPublicUrl(url: URL): Promise<void> {
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("Only http and https URLs are supported");
-  }
+/**
+ * IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible (::a.b.c.d / ::7f00:1),
+ * and well-known NAT64 (64:ff9b::/96) embed an IPv4 address in the last
+ * 32 bits. Prefix string checks miss those forms.
+ */
+function embeddedIpv4(address: string): string | null {
+  if (address === "::" || address === "::1") return null;
+  const dotted = address.match(
+    /^(?:::(?:ffff:)?|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/i,
+  );
+  if (dotted?.[1]) return dotted[1];
+  const hex = address.match(
+    /^(?:::(?:ffff:)?|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i,
+  );
+  if (hex?.[1] && hex[2]) return hexPairToIpv4(hex[1], hex[2]);
+  return null;
+}
 
-  const hostname = url.hostname.toLowerCase();
+/** Exported for unit tests and shared private-host checks. */
+export function isPrivateAddress(address: string): boolean {
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const embedded = embeddedIpv4(normalized);
+  if (embedded && isPrivateAddress(embedded)) return true;
+  const family = isIP(normalized);
+  if (family === 4) return privateNets.check(normalized, "ipv4");
+  if (family === 6) return privateNets.check(normalized, "ipv6");
+  return false;
+}
+
+function normalizeHostname(hostname: string): string {
+  // WHATWG URL keeps brackets on IPv6 hostnames (`[::1]`); strip them before
+  // IP classification so link-local and loopback literals are not sent to DNS.
+  return hostname.toLowerCase().replace(/^\[|\]$/g, "");
+}
+
+/**
+ * Resolves A/AAAA records and rejects the host if any answer is private.
+ * Returns the public addresses so the connect path can pin to one of them.
+ */
+export async function resolvePublicAddresses(
+  hostname: string,
+): Promise<string[]> {
+  const normalized = normalizeHostname(hostname);
   if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".internal") ||
+    normalized === "metadata.google.internal"
   ) {
     throw new Error("Local network addresses are not supported");
   }
 
-  if (isIP(hostname)) {
-    if (isPrivateAddress(hostname)) {
+  if (isIP(normalized)) {
+    if (isPrivateAddress(normalized)) {
       throw new Error("Private network addresses are not supported");
     }
-    return;
+    return [normalized];
   }
 
   const addresses = (
-    await Promise.allSettled([resolve4(hostname), resolve6(hostname)])
+    await Promise.allSettled([resolve4(normalized), resolve6(normalized)])
   ).flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
   if (addresses.length === 0) {
-    throw new Error("The restaurant website could not be resolved");
+    throw new Error("The website could not be resolved");
   }
 
   if (addresses.some(isPrivateAddress)) {
     throw new Error("Private network addresses are not supported");
+  }
+  return addresses;
+}
+
+/**
+ * Resolves and rejects private / link-local / metadata destinations before the
+ * importer opens a connection.
+ */
+export async function assertPublicUrl(url: URL): Promise<void> {
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http and https URLs are supported");
+  }
+  await resolvePublicAddresses(url.hostname);
+}
+
+/**
+ * Connects to a public IP that was resolved for this hostname, with SNI/Host
+ * still set to the original name. That closes the classic DNS-rebinding window
+ * between resolve and TCP connect (the OS resolver is not consulted again).
+ */
+async function fetchPublicResponse(
+  url: URL,
+  init: RequestInit,
+): Promise<Response> {
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http and https URLs are supported");
+  }
+
+  const hostname = normalizeHostname(url.hostname);
+  const addresses = await resolvePublicAddresses(hostname);
+  // Prefer IPv4 when available; many restaurant origins still lack AAAA.
+  const pinnedIp =
+    addresses.find((address) => isIP(address) === 4) ?? addresses[0];
+  const family = isIP(pinnedIp) === 6 ? 6 : 4;
+
+  const agent = new Agent({
+    connect: {
+      lookup(_host, _options, callback) {
+        callback(null, pinnedIp, family);
+      },
+      servername: hostname,
+    },
+  });
+
+  try {
+    const headers = new Headers(init.headers);
+    if (!headers.has("host")) {
+      headers.set(
+        "host",
+        url.port && url.port !== "80" && url.port !== "443"
+          ? `${hostname}:${url.port}`
+          : hostname,
+      );
+    }
+    // undici's RequestInit/Response types diverge slightly from DOM fetch;
+    // cast at the boundary — runtime behaviour matches for status/body reads.
+    const response = (await undiciFetch(url, {
+      method: init.method,
+      headers,
+      body: init.body as never,
+      redirect: init.redirect ?? "manual",
+      signal: init.signal as never,
+      dispatcher: agent,
+    })) as unknown as Response;
+    // close() waits for in-flight body reads. destroy() would abort them.
+    const closer = agent as { close?: () => void };
+    try {
+      closer.close?.();
+    } catch {
+      // Best-effort; short-lived agents are GC'd with the request.
+    }
+    return response;
+  } catch (error) {
+    const closer = agent as { destroy?: () => void; close?: () => void };
+    try {
+      closer.destroy?.();
+      closer.close?.();
+    } catch {
+      // Best-effort; the connect failed so there is no body to preserve.
+    }
+    throw error;
   }
 }
 
@@ -139,8 +252,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
   let url = initialUrl;
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
@@ -158,7 +270,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
     }
 
     if (!response.ok) {
-      throw new Error(`The restaurant website returned HTTP ${response.status}`);
+      throw new Error(`The website returned HTTP ${response.status}`);
     }
 
     const contentType = response.headers.get("content-type") ?? "";
@@ -169,7 +281,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
     return { html: await readLimitedBody(response), finalUrl: url };
   }
 
-  throw new Error("The restaurant website redirected too many times");
+  throw new Error("The website redirected too many times");
 }
 
 export async function fetchPublicImage(rawUrl: string): Promise<{
@@ -179,8 +291,7 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
   let url = new URL(rawUrl);
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg",
         "User-Agent":
@@ -253,8 +364,7 @@ export async function inspectPublicLink(rawUrl: string): Promise<{
   const originalUrl = new URL(rawUrl).toString();
   let url = new URL(originalUrl);
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    await assertPublicUrl(url);
-    const response = await fetch(url, {
+    const response = await fetchPublicResponse(url, {
       method: "HEAD",
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),

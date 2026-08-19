@@ -7,6 +7,7 @@ import {
   updateBookingRequestStatus,
 } from "@/lib/booking-request-status";
 import { getDb } from "@/lib/db";
+import { isSameOriginMutation } from "@/lib/request-origin";
 
 type BookingRequestRouteContext = {
   params: Promise<{ slug: string; requestId: string }>;
@@ -16,6 +17,9 @@ export async function PATCH(
   request: Request,
   { params }: BookingRequestRouteContext,
 ) {
+  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { slug, requestId } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);

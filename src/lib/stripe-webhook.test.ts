@@ -183,6 +183,7 @@ describe("Stripe webhook event idempotency", () => {
         ),
       ).toBe("processed");
       expect(state.subscriptions[0].status).toBe("PAST_DUE");
+      expect(state.sites[0].status).toBe("PAUSED");
 
       // A late older event reads Stripe's current resource but still cannot
       // overwrite a state already recorded at a newer event timestamp.
@@ -193,6 +194,7 @@ describe("Stripe webhook event idempotency", () => {
         db,
       );
       expect(state.subscriptions[0].status).toBe("PAST_DUE");
+      expect(state.sites[0].status).toBe("PAUSED");
 
       currentSubscription = subscriptionFixture({ status: "canceled" });
       await processStripeWebhookEvent(
@@ -201,6 +203,7 @@ describe("Stripe webhook event idempotency", () => {
         db,
       );
       expect(state.subscriptions[0].status).toBe("CANCELED");
+      expect(state.sites[0].status).toBe("PAUSED");
 
       currentSubscription = subscriptionFixture({ status: "active" });
       await processStripeWebhookEvent(
@@ -209,6 +212,7 @@ describe("Stripe webhook event idempotency", () => {
         db,
       );
       expect(state.subscriptions[0].status).toBe("ACTIVE");
+      expect(state.sites[0].status).toBe("CLAIMED");
       expect(state.events).toHaveLength(6);
     } finally {
       restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
@@ -304,6 +308,7 @@ type SiteRow = {
   slug: string;
   status: string;
   organizationId: string | null;
+  publishedSiteVersionId: string | null;
 };
 
 type SubscriptionRow = {
@@ -344,6 +349,7 @@ function createWebhookDatabase(
         slug: "chez-lea",
         status: "PREVIEW_READY",
         organizationId: null,
+        publishedSiteVersionId: null,
       },
     ] as SiteRow[],
     users: [] as Array<{ id: string; email: string }>,
@@ -434,6 +440,18 @@ function createWebhookDatabase(
     site: {
       findUnique: async ({ where }: { where: { slug: string } }) =>
         state.sites.find((row) => row.slug === where.slug) ?? null,
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<SiteRow>;
+      }) => {
+        const site = state.sites.find((row) => row.id === where.id);
+        if (!site) throw new Error("site not found");
+        Object.assign(site, data);
+        return site;
+      },
       updateMany: async ({
         where,
         data,
@@ -469,6 +487,25 @@ function createWebhookDatabase(
         ).length,
     },
     subscription: {
+      findFirst: async ({
+        where,
+      }: {
+        where: { stripeSubscriptionId: string };
+      }) => {
+        const subscription = state.subscriptions.find(
+          (row) => row.stripeSubscriptionId === where.stripeSubscriptionId,
+        );
+        if (!subscription) return null;
+        const site = state.sites.find((row) => row.id === subscription.siteId);
+        if (!site) return null;
+        return {
+          siteId: subscription.siteId,
+          site: {
+            status: site.status,
+            publishedSiteVersionId: site.publishedSiteVersionId,
+          },
+        };
+      },
       findUnique: async ({
         where,
       }: {
