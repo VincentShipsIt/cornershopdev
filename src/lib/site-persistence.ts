@@ -207,6 +207,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
   source: string;
   importJobId: string;
   actor?: string;
+  contactEmail?: string;
 }): Promise<PersistedSiteImport<TDraft>> {
   const db = requireImportDatabase();
   const config = resolveVerticalConfig(input.vertical);
@@ -289,6 +290,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 where: { id: existing.id },
                 data: {
                   ...siteScalarData(draft, input.vertical, sourceKey),
+                  ...(input.contactEmail ? { email: input.contactEmail } : {}),
                   ...siteRelationReplaceData(draft, input.vertical),
                 },
                 select: { id: true, slug: true },
@@ -297,6 +299,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 data: {
                   slug,
                   ...siteScalarData(draft, input.vertical, sourceKey),
+                  ...(input.contactEmail ? { email: input.contactEmail } : {}),
                   integrations: { create: integrationCreateData(draft) },
                   catalogSections: {
                     create: catalogSectionCreateData(draft, input.vertical),
@@ -315,6 +318,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 source: storedImportSource(input.source),
                 sourceKey,
                 previousStatus: existing?.status ?? null,
+                contactEmailUpdated: Boolean(input.contactEmail),
               },
               siteId: site.id,
             },

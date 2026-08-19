@@ -41,6 +41,10 @@ RUN bun build scripts/monitor-public-site.ts \
   --target=bun \
   --packages=external \
   --outfile=.operator-scripts/monitor-public-site.ts
+RUN bun build scripts/preflight-outreach.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/preflight-outreach.ts
 
 FROM oven/bun:1.3.14-alpine AS runner
 WORKDIR /app

@@ -18,6 +18,7 @@ encrypted SSM parameters on the EC2 host.
 | Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
 | Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
 | Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
+| Restofront outreach | Explicit operator send, Workflow follow-up, signed Resend delivery events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -63,6 +64,45 @@ S3 providers.
 Readiness also checks the operator-alert configuration and durable queue. An
 exhausted alert or a due failed delivery returns `503` with instructions to run
 the dispatcher; recipients and provider errors are never returned.
+
+## Restofront outreach preflight
+
+Outreach remains disabled until the operator has reviewed the private preview
+and explicitly confirms the initial send. Creating or reopening a lead never
+sends an email. The global pause in `/admin` is checked before every Workflow
+send and every pause/resume change is written to the operator audit log.
+
+Store `RESEND_WEBHOOK_SECRET` as a SecureString at
+`/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register
+and enable this exact endpoint:
+
+```text
+https://cornershop.dev/api/webhooks/resend
+```
+
+Subscribe it to `email.sent`, `email.delivered`, `email.bounced`,
+`email.complained`, `email.failed`, and `email.suppressed`. Before approving a
+release, run the read-only preflight inside the exact candidate image with its
+deployment env:
+
+```bash
+docker run --rm \
+  --env-file /etc/cornershopdev/production.env \
+  --network shipshit \
+  --entrypoint bun \
+  <reviewed-image> \
+  run operator:preflight-outreach --environment production
+```
+
+The command opens read-only PostgreSQL transactions to verify
+`20260819084000_outreach_operator_safety`, its required tables/columns/index,
+and Workflow database reachability; lists Resend webhook metadata; and validates
+the registered Restofront identity (`Vincent from Restofrontapp` with replies
+to `vincent@restofront.com`). It performs no database writes, configuration
+changes, or email sends. Output contains only check names, booleans, the public
+webhook endpoint, and timestamps—never database URLs, API keys, signing
+secrets, or provider error bodies. A failed check is a release blocker; do not
+weaken the preflight or mark it ready from configuration screenshots.
 
 ## Image storage round trip
 

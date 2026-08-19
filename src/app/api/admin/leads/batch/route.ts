@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { start } from "workflow/api";
 import { z } from "zod";
 import { getSuperadminAccess } from "@/lib/authorization";
-import { getDb } from "@/lib/db";
 import { importFailureMessage } from "@/lib/import-identity";
 import { leadBatchRequestSchema } from "@/lib/operator-lead-batch";
 import {
@@ -11,7 +9,6 @@ import {
 } from "@/lib/operator-leads";
 import { limitOperatorLeadBatch } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
-import { leadOutreachWorkflow } from "@/workflows/lead-outreach";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -23,7 +20,6 @@ type LeadBatchResult =
       importJobId: string | null;
       created: boolean;
       reopened: boolean;
-      workflowRunId: string | null;
     }
   | { source: string; error: string };
 
@@ -31,9 +27,10 @@ type LeadBatchResult =
  * Runs `createOrReopenOperatorLead` for each lead in the batch sequentially
  * — importing crawls and generates a draft per lead, so running them
  * concurrently would multiply load on the crawler/AI pipeline for no benefit
- * — and, once a lead lands, starts `leadOutreachWorkflow` for it. One lead
- * failing (a bad source URL, an import conflict) does not abort the rest of
- * the batch; its result row carries the error instead.
+ * One lead failing (a bad source URL, an import conflict) does not abort the
+ * rest of the batch; its result row carries the error instead. Creation never
+ * starts outreach: the operator must review the resulting preview and use the
+ * dedicated per-lead send action.
  */
 export async function POST(request: Request) {
   if (!isSameOriginMutation(request, { requireOrigin: true })) {
@@ -70,11 +67,6 @@ export async function POST(request: Request) {
   }
 
   const actor = `operator:${operator.id}`;
-  const db = getDb();
-  const followUpDelayMs = input.followUpDelayHours
-    ? input.followUpDelayHours * 60 * 60_000
-    : undefined;
-
   const results: LeadBatchResult[] = [];
   for (const item of input.leads) {
     try {
@@ -82,26 +74,8 @@ export async function POST(request: Request) {
         source: item.source,
         vertical: item.vertical,
         actor,
+        contactEmail: item.contactEmail,
       });
-      if (item.contactEmail) {
-        await db.site.update({
-          where: { slug: lead.siteSlug },
-          data: { email: item.contactEmail },
-        });
-      }
-
-      let workflowRunId: string | null = null;
-      if (input.sendEmail && process.env.WORKFLOW_ENABLED === "true") {
-        const site = await db.site.findUniqueOrThrow({
-          where: { slug: lead.siteSlug },
-          select: { id: true },
-        });
-        const run = await start(leadOutreachWorkflow, [
-          site.id,
-          { actor, followUpDelayMs },
-        ]);
-        workflowRunId = run.runId;
-      }
 
       results.push({
         source: item.source,
@@ -109,7 +83,6 @@ export async function POST(request: Request) {
         importJobId: lead.importJobId,
         created: lead.created,
         reopened: lead.reopened,
-        workflowRunId,
       });
     } catch (error) {
       const message =

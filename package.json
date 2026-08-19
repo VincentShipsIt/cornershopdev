@@ -21,6 +21,7 @@
     "leads:discover": "bun scripts/discover-leads.ts",
     "operator:dispatch-alerts": "bun scripts/dispatch-operator-alerts.ts",
     "operator:monitor-public-site": "bun scripts/monitor-public-site.ts",
+    "operator:preflight-outreach": "bun scripts/preflight-outreach.ts",
     "workflow:migrate": "bun node_modules/@workflow/world-postgres/bin/setup.js",
     "postinstall": "bunx --bun prisma generate"
   },

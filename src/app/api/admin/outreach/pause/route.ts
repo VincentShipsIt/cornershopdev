@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSuperadminAccess } from "@/lib/authorization";
 import { getDb } from "@/lib/db";
+import { lockOutreachDelivery } from "@/lib/outreach-lock";
 import { limitOperatorOutreachPause } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 
@@ -38,15 +39,29 @@ export async function POST(request: Request) {
 
   try {
     const input = requestSchema.parse(await request.json());
-    await getDb().operatorSetting.upsert({
-      where: { key: "outreach.paused" },
-      update: { value: input.paused, updatedBy: operator.id },
-      create: {
-        key: "outreach.paused",
-        value: input.paused,
-        updatedBy: operator.id,
+    const db = getDb();
+    await db.$transaction(
+      async (transaction) => {
+        await lockOutreachDelivery(transaction);
+        await transaction.operatorSetting.upsert({
+          where: { key: "outreach.paused" },
+          update: { value: input.paused, updatedBy: operator.id },
+          create: {
+            key: "outreach.paused",
+            value: input.paused,
+            updatedBy: operator.id,
+          },
+        });
+        await transaction.operatorAuditEvent.create({
+          data: {
+            type: input.paused ? "outreach.paused" : "outreach.resumed",
+            actor: `operator:${operator.id}`,
+            metadata: { paused: input.paused },
+          },
+        });
       },
-    });
+      { maxWait: 5_000, timeout: 20_000 },
+    );
     return NextResponse.json(
       { ok: true, paused: input.paused },
       { headers: { "Cache-Control": "no-store" } },

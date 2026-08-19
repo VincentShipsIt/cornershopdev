@@ -40,6 +40,7 @@ export async function createOrReopenOperatorLead(input: {
   source: string;
   vertical: VerticalId;
   actor: string;
+  contactEmail?: string;
 }): Promise<{
   siteSlug: string;
   importJobId: string | null;
@@ -67,7 +68,10 @@ export async function createOrReopenOperatorLead(input: {
           id: existing.id,
           status: { in: ["PROSPECT", "PREVIEW_READY"] },
         },
-        data: { status: "PREVIEW_READY" },
+        data: {
+          status: "PREVIEW_READY",
+          ...(input.contactEmail ? { email: input.contactEmail } : {}),
+        },
       });
       if (reopened.count !== 1) {
         throw new OperatorLeadError(
@@ -82,6 +86,7 @@ export async function createOrReopenOperatorLead(input: {
           metadata: {
             sourceKey,
             previousStatus: existing.status,
+            contactEmailUpdated: Boolean(input.contactEmail),
           },
           siteId: existing.id,
         },
@@ -108,6 +113,7 @@ export async function createOrReopenOperatorLead(input: {
       source: input.source,
       importJobId,
       actor: input.actor,
+      contactEmail: input.contactEmail,
     });
     return {
       siteSlug: persisted.draft.slug,

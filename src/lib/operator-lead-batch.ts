@@ -9,18 +9,20 @@ import { Vertical } from "@/generated/prisma/enums";
 export const leadBatchItemSchema = z.object({
   source: z.string().trim().min(2).max(500),
   vertical: z.enum(Vertical).default(Vertical.RESTAURANT),
-  contactEmail: z.string().trim().email().max(320).optional(),
+  contactEmail: z
+    .string()
+    .trim()
+    .email()
+    .max(320)
+    .transform((value) => value.toLowerCase())
+    .optional(),
 });
 
 export const leadBatchRequestSchema = z.object({
   leads: z.array(leadBatchItemSchema).min(1).max(20),
-  sendEmail: z.boolean().default(true),
-  followUpDelayHours: z
-    .number()
-    .int()
-    .positive()
-    .max(24 * 30)
-    .optional(),
+  // Lead creation is intentionally non-sending. Initial outreach has its own
+  // reviewed, confirmed operator action after the preview exists.
+  sendEmail: z.literal(false).default(false),
 });
 
 export type LeadBatchRequest = z.infer<typeof leadBatchRequestSchema>;

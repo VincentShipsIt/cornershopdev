@@ -223,6 +223,7 @@ model Site {
   siteVersions             SiteVersion[]
   claimInvitations         ClaimInvitation[]
   outreachMessages         OutreachMessage[]
+  outreachDispatches       OutreachDispatch[]
   subscription             Subscription?
   auditEvents              AuditEvent[]
   bookingRequests          BookingRequest[]
@@ -448,6 +449,7 @@ model ClaimInvitation {
   id                      String           @id @default(cuid())
   email                   String
   tokenHash               String           @unique
+  outreachKey             String?          @unique
   proofMethod             ClaimProofMethod @default(DOMAIN_EMAIL)
   expiresAt               DateTime
   verifiedAt              DateTime?
@@ -466,26 +468,66 @@ model ClaimInvitation {
 }
 
 model OutreachMessage {
-  id                String            @id @default(cuid())
-  siteId            String
-  site              Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  direction         OutreachDirection @default(OUTBOUND)
-  provider          String            @default("resend")
-  providerMessageId String?           @unique
-  fromAddress       String
-  toAddress         String
-  subject           String
-  textBody          String            @db.Text
-  htmlBody          String?           @db.Text
-  template          String?
-  status            OutreachStatus    @default(QUEUED)
-  error             String?
-  sentAt            DateTime?
-  deliveredAt       DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                     String                  @id @default(cuid())
+  idempotencyKey         String                  @unique @default(dbgenerated("'legacy:' || gen_random_uuid()::text"))
+  siteId                 String
+  site                   Site                    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  direction              OutreachDirection       @default(OUTBOUND)
+  provider               String                  @default("resend")
+  providerMessageId      String?                 @unique
+  fromAddress            String
+  replyToAddress         String?
+  toAddress              String
+  subject                String
+  textBody               String                  @db.Text
+  htmlBody               String?                 @db.Text
+  template               String?
+  status                 OutreachStatus          @default(QUEUED)
+  error                  String?
+  sentAt                 DateTime?
+  deliveredAt            DateTime?
+  providerEventAt        DateTime?
+  providerAttemptedAt    DateTime?
+  deliveryLeaseId        String?
+  deliveryLeaseExpiresAt DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  providerEvents         OutreachProviderEvent[]
 
   @@index([siteId, createdAt])
+}
+
+model OutreachDispatch {
+  id             String         @id @default(cuid())
+  idempotencyKey String         @unique
+  siteId         String
+  site           Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  template       String
+  recipient      String
+  reviewedAt     DateTime
+  status         OutreachStatus @default(QUEUED)
+  workflowRunId  String?        @unique
+  requestedBy    String
+  attempt        Int            @default(1)
+  error          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([siteId, createdAt])
+}
+
+model OutreachProviderEvent {
+  id                String          @id
+  outreachMessageId String
+  outreachMessage   OutreachMessage @relation(fields: [outreachMessageId], references: [id], onDelete: Cascade)
+  providerMessageId String
+  eventType         String
+  status            OutreachStatus
+  occurredAt        DateTime
+  createdAt         DateTime        @default(now())
+
+  @@index([outreachMessageId, occurredAt])
+  @@index([providerMessageId, occurredAt])
 }
 
 model Subscription {
@@ -527,6 +569,16 @@ model OperatorSetting {
   updatedBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model OperatorAuditEvent {
+  id        String   @id @default(cuid())
+  type      String
+  actor     String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
 }
 
 model AuditEvent {

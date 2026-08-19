@@ -1,24 +1,59 @@
+import { createHash, randomUUID } from "node:crypto";
 import "server-only";
-import type { OutreachMessage } from "@/generated/prisma/client";
-import type { OutreachStatus } from "@/generated/prisma/enums";
+import type { OutreachMessage, Prisma } from "@/generated/prisma/client";
+import { Vertical, type OutreachStatus } from "@/generated/prisma/enums";
 import { appOrigin } from "@/lib/app-origin";
+import { normalizeAccountEmail } from "@/lib/account-email";
 import { getDb } from "@/lib/db";
 import { buildImportUrls } from "@/lib/import-identity";
+import { mutableLeadStatuses } from "@/lib/lead-status";
+import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
+import {
+  lockClaimInvitationById,
+  lockOutreachDelivery,
+  lockOutreachDispatchById,
+  lockOutreachMessageById,
+  lockOutreachMessageByKey,
+  lockOutreachSite,
+} from "@/lib/outreach-lock";
+import {
+  isDefinitiveResendRejection,
+  isOutreachMessageRetryable,
+  PROVIDER_IDEMPOTENCY_WINDOW_MS,
+} from "@/lib/outreach-delivery-policy";
 import {
   buildOutreachEmail,
   type OutreachTemplateId,
 } from "@/lib/outreach-templates";
-import { getResend } from "@/lib/resend";
+import { sendBoundedResendEmail } from "@/lib/resend";
 
 export class OutreachError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 404 | 503 = 400,
+    public readonly status: 400 | 404 | 409 | 503 = 400,
   ) {
     super(message);
     this.name = "OutreachError";
   }
 }
+
+export class OutreachDeliveryUnknownError extends Error {
+  constructor() {
+    super(
+      "Provider acceptance is unknown. The queued mailbox row requires webhook or operator reconciliation.",
+    );
+    this.name = "OutreachDeliveryUnknownError";
+  }
+}
+
+export class OutreachTerminalDeliveryError extends OutreachError {
+  constructor() {
+    super("This outreach stage is terminal and requires operator review.", 503);
+    this.name = "OutreachTerminalDeliveryError";
+  }
+}
+
+export const OUTREACH_DELIVERY_LEASE_MS = 60_000;
 
 /**
  * Re-exported from `@/lib/app-origin` (see that module for why it lives on
@@ -33,11 +68,10 @@ export { appOrigin };
  * invitations and mints a token) that belongs to whoever owns that
  * invitation's lifecycle — `leadOutreachWorkflow` — not to the mailbox.
  *
- * Persists QUEUED before sending, then SENT or FAILED after, so a delivery
- * that crashes mid-flight still leaves an auditable row. Failures are
- * rethrown after being recorded so callers (the workflow) can react — e.g.
- * revoke an undelivered claim invitation — rather than silently swallowing
- * the error.
+ * The deterministic mailbox ID also anchors the provider idempotency key. A
+ * crash can therefore replay the same provider attempt without rotating its
+ * key. Definitive provider rejection is recorded as FAILED; ambiguous
+ * acceptance remains QUEUED for a signed webhook or operator reconciliation.
  */
 export async function sendLeadEmail(input: {
   siteId: string;
@@ -45,7 +79,14 @@ export async function sendLeadEmail(input: {
   claimUrl: string;
   to?: string;
   actor: string;
-}): Promise<{ id: string; status: OutreachStatus }> {
+  expectedReviewedAt: string;
+  claimInvitationId: string;
+  dispatchAuthorization: { dispatchId: string; attempt: number };
+}): Promise<{
+  id: string;
+  status: OutreachStatus;
+  deduplicated: boolean;
+}> {
   const db = getDb();
   const site = await db.site.findUnique({
     where: { id: input.siteId },
@@ -68,58 +109,224 @@ export async function sendLeadEmail(input: {
     previewUrl,
     claimUrl: input.claimUrl,
   });
-
-  const message = await db.outreachMessage.create({
-    data: {
-      siteId: input.siteId,
-      direction: "OUTBOUND",
-      fromAddress: email.from,
-      toAddress: to,
-      subject: email.subject,
-      textBody: email.text,
-      htmlBody: email.html,
-      template: input.template,
-      status: "QUEUED",
-    },
+  const storedEmail = buildOutreachEmail(input.template, {
+    siteName: site.name,
+    vertical: site.vertical,
+    previewUrl,
+    claimUrl: claimUrlWithoutBearer(input.claimUrl),
   });
 
+  const idempotencyKey = `lead-outreach:${input.siteId}:${input.template}`;
+  const messageId = deterministicOutreachMessageId(idempotencyKey);
+  const reservation = await reserveOutreachMessage({
+    db,
+    messageId,
+    idempotencyKey,
+    siteId: input.siteId,
+    template: input.template,
+    to,
+    from: email.from,
+    replyTo: email.replyTo,
+    subject: storedEmail.subject,
+    text: storedEmail.text,
+    html: storedEmail.html,
+  });
+  let persistedMessageId = reservation.message.id;
+  const deduplicated = reservation.deduplicated;
+  if (!reservation.leaseId) {
+    if (
+      reservation.message.status === "QUEUED" ||
+      (reservation.message.status === "FAILED" &&
+        reservation.message.providerEventAt === null)
+    ) {
+      // A failed-retry CAS loser only has a stale FAILED snapshot. The winner
+      // may already own the same stage-stable invitation and provider key, so
+      // treating that snapshot as terminal could revoke a token in flight.
+      // Fail closed as UNKNOWN; only a provider-terminal row may revoke it.
+      throw new OutreachDeliveryUnknownError();
+    }
+    if (
+      reservation.message.status === "FAILED" ||
+      reservation.message.status === "BOUNCED" ||
+      reservation.message.status === "COMPLAINED"
+    ) {
+      throw new OutreachTerminalDeliveryError();
+    }
+    return {
+      id: persistedMessageId,
+      status: reservation.message.status,
+      deduplicated: true,
+    };
+  }
+  let providerCallStarted = false;
+  let providerAccepted = false;
+  let result: DeliveryAttemptResult;
   try {
-    const { data, error } = await getResend().emails.send(
-      {
-        from: email.from,
-        to,
-        replyTo: email.replyTo,
-        subject: email.subject,
-        html: email.html,
-        text: email.text,
-      },
-      { headers: { "Idempotency-Key": `outreach-${message.id}` } },
-    );
-    if (error) throw new Error(error.message);
-    await db.outreachMessage.update({
-      where: { id: message.id },
-      data: {
-        status: "SENT",
-        providerMessageId: data?.id ?? null,
-        sentAt: new Date(),
-      },
-    });
-    return { id: message.id, status: "SENT" };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : "unknown";
-    await db.outreachMessage
-      .update({
-        where: { id: message.id },
-        data: { status: "FAILED", error: reason },
-      })
-      .catch((updateError) => {
-        console.error("[outreach] failed to record send failure", {
-          siteId: input.siteId,
-          messageId: message.id,
-          error:
-            updateError instanceof Error ? updateError.message : "unknown",
-        });
+    result = await db.$transaction(async (transaction) => {
+      await lockOutreachDelivery(transaction);
+      await lockOutreachDispatchById(
+        transaction,
+        input.dispatchAuthorization.dispatchId,
+      );
+      await assertCurrentOutreachDispatch(transaction, {
+        siteId: input.siteId,
+        recipient: to,
+        reviewedAt: input.expectedReviewedAt,
+        template: input.template,
+        dispatchId: input.dispatchAuthorization.dispatchId,
+        attempt: input.dispatchAuthorization.attempt,
       });
+      await lockOutreachSite(transaction, input.siteId);
+      await assertReviewedRestofrontDelivery(transaction, {
+        siteId: input.siteId,
+        expectedRecipient: to,
+        expectedReviewedAt: input.expectedReviewedAt,
+        template: input.template,
+      });
+
+      await lockOutreachMessageById(transaction, reservation.message.id);
+      const current = await transaction.outreachMessage.findUniqueOrThrow({
+        where: { id: reservation.message.id },
+      });
+      persistedMessageId = current.id;
+      if (current.status !== "QUEUED") {
+        return { kind: "existing", status: current.status };
+      }
+      if (
+        current.deliveryLeaseId !== reservation.leaseId ||
+        !current.deliveryLeaseExpiresAt ||
+        current.deliveryLeaseExpiresAt <= new Date()
+      ) {
+        throw new OutreachError(
+          "The outreach delivery lease expired before provider delivery.",
+          409,
+        );
+      }
+      if (
+        normalizeAccountEmail(current.toAddress) !==
+        normalizeAccountEmail(to)
+      ) {
+        throw new OutreachError(
+          "The queued outreach recipient no longer matches this dispatch.",
+          409,
+        );
+      }
+      await assertActiveOutreachInvitation(transaction, {
+        invitationId: input.claimInvitationId,
+        siteId: input.siteId,
+        recipient: to,
+        template: input.template,
+      });
+      providerCallStarted = true;
+      const { data, error } = await sendBoundedResendEmail(
+        {
+          from: current.fromAddress,
+          to: current.toAddress,
+          replyTo: current.replyToAddress ?? undefined,
+          subject: email.subject,
+          html: email.html,
+          text: email.text,
+          tags: [
+            { name: "category", value: "lead_outreach" },
+            { name: "outreach_message_id", value: current.id },
+          ],
+        },
+        `outreach-${current.id}-attempt-${input.dispatchAuthorization.attempt}`,
+      );
+      if (data?.id) {
+        providerAccepted = true;
+        const sentAt = new Date();
+        await transaction.outreachMessage.updateMany({
+          where: {
+            id: current.id,
+            status: "QUEUED",
+            OR: [
+              { providerMessageId: null },
+              { providerMessageId: data.id },
+            ],
+          },
+          data: {
+            status: "SENT",
+            providerMessageId: data.id,
+            providerAttemptedAt: sentAt,
+            deliveryLeaseId: null,
+            deliveryLeaseExpiresAt: null,
+            sentAt,
+            error: null,
+          },
+        });
+        const persisted = await transaction.outreachMessage.findUniqueOrThrow({
+          where: { id: current.id },
+          select: { status: true },
+        });
+        return { kind: "accepted", status: persisted.status };
+      }
+      if (error && isDefinitiveResendRejection(error.statusCode)) {
+        const reason = "Provider rejected outreach delivery.";
+        const attemptedAt = new Date();
+        await transaction.outreachMessage.updateMany({
+          where: {
+            id: current.id,
+            status: "QUEUED",
+            deliveryLeaseId: reservation.leaseId,
+          },
+          data: {
+            status: "FAILED",
+            providerAttemptedAt: attemptedAt,
+            deliveryLeaseId: null,
+            deliveryLeaseExpiresAt: null,
+            error: reason,
+          },
+        });
+        return { kind: "rejected", reason };
+      }
+      await transaction.outreachMessage.updateMany({
+        where: {
+          id: current.id,
+          status: "QUEUED",
+          deliveryLeaseId: reservation.leaseId,
+        },
+        data: {
+          providerAttemptedAt: new Date(),
+          error: "Provider acceptance is unknown; awaiting signed status.",
+        },
+      });
+      return { kind: "unknown" };
+    }, { maxWait: 5_000, timeout: 30_000 });
+  } catch (error) {
+    if (providerCallStarted || providerAccepted) {
+      console.error("[outreach] provider acceptance is unknown", {
+        siteId: input.siteId,
+        template: input.template,
+        messageId: persistedMessageId,
+      });
+      throw new OutreachDeliveryUnknownError();
+    }
+    if (reservation.knownUnsent) {
+      const failed = await db.outreachMessage.updateMany({
+        where: {
+          id: reservation.message.id,
+          status: "QUEUED",
+          providerAttemptedAt: null,
+          deliveryLeaseId: reservation.leaseId,
+        },
+        data: {
+          status: "FAILED",
+          deliveryLeaseId: null,
+          deliveryLeaseExpiresAt: null,
+          error: "Outreach failed before provider delivery.",
+        },
+      });
+      if (failed.count !== 1) {
+        throw new OutreachDeliveryUnknownError();
+      }
+    } else {
+      throw new OutreachDeliveryUnknownError();
+    }
+    const reason =
+      error instanceof OutreachError
+        ? error.message
+        : "Outreach failed before provider delivery.";
     console.error("[outreach] send failed", {
       siteId: input.siteId,
       template: input.template,
@@ -128,6 +335,322 @@ export async function sendLeadEmail(input: {
     });
     throw error;
   }
+
+  if (result.kind === "unknown") {
+    throw new OutreachDeliveryUnknownError();
+  }
+  if (result.kind === "rejected") {
+    console.error("[outreach] provider rejected send", {
+      siteId: input.siteId,
+      template: input.template,
+      actor: input.actor,
+    });
+    throw new OutreachError(result.reason, 503);
+  }
+  if (
+    result.status === "FAILED" ||
+    result.status === "BOUNCED" ||
+    result.status === "COMPLAINED"
+  ) {
+    throw new OutreachTerminalDeliveryError();
+  }
+  return {
+    id: persistedMessageId,
+    status: result.status,
+    deduplicated: deduplicated || result.kind === "existing",
+  };
+}
+
+async function reserveOutreachMessage(input: {
+  db: ReturnType<typeof getDb>;
+  messageId: string;
+  idempotencyKey: string;
+  siteId: string;
+  template: OutreachTemplateId;
+  to: string;
+  from: string;
+  replyTo: string | undefined;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<{
+  message: OutreachMessage;
+  leaseId: string | null;
+  knownUnsent: boolean;
+  deduplicated: boolean;
+}> {
+  const now = new Date();
+  const leaseId = randomUUID();
+  const deliveryLeaseExpiresAt = new Date(
+    now.getTime() + OUTREACH_DELIVERY_LEASE_MS,
+  );
+  const reserved = await input.db.outreachMessage.upsert({
+    where: { idempotencyKey: input.idempotencyKey },
+    update: {},
+    create: {
+      id: input.messageId,
+      idempotencyKey: input.idempotencyKey,
+      siteId: input.siteId,
+      direction: "OUTBOUND",
+      fromAddress: input.from,
+      replyToAddress: input.replyTo,
+      toAddress: input.to,
+      subject: input.subject,
+      textBody: input.text,
+      htmlBody: input.html,
+      template: input.template,
+      status: "QUEUED",
+      deliveryLeaseId: leaseId,
+      deliveryLeaseExpiresAt,
+    },
+  });
+  if (reserved.deliveryLeaseId === leaseId) {
+    return {
+      message: reserved,
+      leaseId,
+      knownUnsent: true,
+      deduplicated: false,
+    };
+  }
+  if (
+    input.template === "preview_ready" &&
+    isOutreachMessageRetryable(reserved, now)
+  ) {
+    const reset = await input.db.outreachMessage.updateMany({
+      where: {
+        id: reserved.id,
+        status: "FAILED",
+        providerEventAt: null,
+        createdAt: {
+          gt: new Date(now.getTime() - PROVIDER_IDEMPOTENCY_WINDOW_MS),
+        },
+      },
+      data: {
+        status: "QUEUED",
+        providerMessageId: null,
+        providerAttemptedAt: null,
+        fromAddress: input.from,
+        replyToAddress: input.replyTo,
+        toAddress: input.to,
+        subject: input.subject,
+        textBody: input.text,
+        htmlBody: input.html,
+        error: null,
+        sentAt: null,
+        deliveredAt: null,
+        deliveryLeaseId: leaseId,
+        deliveryLeaseExpiresAt,
+      },
+    });
+    if (reset.count === 1) {
+      const message = await input.db.outreachMessage.findUniqueOrThrow({
+        where: { id: reserved.id },
+      });
+      return {
+        message,
+        leaseId,
+        knownUnsent: true,
+        deduplicated: true,
+      };
+    }
+  }
+  if (
+    reserved.status === "QUEUED" &&
+    now.getTime() - reserved.createdAt.getTime() <
+      PROVIDER_IDEMPOTENCY_WINDOW_MS
+  ) {
+    const acquired = await input.db.outreachMessage.updateMany({
+      where: {
+        id: reserved.id,
+        status: "QUEUED",
+        OR: [
+          { deliveryLeaseId: null },
+          { deliveryLeaseExpiresAt: { lte: now } },
+        ],
+      },
+      data: { deliveryLeaseId: leaseId, deliveryLeaseExpiresAt },
+    });
+    if (acquired.count === 1) {
+      const message = await input.db.outreachMessage.findUniqueOrThrow({
+        where: { id: reserved.id },
+      });
+      return {
+        message,
+        leaseId,
+        knownUnsent: false,
+        deduplicated: true,
+      };
+    }
+  }
+  return {
+    message: reserved,
+    leaseId: null,
+    knownUnsent: false,
+    deduplicated: true,
+  };
+}
+
+async function assertCurrentOutreachDispatch(
+  transaction: Prisma.TransactionClient,
+  input: {
+    siteId: string;
+    recipient: string;
+    reviewedAt: string;
+    template: OutreachTemplateId;
+    dispatchId: string;
+    attempt: number;
+  },
+): Promise<void> {
+  const dispatch = await transaction.outreachDispatch.findUnique({
+    where: { id: input.dispatchId },
+    select: {
+      siteId: true,
+      template: true,
+      recipient: true,
+      reviewedAt: true,
+      status: true,
+      attempt: true,
+    },
+  });
+  const expectedStatus =
+    input.template === "preview_ready" ? "QUEUED" : "SENT";
+  if (
+    !dispatch ||
+    dispatch.siteId !== input.siteId ||
+    dispatch.template !== "preview_ready" ||
+    normalizeAccountEmail(dispatch.recipient) !==
+      normalizeAccountEmail(input.recipient) ||
+    dispatch.reviewedAt.toISOString() !== input.reviewedAt ||
+    dispatch.status !== expectedStatus ||
+    dispatch.attempt !== input.attempt
+  ) {
+    throw new OutreachError(
+      "The outreach dispatch authorization expired before delivery.",
+      409,
+    );
+  }
+}
+
+async function assertActiveOutreachInvitation(
+  transaction: Prisma.TransactionClient,
+  input: {
+    invitationId: string;
+    siteId: string;
+    recipient: string;
+    template: OutreachTemplateId;
+  },
+): Promise<void> {
+  await lockClaimInvitationById(transaction, input.invitationId);
+  const invitation = await transaction.claimInvitation.findUnique({
+    where: { id: input.invitationId },
+    select: {
+      siteId: true,
+      email: true,
+      outreachKey: true,
+      expiresAt: true,
+      acceptedAt: true,
+      revokedAt: true,
+    },
+  });
+  if (
+    !invitation ||
+    invitation.siteId !== input.siteId ||
+    normalizeAccountEmail(invitation.email) !==
+      normalizeAccountEmail(input.recipient) ||
+    invitation.outreachKey !==
+      `lead-outreach:${input.siteId}:${input.template}` ||
+    invitation.acceptedAt !== null ||
+    invitation.revokedAt !== null ||
+    invitation.expiresAt <= new Date()
+  ) {
+    throw new OutreachError(
+      "The outreach claim invitation is no longer active.",
+      409,
+    );
+  }
+}
+
+async function assertReviewedRestofrontDelivery(
+  transaction: Prisma.TransactionClient,
+  input: {
+    siteId: string;
+    expectedRecipient: string;
+    expectedReviewedAt: string;
+    template: OutreachTemplateId;
+  },
+): Promise<void> {
+  const [site, pauseSetting] = await Promise.all([
+    transaction.site.findUnique({
+      where: { id: input.siteId },
+      select: {
+        email: true,
+        status: true,
+        vertical: true,
+        updatedAt: true,
+        auditEvents: {
+          where: { type: "site.review.completed" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true },
+        },
+      },
+    }),
+    transaction.operatorSetting.findUnique({
+      where: { key: "outreach.paused" },
+      select: { value: true },
+    }),
+  ]);
+  if (
+    !site ||
+    pauseSetting?.value === true ||
+    site.vertical !== Vertical.RESTAURANT ||
+    !mutableLeadStatuses.has(site.status) ||
+    !site.email ||
+    normalizeAccountEmail(site.email) !==
+      normalizeAccountEmail(input.expectedRecipient) ||
+    site.auditEvents[0]?.createdAt.toISOString() !== input.expectedReviewedAt ||
+    !isOperatorReviewCurrent(
+      site.auditEvents[0]?.createdAt ?? null,
+      site.updatedAt,
+    )
+  ) {
+    throw new OutreachError(
+      "The reviewed Restofront lead became ineligible before delivery.",
+      409,
+    );
+  }
+  if (input.template === "follow_up_1") {
+    const initialKey = `lead-outreach:${input.siteId}:preview_ready`;
+    await lockOutreachMessageByKey(transaction, initialKey);
+    const initial = await transaction.outreachMessage.findUnique({
+      where: { idempotencyKey: initialKey },
+      select: { status: true },
+    });
+    if (initial?.status !== "SENT" && initial?.status !== "DELIVERED") {
+      throw new OutreachError(
+        "The initial outreach is not eligible for follow-up.",
+        409,
+      );
+    }
+  }
+}
+
+type DeliveryAttemptResult =
+  | { kind: "accepted" | "existing"; status: OutreachStatus }
+  | { kind: "rejected"; reason: string }
+  | { kind: "unknown" };
+
+function claimUrlWithoutBearer(claimUrl: string): string {
+  const url = new URL(claimUrl);
+  url.hash = "";
+  return url.toString();
+}
+
+function deterministicOutreachMessageId(idempotencyKey: string): string {
+  return `outreach_${createHash("sha256")
+    .update(idempotencyKey, "utf8")
+    .digest("hex")
+    .slice(0, 24)}`;
 }
 
 export function listOutreachMessages(

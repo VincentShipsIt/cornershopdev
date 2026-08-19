@@ -1,7 +1,11 @@
 import { Webhook } from "svix";
 import { z } from "zod";
-import { getDb } from "@/lib/db";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
+import {
+  recordResendOutreachEvent,
+  RESEND_OUTREACH_EVENT_TRANSITIONS,
+  type ResendOutreachEventType,
+} from "@/lib/outreach-events";
 
 export const runtime = "nodejs";
 
@@ -13,9 +17,10 @@ export const runtime = "nodejs";
  */
 const resendEventSchema = z.object({
   type: z.string(),
-  created_at: z.string(),
+  created_at: z.string().datetime({ offset: true }),
   data: z.object({
     email_id: z.string(),
+    tags: z.record(z.string(), z.string()).optional(),
   }),
 });
 
@@ -25,13 +30,6 @@ const resendEventSchema = z.object({
  * `INBOUND`/`RECEIVED` enum members exist for it, but no Resend event
  * carries a reply; that lands via a future dedicated inbound-parsing route.
  */
-const statusByEventType: Record<string, "SENT" | "DELIVERED" | "BOUNCED" | "COMPLAINED"> = {
-  "email.sent": "SENT",
-  "email.delivered": "DELIVERED",
-  "email.bounced": "BOUNCED",
-  "email.complained": "COMPLAINED",
-};
-
 export async function POST(request: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) {
@@ -91,25 +89,37 @@ export async function POST(request: Request) {
     );
   }
 
-  const status = statusByEventType[event.type];
-  if (!status) {
+  if (!isTrackedEventType(event.type)) {
     // Not a delivery-status event this handler tracks (opened, clicked,
     // delivery_delayed, or a future inbound event) — acknowledge and skip.
     return Response.json({ received: true, handled: false });
   }
 
   try {
-    const result = await getDb().outreachMessage.updateMany({
-      where: { providerMessageId: event.data.email_id },
-      data: {
-        status,
-        deliveredAt: status === "DELIVERED" ? new Date() : undefined,
-      },
+    const taggedOutreachMessageId =
+      event.data.tags?.category === "lead_outreach"
+        ? event.data.tags.outreach_message_id
+        : undefined;
+    const result = await recordResendOutreachEvent({
+      eventId: svixId,
+      eventType: event.type,
+      occurredAt: new Date(event.created_at),
+      providerMessageId: event.data.email_id,
+      taggedOutreachMessageId,
     });
+    if (!result.handled && taggedOutreachMessageId) {
+      // A provider can emit a signed delivery event before the transaction
+      // containing its deterministic mailbox reservation commits. A 503 asks
+      // Resend to retry instead of acknowledging and losing that status.
+      return Response.json(
+        { error: "Outreach mailbox reservation is not visible yet" },
+        { status: 503 },
+      );
+    }
     return Response.json({
       received: true,
-      handled: true,
-      updated: result.count,
+      handled: result.handled,
+      updated: result.updated,
     });
   } catch (error) {
     console.error("[resend-webhook] processing failed", {
@@ -130,4 +140,8 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function isTrackedEventType(value: string): value is ResendOutreachEventType {
+  return value in RESEND_OUTREACH_EVENT_TRANSITIONS;
 }

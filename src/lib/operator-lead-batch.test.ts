@@ -9,27 +9,24 @@ describe("leadBatchRequestSchema", () => {
 
     expect(result.leads).toHaveLength(1);
     expect(result.leads[0]?.vertical).toBe("RESTAURANT");
-    expect(result.sendEmail).toBe(true);
-    expect(result.followUpDelayHours).toBeUndefined();
+    expect(result.sendEmail).toBe(false);
   });
 
-  it("accepts a full batch with an explicit vertical, contact email, and delay", () => {
+  it("accepts a full non-sending batch with a vertical and contact email", () => {
     const result = leadBatchRequestSchema.parse({
       leads: [
         {
           source: "https://example.com",
           vertical: "BEAUTY",
-          contactEmail: "owner@example.com",
+          contactEmail: "Owner@Example.COM",
         },
       ],
       sendEmail: false,
-      followUpDelayHours: 48,
     });
 
     expect(result.leads[0]?.vertical).toBe("BEAUTY");
     expect(result.leads[0]?.contactEmail).toBe("owner@example.com");
     expect(result.sendEmail).toBe(false);
-    expect(result.followUpDelayHours).toBe(48);
   });
 
   it("rejects an empty leads array", () => {
@@ -57,20 +54,11 @@ describe("leadBatchRequestSchema", () => {
     ).toThrow();
   });
 
-  it("rejects a non-positive follow-up delay", () => {
+  it("rejects any attempt to send while creating leads", () => {
     expect(() =>
       leadBatchRequestSchema.parse({
         leads: [{ source: "https://example.com" }],
-        followUpDelayHours: 0,
-      }),
-    ).toThrow();
-  });
-
-  it("rejects a follow-up delay longer than 30 days", () => {
-    expect(() =>
-      leadBatchRequestSchema.parse({
-        leads: [{ source: "https://example.com" }],
-        followUpDelayHours: 24 * 31,
+        sendEmail: true,
       }),
     ).toThrow();
   });

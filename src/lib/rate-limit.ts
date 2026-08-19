@@ -237,3 +237,13 @@ export function limitOperatorOutreachPause(
     windowMs,
   });
 }
+
+export function limitOperatorOutreachSend(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-outreach-send",
+    limit: 20,
+    windowMs,
+  });
+}
