@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { FACTORY_BRAND, type BrandIdentity } from "@/lib/brand";
+import { requestHostname } from "@/lib/request-hostname";
 import {
   resolveVerticalByHostname,
   resolveVerticalConfig,
@@ -7,24 +8,6 @@ import {
 import type { VerticalMarketing } from "@/lib/verticals/types";
 
 const FACTORY_ORIGIN = "https://cornershop.dev";
-
-/**
- * The hostname the visitor actually typed. `x-forwarded-host` first, and only
- * its first entry, matching how `proxy.ts` reads it: in production Caddy
- * terminates TLS and `host` is the container's own address, so trusting `host`
- * would make every niche look like the factory the moment this ships behind the
- * reverse proxy.
- */
-async function requestHostname(): Promise<string> {
-  const requestHeaders = await headers();
-  return (
-    requestHeaders.get("x-forwarded-host") ??
-    requestHeaders.get("host") ??
-    ""
-  )
-    .split(",")[0]
-    .trim();
-}
 
 /**
  * Which brand the current request should wear, for the screens that have no
@@ -49,7 +32,7 @@ export async function resolveRequestBrand(): Promise<BrandIdentity> {
  * customer surfaces consume this instead of guessing a trade from the route.
  */
 export async function resolveRequestMarketing(): Promise<VerticalMarketing | null> {
-  const niche = resolveVerticalByHostname(await requestHostname());
+  const niche = resolveVerticalByHostname(requestHostname(await headers()));
   return niche ? resolveVerticalConfig(niche).marketing : null;
 }
 
@@ -62,7 +45,7 @@ export async function resolveRequestMarketing(): Promise<VerticalMarketing | nul
  * hosts, and any niche not yet on a domain — to cornershop.dev.
  */
 export async function resolveRequestOrigin(): Promise<string> {
-  const niche = resolveVerticalByHostname(await requestHostname());
+  const niche = resolveVerticalByHostname(requestHostname(await headers()));
   if (!niche) return FACTORY_ORIGIN;
   const { domain } = resolveVerticalConfig(niche).marketing;
   return domain ? `https://${domain}` : FACTORY_ORIGIN;

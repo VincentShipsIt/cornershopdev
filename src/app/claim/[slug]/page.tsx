@@ -8,22 +8,34 @@ import { Button } from "@/components/ui/button";
 import { findSiteView } from "@/lib/sites";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 
-export const metadata: Metadata = {
-  title: "Claim this site",
-  robots: { index: false, follow: false },
-};
-
-export default async function ClaimPage({
-  params,
-  searchParams,
-}: {
+type ClaimPageProps = {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
     checkout?: string;
     session_id?: string;
     claim_id?: string;
   }>;
-}) {
+};
+
+// The site's own vertical, not the Host header, decides the brand here too:
+// an owner can reach their claim link from anywhere.
+export async function generateMetadata({
+  params,
+}: ClaimPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const site = await findSiteView(slug);
+  if (!site) notFound();
+  const brand = resolveVerticalConfig(site.vertical).marketing.brand;
+  return {
+    title: { absolute: `Claim your ${brand.name} site` },
+    robots: { index: false, follow: false },
+  };
+}
+
+export default async function ClaimPage({
+  params,
+  searchParams,
+}: ClaimPageProps) {
   const { slug } = await params;
   const query = await searchParams;
   const site = await findSiteView(slug);

@@ -14,10 +14,13 @@ import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 
-export const metadata: Metadata = {
-  title: "Dashboard",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = await resolveRequestBrand();
+  return {
+    title: { absolute: `Dashboard | ${brand.name}` },
+    robots: { index: false, follow: false },
+  };
+}
 
 export default async function DashboardPage({
   searchParams,

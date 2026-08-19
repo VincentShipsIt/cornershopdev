@@ -924,7 +924,7 @@ export function Dashboard({
               <PageHeading
                 eyebrow="Restaurant overview"
                 title={`Good afternoon, ${draft.name}.`}
-                copy="Everything guests see, and everything Cornershopdev is watching."
+                copy={`Everything guests see, and everything ${brand.name} is watching.`}
               />
               <div className="mt-8 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
                 <Card className="overflow-hidden py-0">
@@ -1277,7 +1277,7 @@ export function Dashboard({
               <PageHeading
                 eyebrow="Image library"
                 title="Authentic photos, professionally finished."
-                copy="Cornershopdev improves light, colour, crop and clarity without inventing dishes or changing what guests will receive."
+                copy={`${brand.name} improves light, colour, crop and clarity without inventing dishes or changing what guests will receive.`}
                 action={
                   <Button
                     size="sm"
@@ -1443,8 +1443,8 @@ export function Dashboard({
                       Add domain
                     </Button>
                     <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                      Cornershopdev authorizes the domain for automatic SSL before
-                      asking for DNS changes.
+                      {brand.name} authorizes the domain for automatic SSL
+                      before asking for DNS changes.
                     </p>
                   </CardContent>
                 </Card>
@@ -1554,7 +1554,7 @@ export function Dashboard({
                     ) : (
                       <ol className="space-y-5 text-sm">
                         {[
-                          "Cornershopdev authorizes the domain on the production host.",
+                          `${brand.name} authorizes the domain on the production host.`,
                           "The exact DNS record appears here for copying into your DNS provider.",
                           "Once DNS resolves, SSL is issued and the new site becomes live.",
                         ].map((step, index) => (
