@@ -12,7 +12,9 @@ describe("previewCacheTagFor", () => {
     // A rollback or republish changes which SiteVersion is current for a
     // slug; the cache tag must not embed a version id or the previous
     // version's cache entry would never be invalidated.
-    expect(previewCacheTagFor("cafe-du-coin")).not.toContain("version");
+    expect(previewCacheTagFor("cafe-du-coin")).toBe(
+      "preview-site:cafe-du-coin",
+    );
   });
 
   it("keeps distinct slugs on distinct tags", () => {
