@@ -254,6 +254,17 @@ describe("platform subdomain isolation", () => {
         site: claimedSite(),
       }).kind,
     ).toBe("public_api");
+    expect(
+      decidePlatformSubdomainRoute({
+        hostname: "chez-lea.restofront.com",
+        pathname: "/preview/chez-lea/opengraph-image",
+        site: claimedSite(),
+      }),
+    ).toEqual({
+      kind: "opengraph",
+      slug: "chez-lea",
+      versionId: "version_1",
+    });
   });
 
   it("blocks owner and operator paths on the platform subdomain", () => {

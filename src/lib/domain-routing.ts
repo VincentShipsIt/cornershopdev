@@ -215,6 +215,13 @@ export function decidePlatformSubdomainRoute(input: {
       versionId,
     };
   }
+  if (surface.kind === "opengraph") {
+    return {
+      kind: "opengraph",
+      slug: input.site.slug,
+      versionId,
+    };
+  }
   return {
     kind: "page",
     slug: input.site.slug,
