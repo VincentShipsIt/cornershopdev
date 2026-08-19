@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { domainToASCII } from "node:url";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { buildClaimInvitationEmail } from "@/lib/claim-invitation-email";
@@ -6,6 +6,14 @@ import { getDb } from "@/lib/db";
 import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getResend } from "@/lib/resend";
 import { isClaimable } from "@/lib/site-claim";
+import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
+import {
+  lockOutreachDelivery,
+  lockOutreachDispatchById,
+  lockOutreachMessageByKey,
+  lockOutreachSite,
+} from "@/lib/outreach-lock";
+import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import type { VerticalId } from "@/lib/verticals/types";
 
 export const CLAIM_INVITATION_TTL_MS = 48 * 60 * 60_000;
@@ -47,6 +55,19 @@ type ClaimSite = {
 
 export function hashClaimInvitationToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export function claimInvitationTokenForOutreach(
+  outreachKey: string,
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  const secret = environment.CLAIM_TOKEN_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("CLAIM_TOKEN_SECRET is not configured for outreach");
+  }
+  return createHmac("sha256", secret)
+    .update(`restofront-outreach-claim:${outreachKey}`, "utf8")
+    .digest("base64url");
 }
 
 export function buildClaimCheckoutIdempotencyKey(input: {
@@ -121,19 +142,30 @@ export async function issueClaimInvitation(input: {
   actor: string;
   auditType?: "claim.invitation.created" | "claim.invitation.resent";
   replacesInvitationId?: string;
+  outreachKey?: string;
+  outreachDispatch?: {
+    id: string;
+    attempt: number;
+    recipient: string;
+    reviewedAt: string;
+    stage: "preview_ready" | "follow_up_1";
+  };
   now?: Date;
 }): Promise<IssuedClaimInvitation> {
   const email = normalizeAccountEmail(input.email);
   const now = input.now ?? new Date();
   const expiresAt = new Date(now.getTime() + CLAIM_INVITATION_TTL_MS);
-  const token = randomBytes(32).toString("base64url");
+  const token = input.outreachKey
+    ? claimInvitationTokenForOutreach(input.outreachKey)
+    : randomBytes(32).toString("base64url");
   const tokenHash = hashClaimInvitationToken(token);
   const db = getDb();
 
   let issued:
     | {
-        id: string;
-        site: {
+      id: string;
+      expiresAt: Date;
+      site: {
           id: string;
           slug: string;
           name: string;
@@ -145,6 +177,37 @@ export async function issueClaimInvitation(input: {
     try {
       issued = await db.$transaction(
         async (tx) => {
+          let authorizedDispatch: { siteId: string } | null = null;
+          if (input.outreachDispatch) {
+            await lockOutreachDelivery(tx);
+            await lockOutreachDispatchById(tx, input.outreachDispatch.id);
+            const dispatch = await tx.outreachDispatch.findUnique({
+              where: { id: input.outreachDispatch.id },
+              select: {
+                siteId: true,
+                recipient: true,
+                reviewedAt: true,
+                status: true,
+                attempt: true,
+              },
+            });
+            const expectedStatus =
+              input.outreachDispatch.stage === "preview_ready"
+                ? "QUEUED"
+                : "SENT";
+            if (
+              !dispatch ||
+              normalizeAccountEmail(dispatch.recipient) !== email ||
+              dispatch.reviewedAt.toISOString() !==
+                input.outreachDispatch.reviewedAt ||
+              dispatch.status !== expectedStatus ||
+              dispatch.attempt !== input.outreachDispatch.attempt
+            ) {
+              throw new Error("Outreach dispatch authorization expired");
+            }
+            authorizedDispatch = dispatch;
+            await lockOutreachSite(tx, dispatch.siteId);
+          }
           const site = await tx.site.findUnique({
             where: { slug: input.siteSlug },
             select: {
@@ -156,9 +219,37 @@ export async function issueClaimInvitation(input: {
               email: true,
               status: true,
               organizationId: true,
+              updatedAt: true,
+              auditEvents: {
+                where: { type: "site.review.completed" },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+                select: { createdAt: true },
+              },
             },
           });
           if (!site || !isClaimable(site)) throw notClaimable();
+          if (authorizedDispatch && authorizedDispatch.siteId !== site.id) {
+            throw new Error("Outreach dispatch site mismatch");
+          }
+          if (input.outreachDispatch) {
+            const pauseSetting = await tx.operatorSetting.findUnique({
+              where: { key: "outreach.paused" },
+              select: { value: true },
+            });
+            const latestReview = site.auditEvents[0]?.createdAt ?? null;
+            if (
+              pauseSetting?.value === true ||
+              site.vertical !== "RESTAURANT" ||
+              !site.email ||
+              normalizeAccountEmail(site.email) !== email ||
+              latestReview?.toISOString() !==
+                input.outreachDispatch.reviewedAt ||
+              !isOperatorReviewCurrent(latestReview, site.updatedAt)
+            ) {
+              throw new Error("Outreach lead changed before invitation issuance");
+            }
+          }
           if (
             input.proofMethod === "DOMAIN_EMAIL" &&
             !hasDomainEmailOwnershipProof(site, email)
@@ -168,6 +259,93 @@ export async function issueClaimInvitation(input: {
               403,
               "Use the business email shown on the source website, or ask for concierge approval.",
             );
+          }
+          if (input.outreachKey) {
+            const existing = await tx.claimInvitation.findUnique({
+              where: { outreachKey: input.outreachKey },
+              select: {
+                id: true,
+                siteId: true,
+                email: true,
+                tokenHash: true,
+                proofMethod: true,
+                expiresAt: true,
+                verifiedAt: true,
+                acceptedAt: true,
+                revokedAt: true,
+                checkoutSessionId: true,
+              },
+            });
+            if (existing) {
+              if (
+                existing.siteId !== site.id ||
+                existing.tokenHash !== tokenHash ||
+                existing.proofMethod !== input.proofMethod
+              ) {
+                throw new Error("Outreach invitation identity mismatch");
+              }
+              if (
+                existing.acceptedAt ||
+                existing.revokedAt ||
+                existing.expiresAt <= now
+              ) {
+                throw new Error("Outreach invitation is no longer active");
+              }
+              if (existing.email !== email) {
+                const dispatch = input.outreachDispatch;
+                const messageKey = `lead-outreach:${site.id}:preview_ready`;
+                if (
+                  !dispatch ||
+                  dispatch.stage !== "preview_ready" ||
+                  dispatch.attempt <= 1 ||
+                  existing.verifiedAt ||
+                  existing.checkoutSessionId
+                ) {
+                  throw new Error("Outreach invitation identity mismatch");
+                }
+                await lockOutreachMessageByKey(tx, messageKey);
+                const failedMessage = await tx.outreachMessage.findUnique({
+                  where: { idempotencyKey: messageKey },
+                  select: {
+                    status: true,
+                    providerEventAt: true,
+                    createdAt: true,
+                  },
+                });
+                if (
+                  !failedMessage ||
+                  !isOutreachMessageRetryable(failedMessage, now)
+                ) {
+                  throw new Error("Outreach invitation identity mismatch");
+                }
+                await tx.claimInvitation.update({
+                  where: { id: existing.id },
+                  data: { email },
+                });
+                await tx.auditEvent.create({
+                  data: {
+                    type: "claim.invitation.retargeted",
+                    actor: input.actor,
+                    metadata: {
+                      invitationId: existing.id,
+                      dispatchId: dispatch.id,
+                      attempt: dispatch.attempt,
+                    },
+                    siteId: site.id,
+                  },
+                });
+              }
+              return {
+                id: existing.id,
+                expiresAt: existing.expiresAt,
+                site: {
+                  id: site.id,
+                  slug: site.slug,
+                  name: site.name,
+                  vertical: site.vertical,
+                },
+              };
+            }
           }
           const checkoutInProgress = await tx.claimInvitation.findFirst({
             where: {
@@ -209,6 +387,7 @@ export async function issueClaimInvitation(input: {
               siteId: site.id,
               email,
               tokenHash,
+              outreachKey: input.outreachKey,
               proofMethod: input.proofMethod,
               expiresAt,
             },
@@ -230,6 +409,7 @@ export async function issueClaimInvitation(input: {
 
           return {
             id: invitation.id,
+            expiresAt,
             site: {
               id: site.id,
               slug: site.slug,
@@ -248,7 +428,7 @@ export async function issueClaimInvitation(input: {
   }
   if (!issued) throw new Error("Claim invitation could not be issued");
 
-  return { ...issued, token, email, expiresAt };
+  return { ...issued, token, email };
 }
 
 export async function resendClaimInvitation(input: {

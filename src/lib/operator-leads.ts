@@ -6,6 +6,7 @@ import {
   importFailureMessage,
   normalizeImportSource,
 } from "@/lib/import-identity";
+import { mutableLeadStatuses } from "@/lib/lead-status";
 import {
   createImportJob,
   persistSiteImport,
@@ -18,7 +19,12 @@ import {
 } from "@/lib/site-pipeline";
 import type { VerticalId } from "@/lib/verticals/types";
 
-const mutableLeadStatuses = new Set(["PROSPECT", "PREVIEW_READY"]);
+/**
+ * Lead statuses that a site may still be reopened or outreached from.
+ * Re-exported from `@/lib/lead-status` (see that module for why it lives on
+ * its own) so existing importers of this rule from here keep working.
+ */
+export { mutableLeadStatuses };
 
 export class OperatorLeadError extends Error {
   constructor(
@@ -34,6 +40,7 @@ export async function createOrReopenOperatorLead(input: {
   source: string;
   vertical: VerticalId;
   actor: string;
+  contactEmail?: string;
 }): Promise<{
   siteSlug: string;
   importJobId: string | null;
@@ -61,7 +68,10 @@ export async function createOrReopenOperatorLead(input: {
           id: existing.id,
           status: { in: ["PROSPECT", "PREVIEW_READY"] },
         },
-        data: { status: "PREVIEW_READY" },
+        data: {
+          status: "PREVIEW_READY",
+          ...(input.contactEmail ? { email: input.contactEmail } : {}),
+        },
       });
       if (reopened.count !== 1) {
         throw new OperatorLeadError(
@@ -76,6 +86,7 @@ export async function createOrReopenOperatorLead(input: {
           metadata: {
             sourceKey,
             previousStatus: existing.status,
+            contactEmailUpdated: Boolean(input.contactEmail),
           },
           siteId: existing.id,
         },
@@ -102,6 +113,7 @@ export async function createOrReopenOperatorLead(input: {
       source: input.source,
       importJobId,
       actor: input.actor,
+      contactEmail: input.contactEmail,
     });
     return {
       siteSlug: persisted.draft.slug,

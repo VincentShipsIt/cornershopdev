@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildClaimCheckoutIdempotencyKey,
+  claimInvitationTokenForOutreach,
   hasDomainEmailOwnershipProof,
   hashClaimInvitationToken,
 } from "@/lib/claim-invitations";
@@ -14,6 +15,24 @@ describe("claim invitation secrets", () => {
     expect(digest).not.toContain(token);
     expect(hashClaimInvitationToken(token)).toBe(digest);
     expect(hashClaimInvitationToken(`${token}-other`)).not.toBe(digest);
+  });
+
+  it("derives one stable bearer token per secret-scoped outreach stage", () => {
+    const environment = {
+      CLAIM_TOKEN_SECRET: "test-only-secret-with-at-least-32-characters",
+    };
+    const key = "lead-outreach:site_1:preview_ready";
+    const token = claimInvitationTokenForOutreach(key, environment);
+
+    expect(claimInvitationTokenForOutreach(key, environment)).toBe(token);
+    expect(
+      claimInvitationTokenForOutreach(
+        "lead-outreach:site_1:follow_up_1",
+        environment,
+      ),
+    ).not.toBe(token);
+    expect(token).not.toContain(key);
+    expect(() => claimInvitationTokenForOutreach(key, {})).toThrow();
   });
 });
 

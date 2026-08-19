@@ -10,7 +10,9 @@ import {
 } from "lucide-react";
 import { ClaimInvitationForm } from "@/app/admin/claim-invitation-form";
 import { OperatorLeadForm } from "@/app/admin/operator-lead-form";
+import { OperatorOutreachPanel } from "@/app/admin/operator-outreach-panel";
 import { OperatorReviewPanel } from "@/app/admin/operator-review-panel";
+import { OutreachPauseControl } from "@/app/admin/outreach-pause-control";
 import { Brand } from "@/components/brand";
 import { AccountActions } from "@/components/account-actions";
 import { Badge } from "@/components/ui/badge";
@@ -73,9 +75,9 @@ export default async function AdminPage() {
               Leads, customers and requests.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-              A platform view across every generated site. Customer contact
-              details stay inside the tenant record; operators can approve a
-              specific concierge claim email without exposing stored contacts.
+              A platform view across every generated site. Stored contact
+              details appear only inside this dual-gated operator console, and
+              no outreach is sent without a reviewed preview and confirmation.
             </p>
           </div>
           <Badge variant="secondary">Latest 200 sites</Badge>
@@ -125,6 +127,15 @@ export default async function AdminPage() {
           </CardHeader>
           <CardContent>
             <OperatorLeadForm />
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Restofront outreach</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <OutreachPauseControl initialPaused={data.outreachPaused} />
           </CardContent>
         </Card>
 
@@ -188,13 +199,18 @@ export default async function AdminPage() {
                   <th scope="col" className="px-5 py-3 font-medium">Created</th>
                   <th scope="col" className="px-5 py-3 font-medium">Blocker rollup</th>
                   <th scope="col" className="px-5 py-3 font-medium">Content review</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Outreach</th>
                   <th scope="col" className="px-5 py-3 font-medium">Concierge claim</th>
                   <th scope="col" className="px-5 py-3 text-right font-medium">Site</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {data.sites.map((site) => (
-                  <SiteRow key={site.id} site={site} />
+                  <SiteRow
+                    key={site.id}
+                    site={site}
+                    outreachPaused={data.outreachPaused}
+                  />
                 ))}
               </tbody>
             </table>
@@ -237,7 +253,13 @@ function MetricCard({
   );
 }
 
-function SiteRow({ site }: { site: OperatorSiteRow }) {
+function SiteRow({
+  site,
+  outreachPaused,
+}: {
+  site: OperatorSiteRow;
+  outreachPaused: boolean;
+}) {
   const previewHref = `/preview/${site.slug}`;
   return (
     <tr className="align-top hover:bg-muted/20">
@@ -389,6 +411,22 @@ function SiteRow({ site }: { site: OperatorSiteRow }) {
           notes={site.notes}
           contentReview={site.contentReview}
         />
+      </td>
+      <td className="px-5 py-4">
+        {site.vertical === "RESTAURANT" ? (
+          <OperatorOutreachPanel
+            slug={site.slug}
+            contactEmail={site.contactEmail}
+            outreachMessages={site.outreachMessages}
+            outreachDispatch={site.outreachDispatch}
+            reviewedAt={site.reviewedAt}
+            outreachPaused={outreachPaused}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            Restofront only
+          </span>
+        )}
       </td>
       <td className="px-5 py-4">
         {site.ownerCount === 0 ? (

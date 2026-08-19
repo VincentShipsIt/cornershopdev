@@ -26,8 +26,10 @@ after the session is revalidated against that site's organization membership.
 `/admin` is the platform operator console. It requires both a database
 `SUPERADMIN` role and an email listed in `SUPERADMIN_EMAILS`. It shows signups,
 subscriptions, request totals, portfolio traffic and conversion summaries, and
-bounded per-site operational rows. It intentionally does not expose customer
-lead contact details across tenants.
+bounded per-site operational rows. Restaurant contact email and outreach status
+are visible only in this dual-gated console. Lead creation never sends mail: an
+operator must review the persisted preview, confirm the initial Restofront
+email, and can pause every workflow before its next send.
 
 ## First-party analytics
 
@@ -256,6 +258,23 @@ Checkout webhook, publication, and public-site health failures use a durable,
 deduplicated outbox with bounded delivery retries. Deployment and exercise
 instructions are in
 [`docs/operations/platform-services.md`](docs/operations/platform-services.md).
+
+### Restofront outreach
+
+- `RESEND_API_KEY`
+- `RESEND_WEBHOOK_SECRET`
+- `WORKFLOW_ENABLED=true`
+- the complete `WORKFLOW_POSTGRES_*` contract listed above
+
+Before release, run the read-only outreach preflight inside the reviewed
+container. It checks the committed migration, registered Restofront sender and
+reply-to, Workflow configuration, and the enabled Resend delivery webhook. It
+prints only check names, booleans, the public webhook endpoint, and timestamps;
+it never prints secret values and never sends an email.
+
+```bash
+bun run operator:preflight-outreach --environment production
+```
 
 ### Customer domains
 

@@ -25,6 +25,8 @@ import {
   type OperatorLeadDiscoveryView,
   type OperatorLocalSeoAuditView,
 } from "@/lib/operator-lead-attributes";
+import { isInitialOutreachDispatchRetryable } from "@/lib/outreach-dispatch";
+import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 
 export type OperatorSiteRow = {
   id: string;
@@ -33,6 +35,7 @@ export type OperatorSiteRow = {
   vertical: Vertical;
   status: SiteStatus;
   createdAt: Date;
+  contactEmail: string | null;
   ownerCount: number;
   subscriptionStatus: SubscriptionStatus | null;
   latestImportStatus: ImportStatus | null;
@@ -73,9 +76,34 @@ export type OperatorSiteRow = {
   sourceMonitorLastSuccessAt: Date | null;
   discovery: OperatorLeadDiscoveryView | null;
   localSeoAudit: OperatorLocalSeoAuditView | null;
+  outreachMessages: Array<{
+    id: string;
+    direction: string;
+    template: string | null;
+    subject: string;
+    textBody: string;
+    fromAddress: string;
+    toAddress: string;
+    status: string;
+    error: string | null;
+    sentAt: Date | null;
+    deliveredAt: Date | null;
+    receivedAt: Date | null;
+    createdAt: Date;
+    retryable: boolean;
+  }>;
+  outreachDispatch: {
+    id: string;
+    status: string;
+    workflowRunId: string | null;
+    error: string | null;
+    updatedAt: Date;
+    retryable: boolean;
+  } | null;
 };
 
 export type OperatorDashboardData = {
+  outreachPaused: boolean;
   totals: {
     sites: number;
     signedUpSites: number;
@@ -88,11 +116,13 @@ export type OperatorDashboardData = {
 };
 
 /**
- * Read-only, intentionally bounded operator DTO. Contact details remain in
- * their owning records and are not projected into this broad platform view.
+ * Read-only, intentionally bounded operator DTO. The contact email and recent
+ * outreach rows are projected only into the dual-gated operator console; no
+ * broader customer or public DTO reuses this shape.
  */
 export async function getOperatorDashboardData(): Promise<OperatorDashboardData> {
   const db = getDb();
+  const loadedAt = new Date();
   const [
     siteCount,
     signedUpSiteCount,
@@ -100,6 +130,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
     bookingRequestCount,
     pendingBookingRequestCount,
     sites,
+    outreachSetting,
   ] = await Promise.all([
     db.site.count(),
     db.site.count({
@@ -113,7 +144,9 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
       where: { status: { in: ["NEW", "NOTIFIED"] } },
     }),
     db.site.findMany({
-      orderBy: { createdAt: "desc" },
+      // Reopened leads update `updatedAt`; ordering by activity keeps an old
+      // reopened restaurant inside the bounded operator table.
+      orderBy: { updatedAt: "desc" },
       take: 200,
       select: {
         id: true,
@@ -122,6 +155,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         vertical: true,
         status: true,
         createdAt: true,
+        email: true,
         updatedAt: true,
         description: true,
         address: true,
@@ -159,6 +193,38 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         sourceMonitorState: {
           select: { lastSuccessAt: true },
         },
+        outreachMessages: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          select: {
+            id: true,
+            direction: true,
+            template: true,
+            subject: true,
+            textBody: true,
+            fromAddress: true,
+            toAddress: true,
+            status: true,
+            error: true,
+            sentAt: true,
+            deliveredAt: true,
+            receivedAt: true,
+            providerEventAt: true,
+            createdAt: true,
+          },
+        },
+        outreachDispatches: {
+          where: { template: "preview_ready" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            workflowRunId: true,
+            error: true,
+            updatedAt: true,
+          },
+        },
         domains: {
           orderBy: [{ verified: "desc" }, { verifiedAt: "desc" }],
           select: { hostname: true, verified: true },
@@ -193,6 +259,10 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         },
       },
     }),
+    db.operatorSetting.findUnique({
+      where: { key: "outreach.paused" },
+      select: { value: true },
+    }),
   ]);
   const [pendingBookingRequestsBySite, analytics] = await Promise.all([
     db.bookingRequest.groupBy({
@@ -212,6 +282,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
   );
 
   return {
+    outreachPaused: outreachSetting?.value === true,
     totals: {
       sites: siteCount,
       signedUpSites: signedUpSiteCount,
@@ -288,6 +359,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         vertical: site.vertical,
         status: site.status,
         createdAt: site.createdAt,
+        contactEmail: site.email,
         ownerCount,
         subscriptionStatus: site.subscription?.status ?? null,
         latestImportStatus: site.importJobs[0]?.status ?? null,
@@ -335,6 +407,24 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           site.sourceMonitorState?.lastSuccessAt ?? null,
         discovery: toOperatorLeadDiscoveryView(site.attributes),
         localSeoAudit: toOperatorLocalSeoAuditView(site.attributes),
+        outreachMessages: [...site.outreachMessages]
+          .reverse()
+          .map(({ providerEventAt, ...message }) => ({
+            ...message,
+            retryable: isOutreachMessageRetryable(
+              { ...message, providerEventAt },
+              loadedAt,
+            ),
+          })),
+        outreachDispatch: site.outreachDispatches[0]
+          ? {
+              ...site.outreachDispatches[0],
+              retryable: isInitialOutreachDispatchRetryable(
+                site.outreachDispatches[0],
+                loadedAt,
+              ),
+            }
+          : null,
       };
     }).sort(compareOperatorSitesByDiscoveryScore),
   };

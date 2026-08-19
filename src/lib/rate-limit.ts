@@ -212,3 +212,38 @@ export function limitOperatorAuthRetry(
     windowMs,
   });
 }
+
+/**
+ * A batch import can carry many leads in one request, so this stays looser
+ * than `limitOperatorLeadMutation` (which meters one lead per request) while
+ * still bounding how many batches an operator session can kick off per hour.
+ */
+export function limitOperatorLeadBatch(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-lead-batch",
+    limit: 30,
+    windowMs,
+  });
+}
+
+export function limitOperatorOutreachPause(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-outreach-pause",
+    limit: 30,
+    windowMs,
+  });
+}
+
+export function limitOperatorOutreachSend(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-outreach-send",
+    limit: 20,
+    windowMs,
+  });
+}
