@@ -1,8 +1,9 @@
 import { AfterDarkTheme } from "@/components/restaurant-themes/after-dark";
 import { CounterServiceTheme } from "@/components/restaurant-themes/counter-service";
-import type {
-  RestaurantThemeRendererInputProps,
-  RestaurantThemeRendererProps,
+import {
+  RestaurantStructuredData,
+  type RestaurantThemeRendererInputProps,
+  type RestaurantThemeRendererProps,
 } from "@/components/restaurant-themes/shared";
 import { TerroirEditorialTheme } from "@/components/restaurant-themes/terroir-editorial";
 import { getSiteDictionary } from "@/lib/site-i18n";
@@ -31,6 +32,12 @@ export function RestaurantThemeRenderer(
   const dictionary =
     props.dictionary ?? getSiteDictionary(restaurantConfig, locale);
   return (
-    <Renderer {...props} locale={locale} dictionary={dictionary} />
+    <>
+      <RestaurantStructuredData
+        draft={props.draft}
+        enabled={Boolean(props.analyticsEnabled)}
+      />
+      <Renderer {...props} locale={locale} dictionary={dictionary} />
+    </>
   );
 }

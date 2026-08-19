@@ -178,6 +178,21 @@ export function limitOperatorLeadMutation(
   });
 }
 
+/**
+ * Laptop discovery posts one prospect per restaurant. A 50-city run plus a
+ * safe retry budget has to fit the hourly window without sharing the cookie
+ * admin-import bucket.
+ */
+export function limitOperatorLeadIngest(
+  request: Request,
+): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "operator-lead-ingest",
+    limit: 80,
+    windowMs,
+  });
+}
+
 export function limitMagicLinkRequest(
   request: Request,
 ): Promise<RateLimitResult> {

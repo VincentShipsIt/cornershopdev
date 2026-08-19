@@ -15,6 +15,7 @@
     "operator:import:le-petit-meunier": "bun scripts/import-le-petit-meunier.ts",
     "operator:verify-environment-isolation": "bun scripts/verify-environment-isolation.ts",
     "operator:verify-image-storage": "bun scripts/verify-image-storage-roundtrip.ts",
+    "leads:discover": "bun scripts/discover-leads.ts",
     "operator:dispatch-alerts": "bun scripts/dispatch-operator-alerts.ts",
     "operator:monitor-public-site": "bun scripts/monitor-public-site.ts",
     "workflow:migrate": "bun node_modules/@workflow/world-postgres/bin/setup.js",

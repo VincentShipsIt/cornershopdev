@@ -9,6 +9,7 @@ import Link from "next/link";
 import { BookingEmbed } from "@/components/booking-embed";
 import { BookingRequestForm } from "@/components/booking-request-form";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
+import { RestaurantStructuredData } from "@/components/restaurant-themes/shared";
 import { SiteAnalytics } from "@/components/site-analytics";
 import { Vertical } from "@/generated/prisma/enums";
 import { resolveBookingEmbed } from "@/lib/booking-embed";
@@ -148,6 +149,9 @@ export function SiteRenderer({
       }
     >
       {analyticsEnabled ? <SiteAnalytics siteSlug={draft.slug} /> : null}
+      {vertical === Vertical.RESTAURANT ? (
+        <RestaurantStructuredData draft={draft} enabled={analyticsEnabled} />
+      ) : null}
       <header
         className={cn(
           "z-20 grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 p-4 sm:flex sm:justify-between sm:gap-4 sm:p-5 md:p-8",
