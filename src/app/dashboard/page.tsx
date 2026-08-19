@@ -7,6 +7,7 @@ import { getSiteAccess } from "@/lib/authorization";
 import { getBookingRequestInbox } from "@/lib/booking-request-inbox";
 import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
+import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
 import { getSitePublicationHistory } from "@/lib/site-publication";
@@ -96,6 +97,17 @@ export default async function DashboardPage({
       }))}
       canSwitchWorkspace={workspaces.length > 1}
       sourceMonitoring={sourceMonitoring}
+      platformUrl={
+        access?.ok
+          ? publicSiteOrigin({
+              slug: access.site.slug,
+              vertical: access.site.vertical,
+            })
+          : publicSiteOrigin({
+              slug: sampleRestaurant.slug,
+              vertical: "RESTAURANT",
+            })
+      }
     />
   );
 }

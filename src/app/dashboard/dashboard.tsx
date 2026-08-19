@@ -89,6 +89,7 @@ type DomainSetup = {
   };
   siteStatus: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
   previewPath: string;
+  publicUrl: string;
 };
 
 type ClientPublicationHistoryItem = Omit<
@@ -115,6 +116,7 @@ export function Dashboard({
   publicationHistory: initialPublicationHistory,
   canSwitchWorkspace,
   sourceMonitoring,
+  platformUrl,
 }: {
   initialDraft: RestaurantDraft;
   email: string;
@@ -127,6 +129,7 @@ export function Dashboard({
   publicationHistory: ClientPublicationHistoryItem[];
   canSwitchWorkspace: boolean;
   sourceMonitoring: SourceMonitoringDashboardDto;
+  platformUrl: string;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
@@ -147,6 +150,14 @@ export function Dashboard({
   const [publicationHistory, setPublicationHistory] = useState(
     initialPublicationHistory,
   );
+  const isPublished =
+    publishedVersion !== null ||
+    publicationHistory.some((item) => item.current);
+  const liveUrl =
+    domainSetup?.verified && domainSetup.hostname
+      ? `https://${domainSetup.hostname}`
+      : platformUrl;
+  const siteHref = isPublished ? liveUrl : `/preview/${draft.slug}`;
 
   const themeManifests = listRestaurantThemeManifests();
   const currentThemeSelection = parseRestaurantThemeSelection(
@@ -280,7 +291,7 @@ export function Dashboard({
     }
     if (
       !window.confirm(
-        "Publish this saved draft to the connected public domain now?",
+        "Publish this saved draft to your live site now?",
       )
     ) {
       return;
@@ -655,7 +666,7 @@ export function Dashboard({
     if (
       !domainSetup ||
       !window.confirm(
-        `Remove ${domainSetup.hostname}? The public domain will stop routing here and the preview will remain available.`,
+        `Remove ${domainSetup.hostname}? Guests will use ${platformUrl.replace(/^https:\/\//, "")} instead.`,
       )
     ) {
       return;
@@ -682,7 +693,7 @@ export function Dashboard({
       setDomainSetup(null);
       setDomain("");
       setDomainNotice(
-        "Domain removed. The website is preview-only until another verified domain is connected.",
+        `Domain removed. Guests now use ${platformUrl.replace(/^https:\/\//, "")}.`,
       );
     } catch (caught) {
       setDomainError(
@@ -786,12 +797,13 @@ export function Dashboard({
           </Badge>
           <Button
             render={
-              <Link href={`/preview/${draft.slug}`} target="_blank" />
+              <Link href={siteHref} target="_blank" />
             }
             variant="outline"
             size="sm"
           >
-            View site <ExternalLink />
+            {isPublished ? "View live site" : "View preview"}{" "}
+            <ExternalLink />
           </Button>
           {!demo && billingAccess?.ok ? (
             <Button
@@ -845,8 +857,15 @@ export function Dashboard({
       {checkoutComplete ? (
         <div className="border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm text-emerald-800">
           <CircleCheck className="mr-2 inline size-4" />
-          Account created. Your website remains private until the domain is
-          connected.
+          Account created. Publish to make{" "}
+          <Link
+            href={platformUrl}
+            className="font-medium underline"
+            target="_blank"
+          >
+            {platformUrl.replace(/^https:\/\//, "")}
+          </Link>{" "}
+          live. A custom domain is optional.
         </div>
       ) : null}
       {!demo && billingAccess && !billingAccess.ok ? (
@@ -948,14 +967,12 @@ export function Dashboard({
                       <div className="mt-6 flex flex-wrap gap-2">
                         <Button
                           render={
-                            <Link
-                              href={`/preview/${draft.slug}`}
-                              target="_blank"
-                            />
+                            <Link href={siteHref} target="_blank" />
                           }
                           size="sm"
                         >
-                          Open preview <ArrowUpRight />
+                          {isPublished ? "Open live site" : "Open preview"}{" "}
+                          <ArrowUpRight />
                         </Button>
                         <Button variant="outline" size="sm">
                           Edit homepage
@@ -985,7 +1002,8 @@ export function Dashboard({
                       ["Menu imported", true],
                       ["Booking link preserved", true],
                       ["Owner account claimed", !demo],
-                      ["Custom domain connected", false],
+                      ["Site published", isPublished],
+                      ["Custom domain connected", Boolean(domainSetup?.verified)],
                     ].map(([label, done]) => (
                       <div
                         key={label as string}
@@ -1397,13 +1415,31 @@ export function Dashboard({
             <TabsContent value="domain" className="mt-0">
               <PageHeading
                 eyebrow="Go live"
-                title="Connect the restaurant's domain."
-                copy="The old website stays live until these records are changed. Email and booking systems remain untouched."
+                title="Use your own domain (optional)."
+                copy="Your site is already live on a Restofront address. Connect a custom domain when you want guests to type your own name. Email and booking systems remain untouched."
               />
-              <div className="mt-8 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+              <Card className="mt-8">
+                <CardHeader>
+                  <CardTitle className="text-base">Your site is live</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    Guests can open this address as soon as you publish. A custom
+                    domain below is optional.
+                  </p>
+                  <p className="mt-3 font-mono text-sm">
+                    <Link href={liveUrl} target="_blank" className="underline">
+                      {liveUrl.replace(/^https:\/\//, "")}
+                    </Link>
+                  </p>
+                </CardContent>
+              </Card>
+              <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Restaurant domain</CardTitle>
+                    <CardTitle className="text-base">
+                      Use your own domain (optional)
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <Label htmlFor="domain">Domain name</Label>
@@ -1443,8 +1479,8 @@ export function Dashboard({
                       Add domain
                     </Button>
                     <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                      {brand.name} authorizes the domain for automatic SSL
-                      before asking for DNS changes.
+                      Optional. {brand.name} authorizes the domain for automatic
+                      SSL before asking for DNS changes.
                     </p>
                   </CardContent>
                 </Card>
@@ -1547,8 +1583,9 @@ export function Dashboard({
                           Remove domain
                         </Button>
                         <p className="text-xs leading-5 text-muted-foreground">
-                          Removing the domain immediately revokes public routing.
-                          Your private preview and published version are kept.
+                          Removing the domain sends guests back to your Restofront
+                          address. Your private preview and published version are
+                          kept.
                         </p>
                       </div>
                     ) : (
@@ -1556,7 +1593,7 @@ export function Dashboard({
                         {[
                           `${brand.name} authorizes the domain on the production host.`,
                           "The exact DNS record appears here for copying into your DNS provider.",
-                          "Once DNS resolves, SSL is issued and the new site becomes live.",
+                          "Once DNS resolves, SSL is issued and that custom domain becomes the public address.",
                         ].map((step, index) => (
                           <li key={step} className="flex gap-3">
                             <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[10px]">

@@ -3,6 +3,7 @@ import { domainToASCII } from "node:url";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { buildClaimInvitationEmail } from "@/lib/claim-invitation-email";
 import { getDb } from "@/lib/db";
+import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getResend } from "@/lib/resend";
 import { isClaimable } from "@/lib/site-claim";
 import type { VerticalId } from "@/lib/verticals/types";
@@ -519,6 +520,10 @@ export async function deliverClaimInvitation(
     siteName: invitation.site.name,
     vertical: invitation.site.vertical,
     expiresAt: invitation.expiresAt,
+    siteUrl: publicSiteOrigin({
+      slug: invitation.site.slug,
+      vertical: invitation.site.vertical,
+    }),
   });
   const { error } = await getResend().emails.send(
     {

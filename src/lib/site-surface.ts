@@ -26,6 +26,14 @@ export function localeHref(
   return `${basePath.replace(/\/$/, "")}/${locale}`;
 }
 
+export function liveSiteCanonicalPath(
+  origin: string,
+  locale: string,
+  defaultLocale: string,
+): string {
+  return locale === defaultLocale ? `${origin}/` : `${origin}/${locale}`;
+}
+
 /**
  * The `unstable_cache` tag for a site's cached live-surface data.
  *

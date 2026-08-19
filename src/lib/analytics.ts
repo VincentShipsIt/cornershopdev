@@ -16,7 +16,8 @@ import {
 import { createIdempotentAnalyticsEvent } from "@/lib/analytics-idempotency";
 import { analyticsRetentionCutoff } from "@/lib/analytics-retention";
 import { getDb } from "@/lib/db";
-import { isFactoryHostname } from "@/lib/hostnames";
+import { hasPublicPublishedSnapshot } from "@/lib/domain-routing";
+import { isFactoryHostname, parsePlatformSubdomain } from "@/lib/hostnames";
 
 export const LIVE_BOOKING_REQUEST_SOURCE = "live-site-form";
 
@@ -46,6 +47,28 @@ export async function resolveAnalyticsSiteForHeaders(headers: Headers) {
     hostname,
     isFactory: isFactoryHostname,
     lookup: async (verifiedHostname) => {
+      const platform = parsePlatformSubdomain(verifiedHostname);
+      if (platform) {
+        const site = await getDb().site.findUnique({
+          where: { slug: platform.slug },
+          select: {
+            id: true,
+            slug: true,
+            status: true,
+            publishedSiteVersionId: true,
+            publishedSiteVersion: {
+              select: { id: true, siteId: true, publishedAt: true },
+            },
+          },
+        });
+        if (!site) return null;
+        return {
+          id: site.id,
+          slug: site.slug,
+          verified: hasPublicPublishedSnapshot(site),
+        };
+      }
+
       const domain = await getDb().domain.findUnique({
         where: { hostname: verifiedHostname },
         select: {
