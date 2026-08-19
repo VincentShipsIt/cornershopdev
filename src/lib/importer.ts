@@ -1,4 +1,4 @@
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
@@ -42,43 +42,61 @@ export type ExtractedSite = {
 
 export type ExtractedRestaurant = ExtractedSite;
 
-const privateIpv4Patterns = [
-  /^0\./,
-  /^10\./,
-  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
-  /^127\./,
-  /^169\.254\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.0\.0\./,
-  /^192\.0\.2\./,
-  /^192\.168\./,
-  /^198\.(1[89])\./,
-  /^198\.51\.100\./,
-  /^203\.0\.113\./,
-  /^2(2[4-9]|3\d)\./,
-  /^2[4-5]\d\./,
-];
+const privateNets = new BlockList();
+privateNets.addSubnet("0.0.0.0", 8, "ipv4");
+privateNets.addSubnet("10.0.0.0", 8, "ipv4");
+privateNets.addSubnet("100.64.0.0", 10, "ipv4");
+privateNets.addSubnet("127.0.0.0", 8, "ipv4");
+privateNets.addSubnet("169.254.0.0", 16, "ipv4");
+privateNets.addSubnet("172.16.0.0", 12, "ipv4");
+privateNets.addSubnet("192.0.0.0", 24, "ipv4");
+privateNets.addSubnet("192.0.2.0", 24, "ipv4");
+privateNets.addSubnet("192.168.0.0", 16, "ipv4");
+privateNets.addSubnet("198.18.0.0", 15, "ipv4");
+privateNets.addSubnet("198.51.100.0", 24, "ipv4");
+privateNets.addSubnet("203.0.113.0", 24, "ipv4");
+privateNets.addSubnet("224.0.0.0", 4, "ipv4");
+privateNets.addSubnet("240.0.0.0", 4, "ipv4");
+privateNets.addAddress("::", "ipv6");
+privateNets.addSubnet("::1", 128, "ipv6");
+privateNets.addSubnet("fc00::", 7, "ipv6");
+privateNets.addSubnet("fe80::", 10, "ipv6");
+privateNets.addSubnet("ff00::", 8, "ipv6");
+privateNets.addSubnet("2001:db8::", 32, "ipv6");
+
+function hexPairToIpv4(high: string, low: string): string {
+  const hi = Number.parseInt(high, 16);
+  const lo = Number.parseInt(low, 16);
+  return `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`;
+}
+
+/**
+ * IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible (::a.b.c.d / ::7f00:1),
+ * and well-known NAT64 (64:ff9b::/96) embed an IPv4 address in the last
+ * 32 bits. Prefix string checks miss those forms.
+ */
+function embeddedIpv4(address: string): string | null {
+  if (address === "::" || address === "::1") return null;
+  const dotted = address.match(
+    /^(?:::(?:ffff:)?|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/i,
+  );
+  if (dotted?.[1]) return dotted[1];
+  const hex = address.match(
+    /^(?:::(?:ffff:)?|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i,
+  );
+  if (hex?.[1] && hex[2]) return hexPairToIpv4(hex[1], hex[2]);
+  return null;
+}
 
 /** Exported for unit tests and shared private-host checks. */
 export function isPrivateAddress(address: string): boolean {
-  const normalized = address.toLowerCase();
-  if (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("::ffff:") ||
-    normalized.startsWith("64:ff9b:") ||
-    normalized.startsWith("2001:db8:") ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    normalized.startsWith("fe80:") ||
-    normalized.startsWith("ff")
-  ) {
-    return true;
-  }
-  // Mapped IPv4 in IPv6 form (::ffff:a.b.c.d)
-  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped?.[1] && isPrivateAddress(mapped[1])) return true;
-  return privateIpv4Patterns.some((pattern) => pattern.test(address));
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const embedded = embeddedIpv4(normalized);
+  if (embedded && isPrivateAddress(embedded)) return true;
+  const family = isIP(normalized);
+  if (family === 4) return privateNets.check(normalized, "ipv4");
+  if (family === 6) return privateNets.check(normalized, "ipv6");
+  return false;
 }
 
 function normalizeHostname(hostname: string): string {
@@ -178,7 +196,7 @@ async function fetchPublicResponse(
     }
     // undici's RequestInit/Response types diverge slightly from DOM fetch;
     // cast at the boundary — runtime behaviour matches for status/body reads.
-    return (await undiciFetch(url, {
+    const response = (await undiciFetch(url, {
       method: init.method,
       headers,
       body: init.body as never,
@@ -186,15 +204,23 @@ async function fetchPublicResponse(
       signal: init.signal as never,
       dispatcher: agent,
     })) as unknown as Response;
-  } finally {
-    // undici Agent cleanup differs across runtimes (Node vs Bun).
+    // close() waits for in-flight body reads. destroy() would abort them.
+    const closer = agent as { close?: () => void };
+    try {
+      closer.close?.();
+    } catch {
+      // Best-effort; short-lived agents are GC'd with the request.
+    }
+    return response;
+  } catch (error) {
     const closer = agent as { destroy?: () => void; close?: () => void };
     try {
       closer.destroy?.();
       closer.close?.();
     } catch {
-      // Best-effort; short-lived agents are GC'd with the request.
+      // Best-effort; the connect failed so there is no body to preserve.
     }
+    throw error;
   }
 }
 

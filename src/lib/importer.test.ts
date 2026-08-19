@@ -19,21 +19,28 @@ describe("importer SSRF guards", () => {
     "224.0.0.1",
     "::1",
     "fe80::1",
+    "fe90::1",
+    "febf::1",
     "fc00::1",
     "fd12:3456::1",
     "2001:db8::1",
     "::ffff:127.0.0.1",
     "::ffff:10.1.2.3",
+    "::7f00:1",
+    "::127.0.0.1",
   ])("treats %s as private", (address) => {
     expect(isPrivateAddress(address)).toBe(true);
   });
 
-  it.each(["8.8.8.8", "1.1.1.1", "93.184.216.34", "2001:4860:4860::8888"])(
-    "treats %s as public",
-    (address) => {
-      expect(isPrivateAddress(address)).toBe(false);
-    },
-  );
+  it.each([
+    "8.8.8.8",
+    "1.1.1.1",
+    "93.184.216.34",
+    "2001:4860:4860::8888",
+    "::ffff:8.8.8.8",
+  ])("treats %s as public", (address) => {
+    expect(isPrivateAddress(address)).toBe(false);
+  });
 
   it("rejects non-http protocols", async () => {
     await expect(assertPublicUrl(new URL("file:///etc/passwd"))).rejects.toThrow(
@@ -68,6 +75,12 @@ describe("importer SSRF guards", () => {
     ).rejects.toThrow(/private/i);
     await expect(
       assertPublicUrl(new URL("http://[::1]/")),
+    ).rejects.toThrow(/private/i);
+    await expect(
+      assertPublicUrl(new URL("http://[::7f00:1]/")),
+    ).rejects.toThrow(/private/i);
+    await expect(
+      assertPublicUrl(new URL("http://[fe90::1]/")),
     ).rejects.toThrow(/private/i);
   });
 
