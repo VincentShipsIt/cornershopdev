@@ -10,6 +10,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { BookingEmbed } from "@/components/booking-embed";
 import { BookingRequestForm } from "@/components/booking-request-form";
+import { FoodRetailStructuredData } from "@/components/food-retail-structured-data";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { RestaurantStructuredData } from "@/components/restaurant-themes/shared";
 import { SiteAnalytics } from "@/components/site-analytics";
@@ -99,21 +100,30 @@ export function SiteRenderer({
     : resolvedTemplate;
   const capabilities = config.rendererCapabilities(draft.attributes);
   const bookingEmbed = booking ? resolveBookingEmbed(vertical, booking) : null;
-  // A site with no booking tool at all always gets the form — otherwise its only
-  // "book" affordance would be a phone number. A site that *has* one gets the form
-  // only if its vertical asks for it, because a second, slower way to book next to
-  // a live widget is a worse offer, not a better one.
-  const showRequestForm = !booking || capabilities.showBookingRequestForm;
+  // Appointment-oriented verticals decide whether a missing or present booking
+  // tool needs the shared request form. Retail verticals select `never`, so a
+  // missing order link cannot silently turn into restaurant lead capture.
+  const showRequestForm =
+    capabilities.bookingRequestMode === "always" ||
+    (capabilities.bookingRequestMode === "when-missing" && !booking);
   // A booking provider we cannot embed contributes nothing here: the header CTA and
   // the contact column already link out to it. Rendering an empty section for that
   // case would change every existing restaurant site for no gain.
   const showBookingSection = Boolean(bookingEmbed) || showRequestForm;
+  const primaryAction =
+    capabilities.primaryAction === "ordering" ? ordering : booking;
+  const secondaryAction =
+    capabilities.primaryAction === "ordering" ? booking : ordering;
+  const fulfillmentNote =
+    config.presentation.fulfillmentNote?.(draft.attributes, locale) ?? null;
   const copy = getTemplateCopy(template, locale);
   const picturedItems = draft.catalogSections
     .flatMap((section) => section.items)
     .filter(
       (item): item is typeof item & { imageUrl: string } =>
-        item.available !== false && Boolean(item.imageUrl),
+        (config.presentation.isItemVisible?.(item) ??
+          item.available !== false) &&
+        Boolean(item.imageUrl),
     )
     .slice(0, 4);
   const immersiveHero = template.heroLayout === "immersive";
@@ -155,6 +165,9 @@ export function SiteRenderer({
       {analyticsEnabled ? <SiteAnalytics siteSlug={draft.slug} /> : null}
       {vertical === Vertical.RESTAURANT ? (
         <RestaurantStructuredData draft={draft} enabled={analyticsEnabled} />
+      ) : null}
+      {vertical === Vertical.FOOD_RETAIL ? (
+        <FoodRetailStructuredData draft={draft} enabled={analyticsEnabled} />
       ) : null}
       <header
         className={cn(
@@ -211,9 +224,9 @@ export function SiteRenderer({
               ))}
             </nav>
           ) : null}
-          {ordering ? (
+          {secondaryAction ? (
             <a
-              href={localizeIntegrationUrl(ordering.url, locale)}
+              href={localizeIntegrationUrl(secondaryAction.url, locale)}
               data-analytics-cta
               target="_blank"
               rel="noreferrer"
@@ -225,12 +238,12 @@ export function SiteRenderer({
                   : "border-current/20",
               )}
             >
-              {ordering.label}
+              {secondaryAction.label}
             </a>
           ) : null}
-          {booking ? (
+          {primaryAction ? (
             <a
-              href={localizeIntegrationUrl(booking.url, locale)}
+              href={localizeIntegrationUrl(primaryAction.url, locale)}
               data-analytics-cta
               target="_blank"
               rel="noreferrer"
@@ -240,7 +253,7 @@ export function SiteRenderer({
               )}
               style={{ background: "var(--site-accent)" }}
             >
-              {booking.label}
+              {primaryAction.label}
             </a>
           ) : null}
         </div>
@@ -393,14 +406,29 @@ export function SiteRenderer({
                 {draft.address}
               </span>
             ) : null}
+            {fulfillmentNote ? (
+              <span className="flex items-start gap-2">
+                <ShoppingBag className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  <strong>{dictionary.pickupHeading}: </strong>
+                  {fulfillmentNote}
+                </span>
+              </span>
+            ) : null}
             {draft.phone ? (
-              <a href={`tel:${draft.phone}`} className="flex items-center gap-2 font-semibold opacity-100">
+              <a
+                href={`tel:${draft.phone}`}
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
                 <Phone className="size-4" />
                 {draft.phone}
               </a>
             ) : null}
             {draft.email ? (
-              <a href={`mailto:${draft.email}`} className="flex items-center gap-2 font-semibold opacity-100">
+              <a
+                href={`mailto:${draft.email}`}
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
                 <Mail className="size-4" />
                 {draft.email}
               </a>
@@ -461,7 +489,11 @@ export function SiteRenderer({
               </div>
               <div className="space-y-6">
                 {section.items
-                  .filter((item) => item.available !== false)
+                  .filter(
+                    (item) =>
+                      config.presentation.isItemVisible?.(item) ??
+                      item.available !== false,
+                  )
                   .map((item) => (
                     <div
                       key={item.name}
@@ -475,8 +507,11 @@ export function SiteRenderer({
                           {/* The vertical turns its own item attributes into plain
                               strings, so the renderer never learns what they mean. */}
                           {(
-                            config.presentation.itemBadges?.(item.attributes) ??
-                            []
+                            config.presentation.itemBadges?.(
+                              item.attributes,
+                              locale,
+                              item.available,
+                            ) ?? []
                           ).map((label: string) => (
                             <span
                               key={label}

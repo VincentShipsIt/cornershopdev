@@ -9,12 +9,14 @@ import {
 } from "@/lib/billing-access";
 import {
   publishSiteDraft,
+  SitePublicationCapabilityError,
   SitePublicationStateError,
   SitePublicationTranslationError,
 } from "@/lib/site-publication";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { DraftRevisionConflictError } from "@/lib/site-persistence";
+import { publicationCapabilityFailureResponse } from "@/lib/site-publication-capability";
 
 const publishRequestSchema = z.object({
   changeSummary: z.string().trim().min(3).max(280),
@@ -31,6 +33,10 @@ export async function POST(
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
+  const capabilityFailure = publicationCapabilityFailureResponse(
+    access.site.vertical,
+  );
+  if (capabilityFailure) return capabilityFailure;
   const billing = await getSiteBillingAccess(access.site.id);
   if (!billing.ok) return billingAccessFailureResponse(billing);
 
@@ -81,7 +87,10 @@ export async function POST(
         { status: 422 },
       );
     }
-    if (error instanceof SitePublicationStateError) {
+    if (
+      error instanceof SitePublicationCapabilityError ||
+      error instanceof SitePublicationStateError
+    ) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof SitePublicationTranslationError) {

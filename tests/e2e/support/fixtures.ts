@@ -10,4 +10,9 @@ export const e2e = {
   unauthorizedName: "Unowned Browser Workspace",
   ownerEmail: "owner@restaurant.example.test",
   editedName: "First Customer Published Browser Edit",
+  foodId: "first-customer-browser-food-private",
+  foodSlug: "first-customer-browser-food-private",
+  foodName: "Private Food Retail Browser Preview",
+  foodOwnerEmail: "owner@example.com",
+  foodInvitationToken: "food_private_claim_token_1234567890abcdef",
 };

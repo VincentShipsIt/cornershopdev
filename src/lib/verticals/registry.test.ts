@@ -7,8 +7,14 @@ import {
   toRestaurantDraft,
 } from "@/lib/restaurant";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
+import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
 import {
+  isVerticalClaimEnabled,
+  isVerticalPublicationEnabled,
+  isVerticalPubliclyAccessible,
+  isVerticalPubliclyLaunched,
   listMarketingVerticals,
+  listPublicVerticals,
   listVerticalIds,
   resolveVerticalByHostname,
   resolveVerticalBySlug,
@@ -27,7 +33,11 @@ import { restaurantConfig } from "@/lib/verticals/restaurant/config";
  */
 describe("vertical registry", () => {
   it("uses the generated Prisma enum as its identifier source", () => {
-    expect(listVerticalIds()).toEqual([Vertical.RESTAURANT, Vertical.BEAUTY]);
+    expect(listVerticalIds()).toEqual([
+      Vertical.RESTAURANT,
+      Vertical.BEAUTY,
+      Vertical.FOOD_RETAIL,
+    ]);
   });
 
   it("resolves every registered id back to the config that declares it", () => {
@@ -75,23 +85,32 @@ describe("vertical registry", () => {
   });
 
   /**
-   * Beauty is the only vertical that turns the on-page request form on: none of
-   * its providers ships an embeddable widget, so without it a salon whose only
-   * booking link is Booksy would have no on-page capture at all.
+   * The explicit mode prevents a food shop from inheriting the restaurant's
+   * "no booking link means show a request form" fallback.
    */
   it("keeps the booking-request form vertical-scoped", () => {
     expect(
       beautyConfig.rendererCapabilities({
         serviceStyle: "barbershop",
         showServiceImages: false,
-      }).showBookingRequestForm,
-    ).toBe(true);
+      }).bookingRequestMode,
+    ).toBe("always");
     expect(
       restaurantConfig.rendererCapabilities({
         cuisine: "Modern Italian",
         showMenuImages: false,
-      }).showBookingRequestForm,
-    ).toBe(false);
+      }).bookingRequestMode,
+    ).toBe("when-missing");
+    expect(
+      foodRetailConfig.rendererCapabilities({
+        shopType: "bakery",
+        showProductImages: true,
+        pickupDetails: "",
+      }),
+    ).toMatchObject({
+      primaryAction: "ordering",
+      bookingRequestMode: "never",
+    });
   });
 
   it("builds a vertical-neutral deterministic fallback", () => {
@@ -210,6 +229,7 @@ describe("niche routing", () => {
     expect(verticalAssetNamespace(Vertical.BEAUTY)).toBe(
       verticalSlug(Vertical.BEAUTY),
     );
+    expect(verticalAssetNamespace(Vertical.FOOD_RETAIL)).toBe("foodretail");
 
     const namespaces = listVerticalIds().map(verticalAssetNamespace);
     expect(new Set(namespaces).size).toBe(namespaces.length);
@@ -231,9 +251,12 @@ describe("niche routing", () => {
    */
   it("lists only launched niches for the homepage", () => {
     const listed = listMarketingVerticals();
+    expect(isVerticalPubliclyLaunched(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalPubliclyLaunched(Vertical.BEAUTY)).toBe(false);
+    expect(isVerticalPubliclyLaunched(Vertical.FOOD_RETAIL)).toBe(false);
     expect(listed).toEqual(
       listVerticalIds()
-        .filter((id) => Boolean(resolveVerticalConfig(id).marketing.domain))
+        .filter(isVerticalPubliclyLaunched)
         .sort((a, b) =>
           resolveVerticalConfig(a).marketing.brand.name.localeCompare(
             resolveVerticalConfig(b).marketing.brand.name,
@@ -241,6 +264,35 @@ describe("niche routing", () => {
         ),
     );
     expect(listed).not.toContain(Vertical.BEAUTY);
+    expect(listed).not.toContain(Vertical.FOOD_RETAIL);
+    expect(foodRetailConfig.marketing).toMatchObject({
+      publiclyAccessible: false,
+      hostnames: [],
+      domain: null,
+      email: null,
+    });
+  });
+
+  it("keeps existing public niche routes while food retail stays private", () => {
+    expect(listPublicVerticals()).toEqual([
+      Vertical.RESTAURANT,
+      Vertical.BEAUTY,
+    ]);
+    expect(isVerticalPubliclyAccessible(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalPubliclyAccessible(Vertical.BEAUTY)).toBe(true);
+    expect(isVerticalPubliclyAccessible(Vertical.FOOD_RETAIL)).toBe(false);
+  });
+
+  it("enables claim checkout only for a fully launched vertical", () => {
+    expect(isVerticalClaimEnabled(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalClaimEnabled(Vertical.BEAUTY)).toBe(false);
+    expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(false);
+  });
+
+  it("keeps publication explicit while food retail remains private", () => {
+    expect(isVerticalPublicationEnabled(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalPublicationEnabled(Vertical.BEAUTY)).toBe(true);
+    expect(isVerticalPublicationEnabled(Vertical.FOOD_RETAIL)).toBe(false);
   });
 
   it("registers the selected Restofrontapp mark and favicon assets", () => {

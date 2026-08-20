@@ -21,6 +21,7 @@ import {
 import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 import {
+  isVerticalPublicationEnabled,
   resolveVerticalConfig,
   type ErasedVerticalConfig,
 } from "@/lib/verticals/registry";
@@ -175,8 +176,8 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
 }
 
 /**
- * Loads only editable draft state. Private previews and owner dashboards use
- * this path; custom domains never do.
+ * Loads editable draft state, including its optimistic-concurrency revision.
+ * Custom domains never use this mutable-draft path.
  */
 export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   if (!process.env.DATABASE_URL) return null;
@@ -187,6 +188,13 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   });
 
   return site ? projectSiteDraft(site) : null;
+}
+
+/** Backward-compatible owner loader; `LoadedSite.revision` is the token. */
+export async function findOwnerSiteDraft(
+  slug: string,
+): Promise<LoadedSite | null> {
+  return findSiteDraft(slug);
 }
 
 /**
@@ -243,7 +251,8 @@ export async function findPublishedSiteView(
           },
         })
       )?.publishedSiteVersion;
-  return version ? projectPublishedSiteVersion(version) : null;
+  if (!version || !isVerticalPublicationEnabled(version.vertical)) return null;
+  return projectPublishedSiteVersion(version);
 }
 
 /**

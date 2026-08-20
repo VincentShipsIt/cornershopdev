@@ -86,6 +86,7 @@ assert_status() {
 assert_status "/" "200"
 assert_status "/niche/restaurant" "200"
 assert_status "/niche/beauty" "200"
+assert_status "/niche/food_retail" "404"
 assert_status "/sign-in" "200"
 assert_status "/api/auth/get-session" "200"
 assert_status "/dashboard" "307"

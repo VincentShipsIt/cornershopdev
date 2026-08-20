@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Vertical } from "@/generated/prisma/enums";
 import { Brand } from "@/components/brand";
-import { InstantRestaurantPreview } from "@/components/instant-restaurant-preview";
+import { InstantSitePreview } from "@/components/instant-restaurant-preview";
 import { SiteRenderer } from "@/components/site-renderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,8 +25,12 @@ import type { BrandContext } from "@/lib/brand-context";
 import { sampleSiteDraft } from "@/lib/restaurant";
 import type { ImportUrls } from "@/lib/import-identity";
 import type { SiteDraftView } from "@/lib/site-draft";
-import { listVerticalIds } from "@/lib/verticals/registry";
+import {
+  isVerticalClaimEnabled,
+  listVerticalIds,
+} from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
 
 type Stage = {
   label: string;
@@ -50,6 +54,8 @@ type VerticalCopy = {
   claimHint: string;
   catalogStage: string;
   integrationsStage: string;
+  previewCatalogLabel: string;
+  previewCards: Array<{ title: string; copy: string }>;
 };
 
 const verticalCopy = {
@@ -68,6 +74,12 @@ const verticalCopy = {
       "Review the menu and existing links, then claim the founding plan to keep this site current.",
     catalogStage: "Recover menu and details",
     integrationsStage: "Preserve booking and ordering",
+    previewCatalogLabel: "Menu",
+    previewCards: [
+      { title: "Menu & prices", copy: "Reading the source" },
+      { title: "Bookings", copy: "Checking existing links" },
+      { title: "Ordering", copy: "Keeping what works" },
+    ],
   },
   [Vertical.BEAUTY]: {
     label: "Salon & barber",
@@ -86,6 +98,34 @@ const verticalCopy = {
     // No ordering or delivery: a salon has nothing to deliver, which is the same
     // reason `beauty/providers.ts` ships no hints for those integration types.
     integrationsStage: "Preserve existing booking links",
+    previewCatalogLabel: "Services",
+    previewCards: [
+      { title: "Services & prices", copy: "Reading the source" },
+      { title: "Hours", copy: "Checking business details" },
+      { title: "Appointments", copy: "Keeping booking links" },
+    ],
+  },
+  [Vertical.FOOD_RETAIL]: {
+    label: "Local food shop",
+    eyebrow: "New food shop",
+    placeholder: "bakery.com or shop name",
+    opening: "Opening the shop",
+    idlePrompt:
+      "Paste a bakery, pâtisserie, butcher, deli or local food shop website. The result remains a private pilot preview; claiming and payment are not available yet.",
+    recovering:
+      "The shape is already here. We are recovering real product ranges, seasonal notes, hours, pickup details and existing order links now.",
+    emptyStatePrompt:
+      "Start with a food shop website or name. No account is needed to see the result.",
+    claimHint:
+      "Review every product, price, availability note, allergen source and ordering link in this private pilot preview.",
+    catalogStage: "Recover product ranges and prices",
+    integrationsStage: "Preserve preorder, pickup and delivery links",
+    previewCatalogLabel: "Product ranges",
+    previewCards: [
+      { title: "Products & prices", copy: "Reading the source" },
+      { title: "Hours & pickup", copy: "Checking shop details" },
+      { title: "Preorders", copy: "Keeping existing links" },
+    ],
   },
 } satisfies Record<VerticalId, VerticalCopy>;
 
@@ -157,6 +197,8 @@ export function ImportStudio({
   );
   const [site, setSite] = useState<ImportedSite | null>(null);
   const [urls, setUrls] = useState<ImportUrls | null>(null);
+  const [externalPreviewAvailable, setExternalPreviewAvailable] =
+    useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(hasInitialSource);
   const [device, setDevice] = useState<"mobile" | "desktop">("mobile");
@@ -263,11 +305,16 @@ export function ImportStudio({
     }
   }
 
-  function complete(nextSite: ImportedSite, nextUrls: ImportUrls) {
+  function complete(
+    nextSite: ImportedSite,
+    nextUrls: ImportUrls,
+    previewAvailable = true,
+  ) {
     setProgress(100);
     setMessage("Private preview ready");
     setSite(nextSite);
     setUrls(nextUrls);
+    setExternalPreviewAvailable(previewAvailable);
     setLoading(false);
   }
 
@@ -279,11 +326,20 @@ export function ImportStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSource]);
 
-  /**
-   * The only in-code fixture is a restaurant one, so the demo always switches the
-   * picker back to that vertical rather than showing salon copy around a menu.
-   */
   function useDemo() {
+    if (vertical === Vertical.FOOD_RETAIL) {
+      setSource(sampleFoodRetailDraft.name);
+      setError(null);
+      complete(
+        { draft: sampleFoodRetailDraft, vertical: Vertical.FOOD_RETAIL },
+        {
+          preview: `/preview/${sampleFoodRetailDraft.slug}`,
+          claim: `/claim/${sampleFoodRetailDraft.slug}`,
+        },
+        false,
+      );
+      return;
+    }
     setSource("Osteria Luna");
     setVertical(Vertical.RESTAURANT);
     setError(null);
@@ -471,28 +527,41 @@ export function ImportStudio({
                 <span className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground">
                   <Check className="size-3" />
                 </span>
-                Ready to claim
+                {isVerticalClaimEnabled(site.vertical)
+                  ? "Ready to claim"
+                  : "Private pilot preview"}
               </div>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                {copy.claimHint}
+                {isVerticalClaimEnabled(site.vertical)
+                  ? copy.claimHint
+                  : "Claiming and checkout remain unavailable until this vertical has reviewed launch configuration."}
               </p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button
-                  render={<Link href={urls.preview} target="_blank" />}
-                  nativeButton={false}
-                  variant="outline"
-                >
-                  Preview
-                  <ExternalLink />
-                </Button>
-                <Button
-                  render={<Link href={urls.claim} />}
-                  nativeButton={false}
-                >
-                  Claim
-                  <ArrowRight />
-                </Button>
-              </div>
+              {externalPreviewAvailable ? (
+                <div className="mt-4 grid gap-2">
+                  <Button
+                    render={<Link href={urls.preview} target="_blank" />}
+                    nativeButton={false}
+                    variant="outline"
+                  >
+                    Preview
+                    <ExternalLink />
+                  </Button>
+                  {isVerticalClaimEnabled(site.vertical) ? (
+                    <Button
+                      render={<Link href={urls.claim} />}
+                      nativeButton={false}
+                    >
+                      Claim
+                      <ArrowRight />
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-4 text-xs text-muted-foreground">
+                  This demo remains in the preview above and has not created a
+                  persisted or chargeable site.
+                </p>
+              )}
             </div>
           ) : null}
         </aside>
@@ -534,11 +603,13 @@ export function ImportStudio({
                     embedded
                   />
                 ) : (
-                  <InstantRestaurantPreview
+                  <InstantSitePreview
                     source={previewSource}
                     message={message}
                     progress={progress}
                     status={error ? "error" : "loading"}
+                    catalogLabel={copy.previewCatalogLabel}
+                    detailCards={copy.previewCards}
                   />
                 )}
               </div>

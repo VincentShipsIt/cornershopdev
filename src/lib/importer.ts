@@ -190,7 +190,7 @@ async function fetchPublicResponse(
 
   const hostname = normalizeHostname(url.hostname);
   const addresses = await resolvePublicAddresses(hostname);
-  // Prefer IPv4 when available; many restaurant origins still lack AAAA.
+  // Prefer IPv4 when available; many independent-business origins still lack AAAA.
   const pinnedIp =
     addresses.find((address) => isIP(address) === 4) ?? addresses[0];
   const family = isIP(pinnedIp) === 6 ? 6 : 4;
@@ -257,7 +257,7 @@ async function readLimitedBody(response: Response): Promise<string> {
     bytes += value.byteLength;
     if (bytes > MAX_HTML_BYTES) {
       await reader.cancel();
-      throw new Error("The restaurant website is too large to import safely");
+      throw new Error("The business website is too large to import safely");
     }
     html += decoder.decode(value, { stream: true });
   }
@@ -276,7 +276,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
-          "Cornershopdev Importer/1.0 (+https://cornershop.dev; restaurant preview builder)",
+          "Cornershopdev Importer/1.0 (+https://cornershop.dev; local business preview builder)",
       },
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),
@@ -315,7 +315,7 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg",
         "User-Agent":
-          "Cornershopdev Image Importer/1.0 (+https://cornershop.dev; authentic restaurant photo enhancement)",
+          "Cornershopdev Image Importer/1.0 (+https://cornershop.dev; provenance-preserving business photo enhancement)",
       },
       redirect: "manual",
       signal: AbortSignal.timeout(15_000),

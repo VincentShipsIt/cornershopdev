@@ -28,6 +28,7 @@ import { limitClaimCheckout } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { getStripe } from "@/lib/stripe";
 import { secureCookieRequired } from "@/lib/first-customer-test-mode";
+import { isVerticalClaimEnabled } from "@/lib/verticals/registry";
 
 const requestSchema = z.object({
   plan: z.literal(RESTOFRONT_FOUNDING_PLAN_ID),
@@ -76,6 +77,14 @@ export async function POST(request: Request) {
       siteSlug,
       token: invitationToken,
     });
+    if (!isVerticalClaimEnabled(invitation.vertical)) {
+      throw new ClaimFlowError(
+        "not_claimable",
+        409,
+        "This site already has an owner or is not available to claim.",
+        invitation.id,
+      );
+    }
     const stripe = getStripe();
     const price = await stripe.prices.retrieve(priceId, {
       expand: ["product"],

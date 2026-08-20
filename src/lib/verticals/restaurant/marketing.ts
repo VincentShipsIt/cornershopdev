@@ -7,6 +7,7 @@ import type { VerticalMarketing } from "@/lib/verticals/types";
  * a generated site never sees either.
  */
 export const restaurantMarketing = {
+  publiclyAccessible: true,
   hostnames: ["restofront.com", "www.restofront.com"],
   domain: "restofront.com",
   brand: {

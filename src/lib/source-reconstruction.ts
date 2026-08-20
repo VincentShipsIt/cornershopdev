@@ -60,6 +60,7 @@ export type ExtractedCatalogItem = {
   price: number | null;
   currency: string | null;
   availability: boolean | null;
+  availabilitySourceUrl?: string | null;
   imageUrl: string | null;
 };
 
@@ -956,6 +957,9 @@ function extractMicrodataCatalogItems(
       price: parsedPrice !== null && currency ? parsedPrice : null,
       currency,
       availability,
+      ...(availability === null
+        ? {}
+        : { availabilitySourceUrl: page.url.href }),
       imageUrl: image?.value ?? null,
     });
   }
@@ -1046,6 +1050,7 @@ function catalogItem(
     price,
     currency,
     availability,
+    ...(availability === null ? {} : { availabilitySourceUrl: sourceUrl.href }),
     imageUrl: image?.value ?? null,
   };
 }

@@ -1,6 +1,6 @@
 # Cornershopdev
 
-Cornershopdev turns an existing restaurant website—or just a restaurant name—into a private, prefilled, mobile-first website preview. The restaurant keeps its existing booking, ordering, and delivery providers. It claims the finished preview, subscribes, then connects its domain.
+Cornershopdev turns an existing local-business website—or just a business name—into a private, prefilled, mobile-first website preview. The registered vertical supplies the schema, prompts, providers, templates and language for its trade while the business keeps the ordering, delivery or booking tools it already uses.
 
 ## Product flow
 
@@ -87,9 +87,36 @@ Heritage and fine-dining templates default to a clean text-led menu; casual,
 fresh, coastal, and bold concepts default to a small highlights gallery. Owners
 can show or hide the gallery from the dashboard without deleting any images.
 
+## Food retail vertical
+
+`FOOD_RETAIL` is a bounded vertical for bakeries, pâtisseries, butchers,
+delis, cheesemongers, grocers and similar local food shops. It reuses the shared
+site/catalog/integration engine but deliberately does not inherit table
+reservations or restaurant lead capture. Its primary conversion action is an
+existing preorder, click-and-collect, ordering or delivery link.
+
+The schema supports product ranges, store hours, location and sourced pickup
+details, seasonal availability, preorder notes, approved product photography,
+and allergens only when an exact source URL is stored with the label. Unknown
+products, prices, stock, pickup promises and allergens remain empty. English and
+French storefront copy and translation overlays are included.
+
+FOOD_RETAIL model output is presentation-only: a post-generation evidence
+adapter restores business identity, contact details, hours, products, prices,
+ordering links and factual product attributes from deterministic crawl output.
+Unsupported model claims remain empty or null.
+
+The vertical is registered for private studio imports and owner dashboards but
+is not publicly launched: its marketing hostnames are empty, its domain and
+sender are null, and its server-side publication and rollback capability is
+disabled. Private preview and owner review remain available.
+The implementation contract, test fixture, structured-data mapping and required
+domain/sender/production-config evidence are documented in
+[`docs/verticals/food-retail.md`](docs/verticals/food-retail.md).
+
 ## Internationalization
 
-Restaurant data uses one canonical source locale plus structured translation
+Site data uses one canonical source locale plus structured translation
 overlays. Prices, currencies, images, addresses, provider names, and external
 booking or ordering URLs remain shared, so translating a site cannot fork its
 operational data. Menu sections, menu items, descriptions, dietary labels, and
@@ -355,9 +382,9 @@ this same container, where the rewrite fires again — an infinite loop.
 - `/` — marketing and URL intake
 - `/create` — import and preview studio
 - `/claim/[slug]` — pricing and claim checkout
-- `/dashboard` — authenticated restaurant management
+- `/dashboard` — authenticated vertical-aware owner management
 - `/dashboard?demo=1` — local demo dashboard
 - `/admin` — dual-gated superadmin operator console
 - `/api/analytics/events` — first-party cookieless live-site event intake
-- `/preview/[slug]` — private full-screen restaurant preview
-- `/preview/[slug]/[locale]` — translated restaurant preview
+- `/preview/[slug]` — private full-screen site preview
+- `/preview/[slug]/[locale]` — translated site preview

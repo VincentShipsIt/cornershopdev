@@ -34,9 +34,7 @@ describe("production container runtime", () => {
     expect(entrypoint).toContain("bun run workflow:migrate");
     expect(entrypoint).toContain("exec node server.js");
     expect(entrypoint).not.toContain("exec bun server.js");
-    expect(packageJson).toContain(
-      "node node_modules/next/dist/bin/next build",
-    );
+    expect(packageJson).toContain("node node_modules/next/dist/bin/next build");
     expect(packageJson).not.toContain('&& next build"');
     expect(dockerfile).toContain(
       'RUN node --input-type=module -e \'import sharp from "sharp";',
@@ -59,6 +57,10 @@ describe("production container runtime", () => {
     expect(runtimeContract).toContain('assert_status "/" "200"');
     expect(runtimeContract).toContain(
       'assert_status "/niche/restaurant" "200"',
+    );
+    expect(runtimeContract).toContain('assert_status "/niche/beauty" "200"');
+    expect(runtimeContract).toContain(
+      'assert_status "/niche/food_retail" "404"',
     );
     expect(runtimeContract).toContain('assert_status "/sign-in" "200"');
     expect(runtimeContract).toContain(

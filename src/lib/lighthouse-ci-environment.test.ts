@@ -268,7 +268,7 @@ describe("Lighthouse CI environment", () => {
     expect(fontSwapCeiling).toBe(0.01);
     expect(0.116786).toBeGreaterThan(fontSwapCeiling);
     expect(audit).toContain('path: "/niche/restaurant"');
-    expect(audit).toContain('path: "/niche/beauty"');
+    expect(audit).not.toContain('path: "/niche/beauty"');
     expect(audit).toContain('path: "/themes/restaurant/terroir-editorial"');
     expect(audit).toContain('path: "/sign-in"');
     expect(audit).toContain(

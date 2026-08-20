@@ -44,7 +44,7 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bunx --bun prisma migrate deploy
-      - name: Predecessor contact/privacy migration regression
+      - name: Seeded predecessor upgrade through current migrations
         env:
           SITE_CONTACT_MIGRATION_POSTGRES_TEST: "1"
         run: bun test src/lib/site-contact-migration.postgres.test.tsx

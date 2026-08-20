@@ -92,6 +92,7 @@ export const catalogItemSchema = z.object({
   description: z.string().max(320).default(""),
   price: z.number().nonnegative().nullable().default(null),
   currency: supportedCurrencySchema.default("EUR"),
+  /** Null means the source or owner has not made an availability claim. */
   available: z.boolean().nullable().default(null),
   imageUrl: siteImageUrlSchema.nullable().default(null),
   originalImageUrl: siteImageUrlSchema.nullable().optional(),

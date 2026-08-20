@@ -1,6 +1,10 @@
 import { getDb } from "@/lib/db";
 import { integrationUrlDigest } from "@/lib/evidence-digests";
+import { Vertical } from "@/generated/prisma/enums";
+import { hashClaimInvitationToken } from "@/lib/claim-invitations";
 import { sampleSiteDraft } from "@/lib/restaurant";
+import { siteDraftScalarData } from "@/lib/site-persistence";
+import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
 import { e2e } from "./fixtures";
 
 export async function seedFirstCustomerBrowserJourney() {
@@ -81,25 +85,69 @@ export async function seedFirstCustomerBrowserJourney() {
         })),
       },
       catalogSections: {
-        create: sampleSiteDraft.catalogSections.map((section, sectionPosition) => ({
-          name: section.name,
-          description: section.description,
-          position: sectionPosition,
-          items: {
-            create: section.items.map((item, itemPosition) => ({
-              name: item.name,
-              description: item.description,
-              price: item.price,
-              currency: item.currency,
-              available: item.available,
-              imageUrl: item.imageUrl,
-              originalImageUrl: item.originalImageUrl,
-              imageProvenance: "OWNER",
-              attributes: item.attributes,
-              position: itemPosition,
-            })),
-          },
-        })),
+        create: sampleSiteDraft.catalogSections.map(
+          (section, sectionPosition) => ({
+            name: section.name,
+            description: section.description,
+            position: sectionPosition,
+            items: {
+              create: section.items.map((item, itemPosition) => ({
+                name: item.name,
+                description: item.description,
+                price: item.price,
+                currency: item.currency,
+                available: item.available,
+                imageUrl: item.imageUrl,
+                originalImageUrl: item.originalImageUrl,
+                imageProvenance: "OWNER",
+                attributes: item.attributes,
+                position: itemPosition,
+              })),
+            },
+          }),
+        ),
+      },
+    },
+  });
+  const foodDraft = {
+    ...sampleFoodRetailDraft,
+    slug: e2e.foodSlug,
+    name: e2e.foodName,
+    email: e2e.foodOwnerEmail,
+    defaultLocale: "en",
+    translations: [],
+    integrations: [],
+    catalogSections: [
+      {
+        name: "Product ranges",
+        description:
+          "No sourced products in this private billing-gate fixture.",
+        items: [],
+      },
+    ],
+  };
+  await db.site.create({
+    data: {
+      id: e2e.foodId,
+      slug: e2e.foodSlug,
+      ...siteDraftScalarData(foodDraft, Vertical.FOOD_RETAIL),
+      sourceUrl: "https://example.com/private-food-shop",
+      vertical: Vertical.FOOD_RETAIL,
+      status: "PREVIEW_READY",
+      claimInvitations: {
+        create: {
+          email: e2e.foodOwnerEmail,
+          tokenHash: hashClaimInvitationToken(e2e.foodInvitationToken),
+          proofMethod: "DOMAIN_EMAIL",
+          expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+        },
+      },
+      catalogSections: {
+        create: {
+          name: foodDraft.catalogSections[0].name,
+          description: foodDraft.catalogSections[0].description,
+          position: 0,
+        },
       },
     },
   });
@@ -113,7 +161,9 @@ export async function cleanupFirstCustomerBrowserJourney() {
   });
   await db.site.deleteMany({
     where: {
-      id: { in: [e2e.targetId, e2e.existingId, e2e.unauthorizedId] },
+      id: {
+        in: [e2e.targetId, e2e.existingId, e2e.unauthorizedId, e2e.foodId],
+      },
     },
   });
   await db.organization.deleteMany({
@@ -181,5 +231,7 @@ try {
     throw new Error("Use seed, inspect, or cleanup.");
   }
 } finally {
-  await getDb().$disconnect().catch(() => undefined);
+  await getDb()
+    .$disconnect()
+    .catch(() => undefined);
 }

@@ -1,10 +1,12 @@
-import { CalendarDays, MenuSquare, Minus, ShoppingBag } from "lucide-react";
+import { Clock3, ListTree, Minus, ShoppingBag } from "lucide-react";
 
-type InstantRestaurantPreviewProps = {
+type InstantSitePreviewProps = {
   source: string;
   message: string;
   progress: number;
   status: "loading" | "error";
+  catalogLabel: string;
+  detailCards: Array<{ title: string; copy: string }>;
 };
 
 const palettes = [
@@ -78,12 +80,14 @@ function sourceIdentity(source: string): {
   };
 }
 
-export function InstantRestaurantPreview({
+export function InstantSitePreview({
   source,
   message,
   progress,
   status,
-}: InstantRestaurantPreviewProps) {
+  catalogLabel,
+  detailCards,
+}: InstantSitePreviewProps) {
   const identity = sourceIdentity(source);
   const loading = status === "loading";
 
@@ -160,33 +164,19 @@ export function InstantRestaurantPreview({
               className="text-[9px] font-bold uppercase tracking-[0.16em]"
               style={{ color: identity.palette.accent }}
             >
-              Menu
+              {catalogLabel}
             </p>
             <h3 className="font-display mt-1 text-3xl tracking-[-0.035em]">
               Recovering the details
             </h3>
           </div>
-          <MenuSquare className="size-4 opacity-45" />
+          <ListTree className="size-4 opacity-45" />
         </div>
 
         <div className="grid gap-3 py-5 sm:grid-cols-3">
-          {[
-            {
-              icon: MenuSquare,
-              title: "Menu & prices",
-              copy: "Reading the source",
-            },
-            {
-              icon: CalendarDays,
-              title: "Bookings",
-              copy: "Checking existing links",
-            },
-            {
-              icon: ShoppingBag,
-              title: "Ordering",
-              copy: "Keeping what works",
-            },
-          ].map((item) => (
+          {detailCards.slice(0, 3).map((item, index) => {
+            const Icon = [ListTree, Clock3, ShoppingBag][index] ?? ListTree;
+            return (
             <div
               key={item.title}
               className="flex items-start gap-3 border-b border-current/10 pb-3 sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3 last:border-0"
@@ -199,13 +189,15 @@ export function InstantRestaurantPreview({
                 )}
               </span>
               <div>
+                <Icon className="mb-1 size-3 opacity-55" />
                 <p className="text-[10px] font-semibold">{item.title}</p>
                 <p className="mt-1 text-[9px] leading-3 opacity-55">
                   {loading ? item.copy : "Waiting for retry"}
                 </p>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div

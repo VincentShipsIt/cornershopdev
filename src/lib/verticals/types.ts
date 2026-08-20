@@ -11,7 +11,10 @@ export type CatalogVocabulary = {
 };
 
 export type IntegrationLinkType =
-  "booking" | "ordering" | "delivery" | "social";
+  | "booking"
+  | "ordering"
+  | "delivery"
+  | "social";
 
 /**
  * How a provider's own booking widget is embedded on a generated site.
@@ -94,7 +97,13 @@ export type LinkClassificationHint = {
  * mapping, so an unmapped name is a build error rather than a blank square.
  */
 export type MarketingIconName =
-  "catalog" | "imagery" | "booking" | "refresh" | "shield" | "cursor";
+  | "catalog"
+  | "imagery"
+  | "booking"
+  | "ordering"
+  | "refresh"
+  | "shield"
+  | "cursor";
 
 export type MarketingPlan = {
   name: string;
@@ -119,6 +128,13 @@ export type MarketingPlans = [MarketingPlan, ...MarketingPlan[]];
  * is, for the same reason the renderer never does.
  */
 export type VerticalMarketing = {
+  /**
+   * Whether the shared `/niche/[vertical]` route is public. This is independent
+   * from owning a standalone domain: Beauty is intentionally available on the
+   * factory route before it has one, while a vertical under private review must
+   * opt out explicitly.
+   */
+  publiclyAccessible: boolean;
   /**
    * Hostnames whose `/` serves this niche's marketing site. Empty is meaningful
    * and supported: the vertical is built and sellable, it simply has no domain
@@ -213,10 +229,26 @@ export type VerticalConfig<
   vocabulary: CatalogVocabulary;
   /** The niche's own marketing site. See `VerticalMarketing`. */
   marketing: VerticalMarketing;
+  /**
+   * Whether owner-reviewed drafts may create or roll back public snapshots.
+   * This is explicit and server-enforced: a registered vertical can support
+   * private imports and previews without accidentally inheriting publication.
+   */
+  publicationEnabled: boolean;
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
   /** Optional richer defaults used only for a brand-new non-AI import. */
   deterministicAttributes?: TAttributes;
+  /** Locale-specific vocabulary for sparse no-model imports. */
+  deterministicCopy?: Record<
+    string,
+    {
+      eyebrow: string;
+      description: string;
+      catalogName: string;
+      emptyCatalogDescription: string;
+    }
+  >;
   itemAttributesSchema: z.ZodType<TItemAttributes>;
   itemAttributeDefaults: TItemAttributes;
   draftSchema: z.ZodType<TDraft>;
@@ -250,7 +282,21 @@ export type VerticalConfig<
     // Short pills printed under a catalog item. Restaurants surface dietary
     // labels here, beauty surfaces duration or "with any stylist" — the renderer
     // only ever sees strings, which is what keeps `dietaryLabels` out of it.
-    itemBadges?: (attributes: TItemAttributes) => string[];
+    itemBadges?: (
+      attributes: TItemAttributes,
+      locale: string,
+      available: boolean | null,
+    ) => string[];
+    /** A vertical may separate storefront inclusion from factual availability. */
+    isItemVisible?: (item: {
+      available: boolean | null;
+      attributes: TItemAttributes;
+    }) => boolean;
+    /** Optional sourced pickup/fulfilment note rendered beside location data. */
+    fulfillmentNote?: (
+      attributes: TAttributes,
+      locale: string,
+    ) => string | null;
   };
   templates: {
     definitions: Record<string, TTemplate>;
@@ -260,6 +306,34 @@ export type VerticalConfig<
     attributes: TAttributes,
     template: TTemplate,
   ) => TAttributes;
+  /** Removes unsupported model-only item claims before persistence. */
+  normalizeGeneratedItem?: (item: {
+    available: boolean | null;
+    attributes: TItemAttributes;
+  }) => {
+    available: boolean | null;
+    attributes: TItemAttributes;
+  };
+  /**
+   * Final trust boundary for a model-produced draft. The deterministic draft is
+   * reconstructed exclusively from authenticated crawl output, so a vertical
+   * with stricter factuality requirements can replace unsupported model claims
+   * before the draft is parsed for persistence.
+   */
+  bindGeneratedDraftToEvidence?: (input: {
+    generated: TDraft;
+    deterministic: TDraft;
+  }) => TDraft;
+  /** Adds facts that came directly from deterministic source extraction. */
+  deterministicItemAttributes?: (item: {
+    availability: boolean | null;
+    availabilitySourceUrl?: string | null;
+  }) => TItemAttributes;
+  /**
+   * Trust state applied after model output has passed the vertical schema.
+   * Models may propose copy, but they cannot mark that copy owner-reviewed.
+   */
+  generatedTranslationStatus?: "draft";
   providers: ProviderDefinition[];
   crawl: {
     relevantPathPattern: RegExp;
@@ -268,6 +342,9 @@ export type VerticalConfig<
   i18n: Record<string, Record<string, string>>;
   rendererCapabilities: (attributes: TAttributes) => {
     showGallery: boolean;
-    showBookingRequestForm: boolean;
+    /** Which existing integration becomes the conversion-first header action. */
+    primaryAction: "booking" | "ordering";
+    /** Prevents non-appointment trades from inheriting reservation lead capture. */
+    bookingRequestMode: "when-missing" | "always" | "never";
   };
 };

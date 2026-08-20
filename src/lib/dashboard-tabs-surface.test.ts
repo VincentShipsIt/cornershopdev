@@ -6,12 +6,25 @@ const dashboard = await Bun.file(
 const dashboardPage = await Bun.file(
   new URL("../app/dashboard/page.tsx", import.meta.url),
 ).text();
+const foodRetailDashboard = await Bun.file(
+  new URL("../app/dashboard/food-retail-dashboard.tsx", import.meta.url),
+).text();
 const restaurantSaveRoute = await Bun.file(
   new URL("../app/api/sites/[slug]/route.ts", import.meta.url),
+).text();
+const ownerSiteSave = await Bun.file(
+  new URL("./owner-site-save.ts", import.meta.url),
 ).text();
 const restaurantPublishRoute = await Bun.file(
   new URL("../app/api/sites/[slug]/publish/route.ts", import.meta.url),
 ).text();
+const rollbackRoute = await Bun.file(
+  new URL("../app/api/sites/[slug]/rollback/route.ts", import.meta.url),
+).text();
+const sitePublication = await Bun.file(
+  new URL("./site-publication.ts", import.meta.url),
+).text();
+const sites = await Bun.file(new URL("./sites.ts", import.meta.url)).text();
 const translationRegenerationRoute = await Bun.file(
   new URL(
     "../app/api/sites/[slug]/translations/[locale]/regenerate/route.ts",
@@ -46,14 +59,36 @@ describe("dashboard tab and settings surface", () => {
     expect(dashboardPage).toContain(
       "initialDraftRevision={ownerDraft?.revision ?? 0}",
     );
+    expect(dashboardPage).toContain("initialRevision={loaded.revision}");
     expect(dashboard).toContain(
       "useState(initialDraftRevision)",
     );
     expect(dashboard).toContain("expectedRevision: savedRevision");
-    expect(restaurantSaveRoute).toContain('code: "DRAFT_REVISION_REQUIRED"');
+    expect(restaurantSaveRoute).toContain("saveAuthorizedSiteDraft");
+    expect(ownerSiteSave).toContain('code: "EXPECTED_REVISION_REQUIRED"');
     expect(dashboard).toContain("expectedRevision: revisionToPublish");
+    expect(foodRetailDashboard).toContain("expectedRevision: revision");
     expect(restaurantPublishRoute).toContain(
       'code: "DRAFT_REVISION_CONFLICT"',
+    );
+  });
+
+  it("keeps food retail review private at the UI, API and service boundaries", () => {
+    expect(foodRetailDashboard).toContain(
+      "Public publishing and rollback stay unavailable",
+    );
+    expect(foodRetailDashboard).not.toContain("publishDraft");
+    expect(foodRetailDashboard).not.toContain("/publish");
+    expect(restaurantPublishRoute).toContain(
+      "publicationCapabilityFailureResponse",
+    );
+    expect(rollbackRoute).toContain(
+      "publicationCapabilityFailureResponse",
+    );
+    expect(sitePublication.match(/assertVerticalPublicationEnabled\(input\.vertical\)/g))
+      .toHaveLength(2);
+    expect(sites).toContain(
+      "!isVerticalPublicationEnabled(version.vertical)",
     );
   });
 

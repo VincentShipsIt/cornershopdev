@@ -7,6 +7,7 @@ import {
   mock,
   test,
 } from "bun:test";
+import type { Prisma } from "@/generated/prisma/client";
 
 mock.module("server-only", () => ({}));
 mock.module("next/cache", () => ({
@@ -28,13 +29,17 @@ const siteId = `site-publication-${randomUUID()}`;
 const organizationId = `site-publication-org-${randomUUID()}`;
 const userId = `site-publication-user-${randomUUID()}`;
 const slug = `site-publication-${randomUUID()}`;
+const foodSiteId = `food-retail-publication-${randomUUID()}`;
+const foodSlug = `food-retail-publication-${randomUUID()}`;
 const actor = { id: userId, email: `${userId}@example.test` };
 
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let sampleSiteDraft: typeof import("@/lib/restaurant").sampleSiteDraft;
+let sampleFoodRetailDraft: typeof import("@/lib/verticals/food-retail/fixtures").sampleFoodRetailDraft;
 let publishSiteDraft: typeof import("@/lib/site-publication").publishSiteDraft;
 let rollbackPublishedSiteVersion: typeof import("@/lib/site-publication").rollbackPublishedSiteVersion;
 let updateSiteDraft: typeof import("@/lib/site-persistence").updateSiteDraft;
+let findOwnerSiteDraft: typeof import("@/lib/sites").findOwnerSiteDraft;
 let findPublishedSiteView: typeof import("@/lib/sites").findPublishedSiteView;
 let findSiteView: typeof import("@/lib/sites").findSiteView;
 let localizeSiteDraft: typeof import("@/lib/site-draft").localizeSiteDraft;
@@ -55,6 +60,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
   beforeAll(async () => {
     const database = await import("@/lib/db");
     const restaurant = await import("@/lib/restaurant");
+    const foodRetail = await import("@/lib/verticals/food-retail/fixtures");
     const publication = await import("@/lib/site-publication");
     const persistence = await import("@/lib/site-persistence");
     const sites = await import("@/lib/sites");
@@ -69,10 +75,12 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
 
     db = database.getDb();
     sampleSiteDraft = restaurant.sampleSiteDraft;
+    sampleFoodRetailDraft = foodRetail.sampleFoodRetailDraft;
     publishSiteDraft = publication.publishSiteDraft;
     rollbackPublishedSiteVersion =
       publication.rollbackPublishedSiteVersion;
     updateSiteDraft = persistence.updateSiteDraft;
+    findOwnerSiteDraft = sites.findOwnerSiteDraft;
     findPublishedSiteView = sites.findPublishedSiteView;
     findSiteView = sites.findSiteView;
     localizeSiteDraft = siteDraft.localizeSiteDraft;
@@ -173,11 +181,21 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         verifiedAt: new Date(),
       },
     });
+    await db.site.create({
+      data: {
+        id: foodSiteId,
+        slug: foodSlug,
+        name: sampleFoodRetailDraft.name,
+        vertical: Vertical.FOOD_RETAIL,
+        attributes: sampleFoodRetailDraft.attributes,
+        organizationId,
+      },
+    });
   });
 
   afterAll(async () => {
     if (!db) return;
-    await db.site.deleteMany({ where: { id: siteId } });
+    await db.site.deleteMany({ where: { id: { in: [siteId, foodSiteId] } } });
     await db.organization.deleteMany({ where: { id: organizationId } });
     await db.user.deleteMany({ where: { id: userId } });
   });
@@ -460,6 +478,141 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     });
   });
 
+  test("round-trips nullable, evidence-backed food-retail stock separately from visibility", async () => {
+    const editedDraft = structuredClone(sampleFoodRetailDraft);
+    editedDraft.slug = foodSlug;
+    editedDraft.catalogSections[0].items[0].available = false;
+    editedDraft.catalogSections[0].items[0].attributes.visible = true;
+    editedDraft.catalogSections[0].items[0].attributes.stockSourceUrl =
+      "https://example.com/maison-levain/daily-breads";
+    editedDraft.catalogSections[1].items[0].available = null;
+    editedDraft.catalogSections[1].items[0].attributes.visible = true;
+    editedDraft.catalogSections[1].items[0].attributes.stockSourceUrl = null;
+
+    await updateSiteDraft(foodSlug, editedDraft, Vertical.FOOD_RETAIL);
+    const reloaded = await findSiteView(foodSlug);
+
+    expect(reloaded?.draft.catalogSections[0].items[0]).toMatchObject({
+      available: false,
+      attributes: {
+        visible: true,
+        stockSourceUrl:
+          "https://example.com/maison-levain/daily-breads",
+      },
+    });
+    expect(reloaded?.draft.catalogSections[1].items[0]).toMatchObject({
+      available: null,
+      attributes: {
+        visible: true,
+        stockSourceUrl: null,
+      },
+    });
+  });
+
+  test("keeps legacy food-retail snapshots private and rejects publish or rollback without mutation", async () => {
+    const canonicalDraft = structuredClone(sampleFoodRetailDraft);
+    canonicalDraft.slug = foodSlug;
+    await updateSiteDraft(foodSlug, canonicalDraft, Vertical.FOOD_RETAIL);
+    const loaded = await findOwnerSiteDraft(foodSlug);
+    if (!loaded) throw new Error("Expected the food editor draft");
+    const reviewed = await updateSiteDraft(
+      foodSlug,
+      {
+        ...(loaded.draft as typeof sampleFoodRetailDraft),
+        description: "Reviewed food-retail editor save.",
+      },
+      Vertical.FOOD_RETAIL,
+      { actor, expectedRevision: loaded.revision },
+    );
+    expect((await findOwnerSiteDraft(foodSlug))?.revision).toBe(
+      reviewed.revision,
+    );
+    expect((await findSiteView(foodSlug))?.draft.description).toBe(
+      "Reviewed food-retail editor save.",
+    );
+
+    const privateView = await findSiteView(foodSlug);
+    if (!privateView) throw new Error("Expected private food-retail preview");
+    // Each value was parsed by the registered draft/theme schemas immediately
+    // above; the casts bridge those JSON-safe domain types to Prisma's write type.
+    const legacyVersion = await db.siteVersion.create({
+      data: {
+        siteId: foodSiteId,
+        version: 1,
+        vertical: Vertical.FOOD_RETAIL,
+        theme: privateView.theme.selection as Prisma.InputJsonValue,
+        themeVersion: privateView.theme.version,
+        palette: privateView.draft.palette as Prisma.InputJsonValue,
+        content: privateView.draft as Prisma.InputJsonValue,
+        translations:
+          privateView.draft.translations as Prisma.InputJsonValue,
+        integrations:
+          privateView.draft.integrations as Prisma.InputJsonValue,
+        publishedAt: new Date(),
+        publishedBy: actor.id,
+        changeSummary: "Legacy snapshot created before the launch gate",
+      },
+    });
+    await db.site.update({
+      where: { id: foodSiteId },
+      data: {
+        status: "CLAIMED",
+        publishedSiteVersionId: legacyVersion.id,
+      },
+    });
+    const before = await db.site.findUniqueOrThrow({
+      where: { id: foodSiteId },
+      select: {
+        status: true,
+        draftRevision: true,
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true, auditEvents: true } },
+      },
+    });
+
+    await expect(
+      publishSiteDraft({
+        siteId: foodSiteId,
+        slug: foodSlug,
+        vertical: Vertical.FOOD_RETAIL,
+        actor,
+        changeSummary: "Food publishing must stay closed",
+        expectedRevision: reviewed.revision,
+      }),
+    ).rejects.toMatchObject({
+      name: "SitePublicationCapabilityError",
+      message: "Publishing is not available for this vertical",
+    });
+    await expect(
+      rollbackPublishedSiteVersion({
+        siteId: foodSiteId,
+        slug: foodSlug,
+        vertical: Vertical.FOOD_RETAIL,
+        targetSiteVersionId: legacyVersion.id,
+        actor,
+      }),
+    ).rejects.toMatchObject({
+      name: "SitePublicationCapabilityError",
+      message: "Publishing is not available for this vertical",
+    });
+
+    expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: foodSiteId },
+        select: {
+          status: true,
+          draftRevision: true,
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true, auditEvents: true } },
+        },
+      }),
+    ).toEqual(before);
+    expect(await findPublishedSiteView(foodSlug)).toBeNull();
+    expect((await findSiteView(foodSlug))?.draft.description).toBe(
+      "Reviewed food-retail editor save.",
+    );
+  });
+
   test("versions and audits authorized integration saves without publishing", async () => {
     const before = await db.site.findUniqueOrThrow({
       where: { id: siteId },
@@ -536,6 +689,47 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       draftContentDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       integrationUrlDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       publishedSiteVersionIdAtSave: before.publishedSiteVersionId,
+    });
+  });
+
+  test("rejects the second first-save from two owner tabs loaded at the same revision", async () => {
+    const [firstTab, secondTab] = await Promise.all([
+      findOwnerSiteDraft(slug),
+      findOwnerSiteDraft(slug),
+    ]);
+    if (!firstTab || !secondTab) {
+      throw new Error("Expected both owner tabs to load the persisted draft");
+    }
+    expect(secondTab.revision).toBe(firstTab.revision);
+    expect(await findSiteView(slug)).not.toHaveProperty("draftRevision");
+
+    const firstSave = await updateSiteDraft(
+      slug,
+      {
+        ...(firstTab.draft as typeof sampleSiteDraft),
+        description: "Saved from the first independently loaded owner tab.",
+      },
+      Vertical.RESTAURANT,
+      { actor, expectedRevision: firstTab.revision },
+    );
+
+    await expect(
+      updateSiteDraft(
+        slug,
+        {
+          ...(secondTab.draft as typeof sampleSiteDraft),
+          description: "This stale owner tab must not overwrite the first.",
+        },
+        Vertical.RESTAURANT,
+        { actor, expectedRevision: secondTab.revision },
+      ),
+    ).rejects.toMatchObject({
+      name: "DraftRevisionConflictError",
+      currentRevision: firstSave.revision,
+    });
+
+    expect((await findOwnerSiteDraft(slug))?.draft).toMatchObject({
+      description: "Saved from the first independently loaded owner tab.",
     });
   });
 

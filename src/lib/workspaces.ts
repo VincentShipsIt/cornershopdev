@@ -1,4 +1,5 @@
 import "server-only";
+import type { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { ownerMembershipWhere } from "@/lib/owner-membership";
 
@@ -6,7 +7,7 @@ export type AccountWorkspace = {
   id: string;
   slug: string;
   name: string;
-  vertical: "RESTAURANT" | "BEAUTY";
+  vertical: Vertical;
 };
 
 export function listAccountWorkspaces(userId: string): Promise<AccountWorkspace[]> {

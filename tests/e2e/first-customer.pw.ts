@@ -7,6 +7,34 @@ import {
 import { execFileSync } from "node:child_process";
 import { e2e } from "./support/fixtures";
 
+test("private food-retail preview exposes no claim page, invitation, or checkout", async ({
+  page,
+  request,
+}) => {
+  const claimPage = await page.goto(`/claim/${e2e.foodSlug}`);
+  expect(claimPage?.status()).toBe(404);
+  await expect(page.getByText(e2e.foodName)).not.toBeVisible();
+
+  const invitation = await request.post("/api/claim-invitations", {
+    headers: { Origin: "http://127.0.0.1:3100" },
+    data: { siteSlug: e2e.foodSlug, email: e2e.foodOwnerEmail },
+  });
+  expect(invitation.status()).toBe(409);
+
+  const checkout = await request.post("/api/checkout", {
+    headers: { Origin: "http://127.0.0.1:3100" },
+    data: {
+      plan: "starter",
+      siteSlug: e2e.foodSlug,
+      invitationToken: e2e.foodInvitationToken,
+    },
+  });
+  expect(checkout.status()).toBe(409);
+  expect(await checkout.json()).toMatchObject({
+    error: "This site already has an owner or is not available to claim.",
+  });
+});
+
 test("claim, paid webhook, sign-in, workspace selection, private save, atomic publish, and live routing", async ({
   page,
   request,
@@ -23,7 +51,9 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   const claimToken = new URL(claimLink).hash.replace(/^#claim_token=/, "");
 
   await page.goto(claimLink);
-  await expect(page.getByText("One-time ownership link attached")).toBeVisible();
+  await expect(
+    page.getByText("One-time ownership link attached"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Claim and continue" }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:4100\/checkout\/cs_test_/);
   await expect(page.getByText("€49.00 per month")).toBeVisible();
@@ -44,7 +74,9 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
     purpose: "SITE",
     siteId: e2e.targetId,
   });
-  await expect(page.getByText(`Good afternoon, ${e2e.targetName}.`)).toBeVisible();
+  await expect(
+    page.getByText(`Good afternoon, ${e2e.targetName}.`),
+  ).toBeVisible();
 
   const replay = await request.post("/api/checkout", {
     headers: {
@@ -60,18 +92,26 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   expect(replay.status()).toBe(409);
 
   const logout = await page.evaluate(async () =>
-    fetch("/api/auth/logout", { method: "POST" }).then((response) =>
-      response.status,
+    fetch("/api/auth/logout", { method: "POST" }).then(
+      (response) => response.status,
     ),
   );
   expect(logout).toBe(200);
   await page.goto("/sign-in");
   await page.locator('input[type="email"]').fill(e2e.ownerEmail);
   await page.getByRole("button", { name: "Email me a secure link" }).click();
-  await expect(page.getByRole("heading", { name: "Check your inbox." })).toBeVisible();
-  const signInLink = await latestMailboxLink(request, e2e.ownerEmail, claimLink);
+  await expect(
+    page.getByRole("heading", { name: "Check your inbox." }),
+  ).toBeVisible();
+  const signInLink = await latestMailboxLink(
+    request,
+    e2e.ownerEmail,
+    claimLink,
+  );
   await page.goto(signInLink);
-  await expect(page.getByRole("heading", { name: "Confirm it's you." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Confirm it's you." }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Continue securely" }).click();
   await expect(page).toHaveURL(/\/workspace\/select$/);
   await expect(page.getByText(e2e.targetName)).toBeVisible();
@@ -131,7 +171,9 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
     expectedRevision: initialSite.draftRevision,
   });
   const firstSave = (await firstSaveResponse.json()) as { revision: number };
-  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Saved", exact: true }),
+  ).toBeVisible();
 
   await staleRestaurantName.fill(`${e2e.editedName} stale`);
   const staleSaveResponsePromise = staleEditor.waitForResponse(
@@ -150,9 +192,11 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
     currentRevision: firstSave.revision,
   });
   await expect(
-    staleEditor.getByText(
-      "This draft was updated elsewhere. Reload before saving again.",
-    ).first(),
+    staleEditor
+      .getByText(
+        "This draft was updated elsewhere. Reload before saving again.",
+      )
+      .first(),
   ).toBeVisible();
   await staleEditor.close();
 
@@ -164,7 +208,9 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
 
   page.on("dialog", async (dialog) => {
     await dialog.accept(
-      dialog.type() === "prompt" ? "Publish browser-tested owner edit" : undefined,
+      dialog.type() === "prompt"
+        ? "Publish browser-tested owner edit"
+        : undefined,
     );
   });
   const publishSaveResponsePromise = page.waitForResponse(
@@ -180,13 +226,17 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   const publishSaveResponse = await publishSaveResponsePromise;
   expect(publishSaveResponse.status()).toBe(200);
-  const publishSave = (await publishSaveResponse.json()) as { revision: number };
+  const publishSave = (await publishSaveResponse.json()) as {
+    revision: number;
+  };
   const publishResponse = await publishResponsePromise;
   expect(publishResponse.status()).toBe(200);
   expect(publishResponse.request().postDataJSON()).toMatchObject({
     expectedRevision: publishSave.revision,
   });
-  await expect(page.getByRole("button", { name: "Published v1" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Published v1" }),
+  ).toBeVisible();
 
   const live = await request.get("http://127.0.0.1:3100/", {
     headers: { Host: `${e2e.targetSlug}.restofront.com` },
@@ -211,8 +261,8 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
 
   expect(
     await page.evaluate(async () =>
-      fetch("/api/auth/logout", { method: "POST" }).then((response) =>
-        response.status,
+      fetch("/api/auth/logout", { method: "POST" }).then(
+        (response) => response.status,
       ),
     ),
   ).toBe(200);
@@ -248,7 +298,8 @@ async function latestMailboxLink(
       );
       if (!response.ok()) return null;
       const payload = (await response.json()) as { html?: string };
-      const link = payload.html?.match(/href="([^"]+)"/)?.[1]
+      const link = payload.html
+        ?.match(/href="([^"]+)"/)?.[1]
         ?.replaceAll("&amp;", "&");
       return link && link !== previous ? link : null;
     })
@@ -257,7 +308,9 @@ async function latestMailboxLink(
     `http://127.0.0.1:4100/_mailbox/latest?to=${encodeURIComponent(email)}`,
   );
   const payload = (await response.json()) as { html: string };
-  const link = payload.html.match(/href="([^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
+  const link = payload.html
+    .match(/href="([^"]+)"/)?.[1]
+    ?.replaceAll("&amp;", "&");
   if (!link || link === previous) throw new Error("Mailbox link unavailable");
   return link;
 }

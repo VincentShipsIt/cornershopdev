@@ -16,6 +16,9 @@ import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
+import { FoodRetailDashboard } from "@/app/dashboard/food-retail-dashboard";
+import { findSiteDraft } from "@/lib/sites";
+import type { FoodRetailSiteDraft } from "@/lib/verticals/food-retail/schema";
 import { EditorialFontScope } from "@/components/fonts/editorial-font-scope";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -41,6 +44,21 @@ export default async function DashboardPage({
   const access =
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
+
+  if (access?.ok && access.site.vertical === Vertical.FOOD_RETAIL) {
+    const loaded = await findSiteDraft(access.site.slug);
+    if (!loaded || loaded.vertical !== Vertical.FOOD_RETAIL) redirect("/sign-in");
+    return (
+      <EditorialFontScope>
+        <FoodRetailDashboard
+          email={access.user.email}
+          brand={await resolveRequestBrand()}
+          initialDraft={loaded.draft as FoodRetailSiteDraft}
+          initialRevision={loaded.revision}
+        />
+      </EditorialFontScope>
+    );
+  }
 
   if (access?.ok && access.site.vertical !== Vertical.RESTAURANT) {
     return (
