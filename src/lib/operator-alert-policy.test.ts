@@ -41,11 +41,11 @@ describe("operator alert policy", () => {
     expect(operatorAlertRetryAt(1, now).toISOString()).toBe(
       "2026-07-27T12:01:00.000Z",
     );
-    expect(operatorAlertRetryAt(3, now).toISOString()).toBe(
-      "2026-07-27T12:15:00.000Z",
+    expect(operatorAlertRetryAt(2, now).toISOString()).toBe(
+      "2026-07-27T12:05:00.000Z",
     );
-    expect(operatorAlertRetryAt(99, now).toISOString()).toBe(
-      "2026-07-27T12:15:00.000Z",
+    expect(() => operatorAlertRetryAt(3, now)).toThrow(
+      "No retry is scheduled after terminal attempt 3",
     );
   });
 
