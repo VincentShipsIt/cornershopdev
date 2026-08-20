@@ -145,6 +145,30 @@ describe.skipIf(!enabled)(
       const acceptedLegacyId = `legacy-accepted-${suffix}`;
       const validApprovalId = `operator-valid-${suffix}`;
 
+      expect(
+        await db.$queryRaw<
+          Array<{
+            constraintName: string;
+            constraintType: string;
+            validated: boolean;
+          }>
+        >`
+          SELECT
+            conname AS "constraintName",
+            contype AS "constraintType",
+            convalidated AS "validated"
+          FROM pg_constraint
+          WHERE conname = 'ClaimInvitation_operator_approval_evidence_check'
+            AND conrelid = '"ClaimInvitation"'::regclass
+        `,
+      ).toEqual([
+        {
+          constraintName: "ClaimInvitation_operator_approval_evidence_check",
+          constraintType: "c",
+          validated: true,
+        },
+      ]);
+
       const rejectedOldBinaryInsert = await db.$executeRaw`
           INSERT INTO "ClaimInvitation" (
             "id", "email", "tokenHash", "proofMethod", "expiresAt", "siteId"
@@ -157,12 +181,6 @@ describe.skipIf(!enabled)(
           (error: unknown) => error,
         );
       expect(rejectedOldBinaryInsert).toMatchObject({ code: "P2010" });
-      expect(
-        String(
-          (rejectedOldBinaryInsert as { meta?: { message?: unknown } }).meta
-            ?.message,
-        ),
-      ).toContain("ClaimInvitation_operator_approval_evidence_check");
 
       await db.$executeRaw`
         INSERT INTO "ClaimInvitation" (
