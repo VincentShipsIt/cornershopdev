@@ -47,6 +47,8 @@ type PhotoLibrary = {
     committedMicros: number;
     ceilingMicros: number;
     perImageCeilingMicros: number;
+    enhancementsDisabled: boolean;
+    disableReason: string | null;
   };
 };
 
@@ -88,7 +90,7 @@ export function PhotoLibraryPanel({
         .filter(
           (photo) =>
             photo.reviewStatus === "APPROVED" &&
-            ["NOT_REQUESTED", "FAILED"].includes(photo.enhancementStatus),
+            photo.enhancementStatus === "NOT_REQUESTED",
         )
         .map((photo) => photo.id) ?? [],
     [library],
@@ -193,7 +195,11 @@ export function PhotoLibraryPanel({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, ...extra }),
+          body: JSON.stringify({
+            action,
+            ...extra,
+            expectedRevision: library?.draftRevision,
+          }),
         },
       );
       const body = (await response.json()) as PhotoLibrary & { error?: string };
@@ -364,10 +370,15 @@ export function PhotoLibraryPanel({
         <div>
           <p className="text-sm font-medium">Enhancement budget</p>
           <p className="text-xs text-muted-foreground">
-            {library ? `${formatCost(library.budget.committedMicros)} committed of ${formatCost(library.budget.ceilingMicros)} per site` : "Loading cost controls…"}
+            {library ? `${formatCost(library.budget.committedMicros)} recorded or reserved of ${formatCost(library.budget.ceilingMicros)} admission ceiling` : "Loading cost controls…"}
           </p>
+          {library?.budget.enhancementsDisabled ? (
+            <p role="alert" className="text-xs text-destructive">
+              Enhancements are disabled: {library.budget.disableReason}. Authentic originals remain available.
+            </p>
+          ) : null}
         </div>
-        <Button type="button" disabled={approvedIds.length === 0 || Boolean(pending)} onClick={() => void enhanceApproved()}>
+        <Button type="button" disabled={approvedIds.length === 0 || Boolean(pending) || Boolean(library?.budget.enhancementsDisabled)} onClick={() => void enhanceApproved()}>
           {pending === "enhance" ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
           Enhance approved ({approvedIds.length})
         </Button>

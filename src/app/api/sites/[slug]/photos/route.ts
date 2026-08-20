@@ -7,7 +7,7 @@ import {
   PhotoLibraryError,
 } from "@/lib/photo-library";
 import {
-  parseBoundedPhotoForm,
+  parseBoundedPhotoIngestBody,
   PhotoUploadBodyError,
 } from "@/lib/photo-upload-body";
 import { limitPhotoIngest } from "@/lib/rate-limit";
@@ -51,9 +51,9 @@ export async function POST(
     );
   }
   try {
-    const contentType = request.headers.get("content-type") ?? "";
-    if (contentType.startsWith("multipart/form-data")) {
-      const form = await parseBoundedPhotoForm(request);
+    const body = await parseBoundedPhotoIngestBody(request);
+    if (body.kind === "multipart") {
+      const form = body.form;
       const photo = form.get("photo");
       if (!(photo instanceof File)) {
         throw new PhotoLibraryError("Choose an image file to upload");
@@ -77,7 +77,7 @@ export async function POST(
         { status: 201 },
       );
     }
-    const input = referenceSchema.parse(await request.json());
+    const input = referenceSchema.parse(body.value);
     return Response.json(
       await ingestOwnerPhoto({
         siteId: access.site.id,

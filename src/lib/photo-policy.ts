@@ -90,7 +90,9 @@ export function enhancementReservationMicros(input: {
   if (input.configuredEstimateMicros > input.perImageCeilingMicros) {
     throw new Error("The configured enhancement exceeds the per-image ceiling");
   }
-  return input.configuredEstimateMicros;
+  // Admission reserves the worst configured outcome. The estimate is useful
+  // for pricing telemetry, but cannot protect a hard site ceiling.
+  return input.perImageCeilingMicros;
 }
 
 export function canReservePhotoEnhancement(input: {
@@ -108,10 +110,22 @@ export function canReservePhotoEnhancement(input: {
 export function photoEnhancementIdempotencyKey(input: {
   siteId: string;
   photoId: string;
-  requestKey: string;
+  contentSha256: string;
+  originalStorageKey: string;
+  model: string;
+  configVersion: string;
 }): string {
   return `photo:${createHash("sha256")
-    .update(`${input.siteId}\0${input.photoId}\0${input.requestKey}`)
+    .update(
+      [
+        input.siteId,
+        input.photoId,
+        input.contentSha256,
+        input.originalStorageKey,
+        input.model,
+        input.configVersion,
+      ].join("\0"),
+    )
     .digest("hex")}`;
 }
 

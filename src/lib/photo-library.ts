@@ -11,6 +11,10 @@ import { enhanceSiteImage } from "@/lib/ai/site-generation";
 import { getDb } from "@/lib/db";
 import { fetchPublicImage, type DiscoveredSourcePhoto } from "@/lib/importer";
 import {
+  PhotoImageValidationError,
+  validatePhotoImageBytes,
+} from "@/lib/photo-image-validation";
+import {
   canReservePhotoEnhancement,
   enhancementReservationMicros,
   getPhotoSystemConfig,
@@ -39,35 +43,7 @@ export class PhotoLibraryError extends Error {
 }
 
 export type PhotoLibraryDto = Awaited<ReturnType<typeof getPhotoLibrary>>;
-
-export function detectSupportedImageMediaType(data: Uint8Array): string | null {
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    data.length >= 8 &&
-    Buffer.from(data.subarray(0, 8)).equals(
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    )
-  ) {
-    return "image/png";
-  }
-  if (
-    data.length >= 12 &&
-    Buffer.from(data.subarray(0, 4)).toString("ascii") === "RIFF" &&
-    Buffer.from(data.subarray(8, 12)).toString("ascii") === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  if (
-    data.length >= 12 &&
-    Buffer.from(data.subarray(4, 8)).toString("ascii") === "ftyp" &&
-    /^(?:avif|avis)$/.test(Buffer.from(data.subarray(8, 12)).toString("ascii"))
-  ) {
-    return "image/avif";
-  }
-  return null;
-}
+export { detectSupportedImageMediaType } from "@/lib/photo-image-validation";
 
 function actorLabel(actor: { id: string; role: "owner" | "operator" }) {
   return `${actor.role}:${actor.id}`;
@@ -98,8 +74,6 @@ export async function ingestDiscoveredSitePhotos(input: {
           sourceKind: "FIRST_PARTY",
           reviewStatus: "PENDING",
           candidateUsages: photo.candidateUsages,
-          width: photo.width,
-          height: photo.height,
           data: fetched.data,
           claimedMediaType: fetched.mediaType,
           actor: input.actor ?? "system:photo-ingest",
@@ -171,8 +145,6 @@ export async function ingestOwnerPhoto(input: {
     reviewStatus: "APPROVED",
     candidateUsages:
       input.candidateUsages.length > 0 ? input.candidateUsages : ["GALLERY"],
-    width: null,
-    height: null,
     data,
     claimedMediaType,
     actor: actorLabel(input.actor),
@@ -190,24 +162,27 @@ async function ingestPhotoBytes(input: {
   sourceKind: PhotoSourceKind;
   reviewStatus: "PENDING" | "APPROVED";
   candidateUsages: PhotoUsage[];
-  width: number | null;
-  height: number | null;
   data: Uint8Array;
   claimedMediaType: string;
   actor: string;
 }): Promise<"ingested" | "deduplicated"> {
-  const mediaType = detectSupportedImageMediaType(input.data);
-  if (!mediaType) {
-    throw new PhotoLibraryError("The file is not a supported image");
-  }
-  if (mediaType !== input.claimedMediaType) {
-    throw new PhotoLibraryError("The image content does not match its media type");
+  let validatedImage: Awaited<ReturnType<typeof validatePhotoImageBytes>>;
+  try {
+    validatedImage = await validatePhotoImageBytes({
+      data: input.data,
+      claimedMediaType: input.claimedMediaType,
+    });
+  } catch (error) {
+    if (error instanceof PhotoImageValidationError) {
+      throw new PhotoLibraryError(error.message, 400, error.code);
+    }
+    throw error;
   }
   const stored = await storeImmutableSiteOriginal({
     siteSlug: input.siteSlug,
     vertical: input.vertical,
     data: input.data,
-    mediaType,
+    mediaType: validatedImage.mediaType,
   });
   const db = getDb();
   const existing = await db.photoAsset.findUnique({
@@ -232,10 +207,10 @@ async function ingestPhotoBytes(input: {
           contentSha256: stored.sha256,
           originalStorageKey: stored.key,
           originalUrl: stored.url,
-          mediaType,
+          mediaType: validatedImage.mediaType,
           byteLength: input.data.byteLength,
-          width: input.width,
-          height: input.height,
+          width: validatedImage.width,
+          height: validatedImage.height,
           candidateUsages: [...new Set(input.candidateUsages)],
           reviewStatus: input.reviewStatus,
           reviewedAt: input.reviewStatus === "APPROVED" ? new Date() : null,
@@ -314,7 +289,7 @@ export async function getPhotoLibrary(siteId: string) {
       where: { id: siteId },
       select: { draftRevision: true },
     }),
-    committedSiteSpendMicros(siteId),
+    photoSiteSpendState(siteId),
   ]);
   const config = getPhotoSystemConfig();
   return {
@@ -332,22 +307,50 @@ export async function getPhotoLibrary(siteId: string) {
       itemIndex: item.position,
     })),
     budget: {
-      committedMicros: siteSpend,
+      committedMicros: siteSpend.committedMicros,
       ceilingMicros: config.perSiteCostCeilingMicros,
       perImageCeilingMicros: config.perImageCostCeilingMicros,
+      enhancementsDisabled: siteSpend.enhancementsDisabled,
+      disableReason: siteSpend.disableReason,
     },
   };
 }
 
-async function committedSiteSpendMicros(siteId: string): Promise<number> {
+async function photoSiteSpendState(siteId: string): Promise<{
+  committedMicros: number;
+  enhancementsDisabled: boolean;
+  disableReason: "PROVIDER_COST_CEILING_EXCEEDED" | "SITE_COST_CEILING" | null;
+}> {
+  const config = getPhotoSystemConfig();
   const runs = await getDb().photoEnhancementRun.findMany({
     where: { siteId },
-    select: { estimatedCostMicros: true, actualCostMicros: true },
+    select: {
+      estimatedCostMicros: true,
+      actualCostMicros: true,
+      errorCode: true,
+    },
   });
-  return runs.reduce(
+  const committedMicros = runs.reduce(
     (total, run) => total + (run.actualCostMicros ?? run.estimatedCostMicros),
     0,
   );
+  const providerOverrun = runs.some(
+    (run) => run.errorCode === "PROVIDER_COST_CEILING_EXCEEDED",
+  );
+  const siteAdmissionClosed = !canReservePhotoEnhancement({
+    committedMicros,
+    reservationMicros: config.perImageCostCeilingMicros,
+    siteCeilingMicros: config.perSiteCostCeilingMicros,
+  });
+  return {
+    committedMicros,
+    enhancementsDisabled: providerOverrun || siteAdmissionClosed,
+    disableReason: providerOverrun
+      ? "PROVIDER_COST_CEILING_EXCEEDED"
+      : siteAdmissionClosed
+        ? "SITE_COST_CEILING"
+        : null,
+  };
 }
 
 export type PhotoReviewAction =
@@ -364,11 +367,28 @@ export type PhotoReviewAction =
 export async function reviewPhoto(input: {
   siteId: string;
   photoId: string;
+  expectedRevision?: number;
   actor: { id: string; role: "owner" | "operator" };
   review: PhotoReviewAction;
 }) {
   const db = getDb();
-  await db.$transaction(async (transaction) => {
+  const persistReview = async (transaction: Prisma.TransactionClient) => {
+    // Serialize every selection mutation for a site. The partial unique index is
+    // the final invariant; this lock also keeps the Site projection in sync.
+    const [lockedSite] = await transaction.$queryRaw<Array<{ draftRevision: number }>>`
+      SELECT "draftRevision" FROM "Site" WHERE "id" = ${input.siteId} FOR UPDATE
+    `;
+    if (!lockedSite) throw new PhotoLibraryError("Site not found", 404);
+    if (
+      input.expectedRevision !== undefined &&
+      lockedSite.draftRevision !== input.expectedRevision
+    ) {
+      throw new PhotoLibraryError(
+        "This draft changed in another tab. Refresh the photo library and try again.",
+        409,
+        "DRAFT_REVISION_CONFLICT",
+      );
+    }
     const photo = await transaction.photoAsset.findFirst({
       where: { id: input.photoId, siteId: input.siteId },
     });
@@ -581,8 +601,21 @@ export async function reviewPhoto(input: {
         metadata: { photoId: photo.id, ...input.review },
       },
     });
-  });
-  return getPhotoLibrary(input.siteId);
+  };
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await db.$transaction(persistReview, { isolationLevel: "Serializable" });
+      return getPhotoLibrary(input.siteId);
+    } catch (error) {
+      const retryable =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === "P2034" || error.code === "P2002");
+      if (retryable && attempt < 2) continue;
+      throw error;
+    }
+  }
+  throw new Error("The photo review could not be persisted");
 }
 
 async function incrementDraftRevision(
@@ -663,17 +696,11 @@ export async function enhanceApprovedPhotos(input: {
     photoIds,
     config.enhancementConcurrency,
     async (photoId) => {
-      const idempotencyKey = photoEnhancementIdempotencyKey({
-        siteId: input.siteId,
-        photoId,
-        requestKey: input.idempotencyKey,
-      });
       let run: Awaited<ReturnType<typeof reserveEnhancementRun>>;
       try {
         run = await reserveEnhancementRun({
           siteId: input.siteId,
           photoId,
-          idempotencyKey,
           actor: actorLabel(input.actor),
           model: config.model,
           configVersion,
@@ -691,6 +718,10 @@ export async function enhanceApprovedPhotos(input: {
       if (run.status !== "QUEUED") return run;
       const claimed = await claimEnhancementRun(run.id, config.enhancementConcurrency);
       if (!claimed) {
+        const replay = await getDb().photoEnhancementRun.findUniqueOrThrow({
+          where: { id: run.id },
+        });
+        if (replay.status !== "QUEUED") return replay;
         await failUnclaimedEnhancementRun({
           runId: run.id,
           siteId: input.siteId,
@@ -704,6 +735,7 @@ export async function enhanceApprovedPhotos(input: {
           errorCode: "CONCURRENCY_LIMIT",
         };
       }
+      let actualCostMicros = run.estimatedCostMicros;
       try {
         const photo = await getDb().photoAsset.findFirstOrThrow({
           where: { id: photoId, siteId: input.siteId },
@@ -717,19 +749,39 @@ export async function enhanceApprovedPhotos(input: {
           },
           vertical,
         );
+        actualCostMicros = recordedEnhancementCostMicros(
+          image.costMicros,
+          run.estimatedCostMicros,
+          config.perImageCostCeilingMicros,
+        );
+        if (actualCostMicros > config.perImageCostCeilingMicros) {
+          await failEnhancementCostOverrun({
+            runId: run.id,
+            siteId: input.siteId,
+            photoId,
+            actor: actorLabel(input.actor),
+            actualCostMicros,
+            perImageCeilingMicros: config.perImageCostCeilingMicros,
+          });
+          return {
+            ...run,
+            status: "FAILED" as const,
+            actualCostMicros,
+            errorCode: "PROVIDER_COST_CEILING_EXCEEDED",
+          };
+        }
+        const validatedImage = await validatePhotoImageBytes({
+          data: image.data,
+          claimedMediaType: image.mediaType,
+        });
         const stored = await storeImmutableEnhancedPhoto({
           siteSlug: input.siteSlug,
           vertical: input.vertical,
           sourceSha256: photo.contentSha256,
           configVersion,
           data: image.data,
-          mediaType: image.mediaType,
+          mediaType: validatedImage.mediaType,
         });
-        const actualCostMicros = recordedEnhancementCostMicros(
-          image.costMicros,
-          run.estimatedCostMicros,
-          config.perImageCostCeilingMicros,
-        );
         await getDb().$transaction([
           getDb().photoEnhancementRun.update({
             where: { id: run.id },
@@ -763,20 +815,24 @@ export async function enhanceApprovedPhotos(input: {
                 model: config.model,
                 configVersion,
                 actualCostMicros,
-                ceilingExceeded: actualCostMicros > config.perImageCostCeilingMicros,
+                ceilingExceeded: false,
               },
             },
           }),
         ]);
         return { ...run, status: "SUCCEEDED" as const, actualCostMicros };
-      } catch {
+      } catch (error) {
+        const errorCode =
+          error instanceof PhotoImageValidationError
+            ? "INVALID_DERIVATIVE_OUTPUT"
+            : "MODEL_OR_STORAGE_FAILURE";
         await getDb().$transaction([
           getDb().photoEnhancementRun.update({
             where: { id: run.id },
             data: {
               status: "FAILED",
-              actualCostMicros: run.estimatedCostMicros,
-              errorCode: "MODEL_OR_STORAGE_FAILURE",
+              actualCostMicros,
+              errorCode,
               completedAt: new Date(),
             },
           }),
@@ -789,21 +845,20 @@ export async function enhanceApprovedPhotos(input: {
               siteId: input.siteId,
               type: "photo.enhancement.failed",
               actor: actorLabel(input.actor),
-              metadata: { photoId, runId: run.id, errorCode: "MODEL_OR_STORAGE_FAILURE" },
+              metadata: { photoId, runId: run.id, errorCode, actualCostMicros },
             },
           }),
         ]);
-        return { ...run, status: "FAILED" as const };
+        return { ...run, status: "FAILED" as const, actualCostMicros, errorCode };
       }
     },
   );
   return { results, library: await getPhotoLibrary(input.siteId) };
 }
 
-async function reserveEnhancementRun(input: {
+export async function reserveEnhancementRun(input: {
   siteId: string;
   photoId: string;
-  idempotencyKey: string;
   actor: string;
   model: string;
   configVersion: string;
@@ -813,12 +868,37 @@ async function reserveEnhancementRun(input: {
     configuredEstimateMicros: config.estimatedCostMicros,
     perImageCeilingMicros: config.perImageCostCeilingMicros,
   });
+  const identity = await getDb().photoAsset.findFirst({
+    where: {
+      id: input.photoId,
+      siteId: input.siteId,
+      reviewStatus: "APPROVED",
+    },
+    select: {
+      contentSha256: true,
+      originalStorageKey: true,
+    },
+  });
+  if (!identity) {
+    throw new PhotoLibraryError(
+      "Only approved authentic photos can be enhanced",
+      409,
+    );
+  }
+  const idempotencyKey = photoEnhancementIdempotencyKey({
+    siteId: input.siteId,
+    photoId: input.photoId,
+    contentSha256: identity.contentSha256,
+    originalStorageKey: identity.originalStorageKey,
+    model: input.model,
+    configVersion: input.configVersion,
+  });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await getDb().$transaction(
         async (transaction) => {
       const existing = await transaction.photoEnhancementRun.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
+        where: { idempotencyKey },
       });
       if (existing) return existing;
       const photo = await transaction.photoAsset.findFirst({
@@ -842,7 +922,7 @@ async function reserveEnhancementRun(input: {
           data: {
             siteId: input.siteId,
             photoId: input.photoId,
-            idempotencyKey: input.idempotencyKey,
+            idempotencyKey,
             status: "SKIPPED",
             model: input.model,
             configVersion: input.configVersion,
@@ -870,13 +950,21 @@ async function reserveEnhancementRun(input: {
       }
       const runs = await transaction.photoEnhancementRun.findMany({
         where: { siteId: input.siteId },
-        select: { estimatedCostMicros: true, actualCostMicros: true },
+        select: {
+          estimatedCostMicros: true,
+          actualCostMicros: true,
+          errorCode: true,
+        },
       });
       const committed = runs.reduce(
         (total, run) => total + (run.actualCostMicros ?? run.estimatedCostMicros),
         0,
       );
+      const providerCircuitOpen = runs.some(
+        (run) => run.errorCode === "PROVIDER_COST_CEILING_EXCEEDED",
+      );
       if (
+        providerCircuitOpen ||
         !canReservePhotoEnhancement({
           committedMicros: committed,
           reservationMicros: estimatedCostMicros,
@@ -887,13 +975,15 @@ async function reserveEnhancementRun(input: {
           data: {
             siteId: input.siteId,
             photoId: input.photoId,
-            idempotencyKey: input.idempotencyKey,
+            idempotencyKey,
             status: "SKIPPED",
             model: input.model,
             configVersion: input.configVersion,
             estimatedCostMicros,
             actualCostMicros: 0,
-            errorCode: "SITE_COST_CEILING",
+            errorCode: providerCircuitOpen
+              ? "PROVIDER_COST_CIRCUIT_OPEN"
+              : "SITE_COST_CEILING",
             requestedBy: input.actor,
             completedAt: new Date(),
           },
@@ -906,7 +996,9 @@ async function reserveEnhancementRun(input: {
             metadata: {
               photoId: input.photoId,
               runId: skipped.id,
-              errorCode: "SITE_COST_CEILING",
+              errorCode: providerCircuitOpen
+                ? "PROVIDER_COST_CIRCUIT_OPEN"
+                : "SITE_COST_CEILING",
               committedMicros: committed,
               reservationMicros: estimatedCostMicros,
               siteCeilingMicros: config.perSiteCostCeilingMicros,
@@ -927,7 +1019,7 @@ async function reserveEnhancementRun(input: {
         data: {
           siteId: input.siteId,
           photoId: input.photoId,
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey,
           status: "QUEUED",
           model: input.model,
           configVersion: input.configVersion,
@@ -959,7 +1051,7 @@ async function reserveEnhancementRun(input: {
         error.code === "P2002"
       ) {
         const replay = await getDb().photoEnhancementRun.findUnique({
-          where: { idempotencyKey: input.idempotencyKey },
+          where: { idempotencyKey },
         });
         if (replay) return replay;
       }
@@ -976,7 +1068,7 @@ async function reserveEnhancementRun(input: {
   throw new Error("The enhancement reservation could not be persisted");
 }
 
-async function claimEnhancementRun(runId: string, concurrency: number) {
+export async function claimEnhancementRun(runId: string, concurrency: number) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await getDb().$transaction(
@@ -1070,4 +1162,43 @@ async function failUnclaimedEnhancementRun(input: {
       },
     });
   });
+}
+
+async function failEnhancementCostOverrun(input: {
+  runId: string;
+  siteId: string;
+  photoId: string;
+  actor: string;
+  actualCostMicros: number;
+  perImageCeilingMicros: number;
+}) {
+  await getDb().$transaction([
+    getDb().photoEnhancementRun.update({
+      where: { id: input.runId },
+      data: {
+        status: "FAILED",
+        actualCostMicros: input.actualCostMicros,
+        errorCode: "PROVIDER_COST_CEILING_EXCEEDED",
+        completedAt: new Date(),
+      },
+    }),
+    getDb().photoAsset.update({
+      where: { id: input.photoId },
+      data: { enhancementStatus: "FAILED", activeVariant: "ORIGINAL" },
+    }),
+    getDb().auditEvent.create({
+      data: {
+        siteId: input.siteId,
+        type: "photo.enhancement.cost_ceiling_exceeded",
+        actor: input.actor,
+        metadata: {
+          photoId: input.photoId,
+          runId: input.runId,
+          actualCostMicros: input.actualCostMicros,
+          perImageCeilingMicros: input.perImageCeilingMicros,
+          futureEnhancementsDisabled: true,
+        },
+      },
+    }),
+  ]);
 }

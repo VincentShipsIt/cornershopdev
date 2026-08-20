@@ -1,4 +1,5 @@
 export const MAX_PHOTO_MULTIPART_BODY_BYTES = 12_500_000;
+export const MAX_PHOTO_REFERENCE_BODY_BYTES = 16_384;
 
 export class PhotoUploadBodyError extends Error {
   constructor(
@@ -31,11 +32,12 @@ function declaredBodyLength(request: Request): number | null {
 export async function readBoundedRequestBody(
   request: Request,
   maxBytes: number,
+  tooLargeMessage = "The uploaded image is larger than 12 MB",
 ): Promise<Uint8Array> {
   const declaredLength = declaredBodyLength(request);
   if (declaredLength !== null && declaredLength > maxBytes) {
     throw new PhotoUploadBodyError(
-      "The uploaded image is larger than 12 MB",
+      tooLargeMessage,
       413,
     );
   }
@@ -60,7 +62,7 @@ export async function readBoundedRequestBody(
         // The byte ceiling already terminated parsing; cancellation is cleanup.
       }
       throw new PhotoUploadBodyError(
-        "The uploaded image is larger than 12 MB",
+        tooLargeMessage,
         413,
       );
     }
@@ -80,9 +82,7 @@ export async function readBoundedRequestBody(
   return body;
 }
 
-export async function parseBoundedPhotoForm(
-  request: Request,
-): Promise<FormData> {
+async function parseBoundedPhotoForm(request: Request): Promise<FormData> {
   const contentType = request.headers.get("content-type") ?? "";
   const body = await readBoundedRequestBody(
     request,
@@ -95,4 +95,37 @@ export async function parseBoundedPhotoForm(
   } catch {
     throw new PhotoUploadBodyError("The photo upload form is invalid", 400);
   }
+}
+
+export type BoundedPhotoIngestBody =
+  | { kind: "multipart"; form: FormData }
+  | { kind: "reference"; value: unknown };
+
+/**
+ * Admits only the two documented photo-ingest representations and bounds both
+ * before their respective platform parsers can allocate from attacker input.
+ */
+export async function parseBoundedPhotoIngestBody(
+  request: Request,
+): Promise<BoundedPhotoIngestBody> {
+  const contentType = request.headers.get("content-type") ?? "";
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
+  if (mediaType === "multipart/form-data") {
+    return { kind: "multipart", form: await parseBoundedPhotoForm(request) };
+  }
+  if (mediaType === "application/json") {
+    const body = await readBoundedRequestBody(
+      request,
+      MAX_PHOTO_REFERENCE_BODY_BYTES,
+      "The photo reference request is too large",
+    );
+    return {
+      kind: "reference",
+      value: JSON.parse(new TextDecoder().decode(body)),
+    };
+  }
+  throw new PhotoUploadBodyError(
+    "Use application/json or multipart/form-data for photo ingestion",
+    415,
+  );
 }

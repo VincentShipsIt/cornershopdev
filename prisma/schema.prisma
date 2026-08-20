@@ -287,6 +287,8 @@ model PhotoAsset {
   height                   Int?
   candidateUsages          PhotoUsage[]
   reviewStatus             PhotoReviewStatus      @default(PENDING)
+  /// A partial unique index in 20260820230000_photo_selection_invariants
+  /// permits at most one selected HERO per site.
   selectedUsage            PhotoUsage?
   selectedCatalogItemId    String?                @unique
   selectedCatalogItem      CatalogItem?           @relation(fields: [selectedCatalogItemId], references: [id], onDelete: SetNull)

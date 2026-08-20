@@ -62,6 +62,13 @@ export class SitePublicationTranslationError extends Error {
   }
 }
 
+export class SitePublicationPhotoError extends Error {
+  constructor() {
+    super("Review and select every photo from immutable storage before publishing");
+    this.name = "SitePublicationPhotoError";
+  }
+}
+
 /**
  * Validates the persisted private draft, appends an immutable snapshot, moves
  * the live pointer, and records the audit event in one serializable transaction.
@@ -100,6 +107,11 @@ export async function publishSiteDraft(
             // billing pause by changing PAUSED back to LIVE.
             throw new SitePublicationStateError();
           }
+
+          const selectedPhotos = await tx.photoAsset.findMany({
+            where: { siteId: input.siteId, selectedUsage: { not: null } },
+          });
+          assertPublishablePhotoProjection(site, selectedPhotos);
 
           // `projectSiteDraft` is the private-preview projection. Parsing it
           // here before any write means validation failure cannot create a
@@ -210,6 +222,59 @@ export async function publishSiteDraft(
   }
 
   throw new Error("Site could not be published");
+}
+
+function assertPublishablePhotoProjection(
+  site: Prisma.SiteGetPayload<{ include: typeof siteDraftRelations }>,
+  selectedPhotos: Array<{
+    reviewStatus: "PENDING" | "APPROVED" | "REJECTED";
+    selectedUsage: "HERO" | "GALLERY" | "CATALOG" | null;
+    selectedCatalogItemId: string | null;
+    originalStorageKey: string;
+    originalUrl: string;
+    provenance: "OFFICIAL" | "OWNER" | "PERMISSIONED_UGC";
+    activeVariant: "ORIGINAL" | "ENHANCED";
+    enhancedStorageKey: string | null;
+    enhancedUrl: string | null;
+    enhancedReviewStatus: "PENDING" | "APPROVED" | "REJECTED" | null;
+  }>,
+) {
+  const isStoredAndApproved = (photo: (typeof selectedPhotos)[number]) =>
+    photo.reviewStatus === "APPROVED" &&
+    photo.originalStorageKey.length > 0 &&
+    (photo.activeVariant !== "ENHANCED" ||
+      (photo.enhancedReviewStatus === "APPROVED" &&
+        Boolean(photo.enhancedStorageKey) &&
+        Boolean(photo.enhancedUrl)));
+  const activeUrl = (photo: (typeof selectedPhotos)[number]) =>
+    photo.activeVariant === "ENHANCED" &&
+    photo.enhancedReviewStatus === "APPROVED" &&
+    photo.enhancedUrl
+      ? photo.enhancedUrl
+      : photo.originalUrl;
+
+  const hero = selectedPhotos.find((photo) => photo.selectedUsage === "HERO");
+  const hasHeroProjection = Boolean(
+    site.heroImageUrl || site.heroOriginalImageUrl || site.heroImageProvenance,
+  );
+  if (
+    hasHeroProjection !== Boolean(hero) ||
+    (hero &&
+      (!isStoredAndApproved(hero) ||
+        site.heroImageUrl !== activeUrl(hero) ||
+        site.heroOriginalImageUrl !== hero.originalUrl ||
+        site.heroImageProvenance !== hero.provenance))
+  ) {
+    throw new SitePublicationPhotoError();
+  }
+
+  if (
+    selectedPhotos.some(
+      (photo) => photo.selectedUsage === "GALLERY" && !isStoredAndApproved(photo),
+    )
+  ) {
+    throw new SitePublicationPhotoError();
+  }
 }
 
 export async function getSitePublicationHistory(

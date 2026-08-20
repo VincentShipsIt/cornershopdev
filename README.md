@@ -178,7 +178,8 @@ allow-list; the default does.
 - `PHOTO_ENHANCEMENT_MODEL` pins the validated batch model
 - `PHOTO_ENHANCEMENT_ESTIMATED_COST_MICROS`,
   `PHOTO_ENHANCEMENT_PER_IMAGE_CEILING_MICROS`, and
-  `PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS` reserve spend before provider work
+  `PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS` reserve the full per-image ceiling
+  before provider work; reported overruns fail closed and disable more enhancement
 - `PHOTO_DISCOVERY_MAX_IMAGES`, `PHOTO_INGEST_CONCURRENCY`,
   `PHOTO_ENHANCEMENT_CONCURRENCY`, and `PHOTO_ENHANCEMENT_BATCH_MAX_IMAGES`
   bound crawl/storage/provider fan-out

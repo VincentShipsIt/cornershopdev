@@ -45,26 +45,32 @@ describe("photo-system policy", () => {
     ).toThrow("per-image ceiling");
   });
 
-  it("reserves against the ceiling and uses a bounded provider cost", () => {
+  it("reserves the full ceiling and records provider overruns truthfully", () => {
     expect(
       enhancementReservationMicros({
         configuredEstimateMicros: 25_000,
         perImageCeilingMicros: 50_000,
       }),
-    ).toBe(25_000);
+    ).toBe(50_000);
     expect(recordedEnhancementCostMicros(null, 25_000, 50_000)).toBe(25_000);
-    expect(recordedEnhancementCostMicros(75_000, 25_000, 50_000)).toBe(75_000);
+    const providerOverrun = recordedEnhancementCostMicros(
+      75_000,
+      50_000,
+      50_000,
+    );
+    expect(providerOverrun).toBe(75_000);
+    expect(providerOverrun).toBeGreaterThan(50_000);
     expect(
       canReservePhotoEnhancement({
-        committedMicros: 475_000,
-        reservationMicros: 25_000,
+        committedMicros: 450_000,
+        reservationMicros: 50_000,
         siteCeilingMicros: 500_000,
       }),
     ).toBe(true);
     expect(
       canReservePhotoEnhancement({
-        committedMicros: 475_001,
-        reservationMicros: 25_000,
+        committedMicros: 450_001,
+        reservationMicros: 50_000,
         siteCeilingMicros: 500_000,
       }),
     ).toBe(false);
@@ -74,20 +80,39 @@ describe("photo-system policy", () => {
     const first = photoEnhancementIdempotencyKey({
       siteId: "site-a",
       photoId: "photo-a",
-      requestKey: "request-12345678",
+      contentSha256: "a".repeat(64),
+      originalStorageKey: "site/original/a.jpg",
+      model: "model-a",
+      configVersion: "config-a",
     });
     expect(first).toBe(
       photoEnhancementIdempotencyKey({
         siteId: "site-a",
         photoId: "photo-a",
-        requestKey: "request-12345678",
+        contentSha256: "a".repeat(64),
+        originalStorageKey: "site/original/a.jpg",
+        model: "model-a",
+        configVersion: "config-a",
       }),
     );
     expect(first).not.toBe(
       photoEnhancementIdempotencyKey({
         siteId: "site-a",
         photoId: "photo-b",
-        requestKey: "request-12345678",
+        contentSha256: "a".repeat(64),
+        originalStorageKey: "site/original/a.jpg",
+        model: "model-a",
+        configVersion: "config-a",
+      }),
+    );
+    expect(first).not.toBe(
+      photoEnhancementIdempotencyKey({
+        siteId: "site-a",
+        photoId: "photo-a",
+        contentSha256: "a".repeat(64),
+        originalStorageKey: "site/original/a.jpg",
+        model: "model-a",
+        configVersion: "config-b",
       }),
     );
   });

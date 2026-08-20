@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  DeleteObjectsCommand,
   GetObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -10,6 +9,7 @@ import {
   storeImmutableSiteOriginal,
   storageObjectKeyFromUrl,
 } from "@/lib/storage/images";
+import { deleteAndVerifyObjectVersions } from "@/lib/storage/versioned-cleanup";
 
 class SafeVerificationError extends Error {
   constructor(
@@ -76,6 +76,7 @@ async function verifyRoundTrip(args: string[]) {
       data: fixtures[0]!.data,
       mediaType: "image/png",
     });
+    keys.push(storageObjectKeyFromUrl(original.url));
     const enhanced = await storeImmutableEnhancedPhoto({
       siteSlug: `storage-verification-${environment}`,
       vertical: "RESTAURANT",
@@ -84,18 +85,18 @@ async function verifyRoundTrip(args: string[]) {
       data: fixtures[1]!.data,
       mediaType: "image/png",
     });
+    const enhancedKey = storageObjectKeyFromUrl(enhanced.url);
+    if (keys.includes(enhancedKey)) {
+      throw new SafeVerificationError("duplicate_object_key", "unknown");
+    }
+    keys.push(enhancedKey);
     const stored = [
-      { ...fixtures[0]!, storedUrl: original.url },
-      { ...fixtures[1]!, storedUrl: enhanced.url },
+      { ...fixtures[0]!, key: keys[0]! },
+      { ...fixtures[1]!, key: enhancedKey },
     ];
     for (const fixture of stored) {
-      const key = storageObjectKeyFromUrl(fixture.storedUrl);
-      if (keys.includes(key)) {
-        throw new SafeVerificationError("duplicate_object_key", "unknown");
-      }
-      keys.push(key);
       const response = await client.send(
-        new GetObjectCommand({ Bucket: config.bucket, Key: key }),
+        new GetObjectCommand({ Bucket: config.bucket, Key: fixture.key }),
       );
       const retrieved = await response.Body?.transformToByteArray();
       if (
@@ -115,13 +116,12 @@ async function verifyRoundTrip(args: string[]) {
   } finally {
     if (keys.length > 0) {
       try {
-        const deleted = await client.send(
-          new DeleteObjectsCommand({
-            Bucket: config.bucket,
-            Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
-          }),
-        );
-        cleanup = deleted.Errors?.length ? "failed" : "completed";
+        await deleteAndVerifyObjectVersions({
+          client,
+          bucket: config.bucket,
+          keys,
+        });
+        cleanup = "completed";
       } catch {
         cleanup = "failed";
       }

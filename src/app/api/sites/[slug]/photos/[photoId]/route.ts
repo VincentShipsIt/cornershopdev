@@ -4,7 +4,7 @@ import { getPhotoLibraryAccess } from "@/lib/photo-access";
 import { PhotoLibraryError, reviewPhoto } from "@/lib/photo-library";
 import { isSameOriginMutation } from "@/lib/request-origin";
 
-const reviewSchema = z.discriminatedUnion("action", [
+const reviewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve_original") }),
   z.object({ action: z.literal("reject_original") }),
   z.object({ action: z.literal("approve_enhancement") }),
@@ -15,6 +15,9 @@ const reviewSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("select_catalog"), catalogItemId: z.string().min(1).max(100) }),
   z.object({ action: z.literal("unselect") }),
 ]);
+const reviewSchema = reviewActionSchema.and(
+  z.object({ expectedRevision: z.number().int().nonnegative() }),
+);
 
 export async function PATCH(
   request: Request,
@@ -27,11 +30,12 @@ export async function PATCH(
   const access = await getPhotoLibraryAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
   try {
-    const review = reviewSchema.parse(await request.json());
+    const { expectedRevision, ...review } = reviewSchema.parse(await request.json());
     return Response.json(
       await reviewPhoto({
         siteId: access.site.id,
         photoId,
+        expectedRevision,
         actor: access.actor,
         review,
       }),

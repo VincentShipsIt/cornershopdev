@@ -155,6 +155,27 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         },
       },
     });
+    if (!sampleSiteDraft.heroImageUrl) {
+      throw new Error("Publication fixture requires its reviewed hero");
+    }
+    await db.photoAsset.create({
+      data: {
+        siteId,
+        sourceUrl: sampleSiteDraft.heroImageUrl,
+        provenance: "OWNER",
+        sourceKind: "OWNER_REFERENCE",
+        contentSha256: "e".repeat(64),
+        originalStorageKey: `test/${"e".repeat(64)}.jpg`,
+        originalUrl: sampleSiteDraft.heroImageUrl,
+        mediaType: "image/jpeg",
+        byteLength: 1_024,
+        candidateUsages: ["HERO"],
+        reviewStatus: "APPROVED",
+        selectedUsage: "HERO",
+        reviewedAt: new Date(),
+        reviewedBy: actor.id,
+      },
+    });
     await db.domain.create({
       data: {
         hostname: `${randomUUID()}.example.test`,
@@ -648,6 +669,21 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     };
 
     await updateSiteDraft(slug, ownerDraft, Vertical.RESTAURANT);
+    await db.photoAsset.updateMany({
+      where: { siteId, selectedUsage: "HERO" },
+      data: {
+        sourceUrl: fixture.heroImageUrl!,
+        originalUrl: fixture.heroImageUrl!,
+        originalStorageKey: "test/reviewed-counter-service-hero.webp",
+      },
+    });
+    await db.site.update({
+      where: { id: siteId },
+      data: {
+        heroOriginalImageUrl: fixture.heroImageUrl,
+        heroImageProvenance: "OWNER",
+      },
+    });
     const reloaded = await findSiteView(slug);
     expect(reloaded?.theme).toEqual({
       id: "after-dark",
