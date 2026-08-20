@@ -257,6 +257,8 @@ export type VerticalConfig<
    * can opt into deterministic reconstruction and skip text generation entirely.
    */
   draftGenerationStrategy?: "model-assisted" | "deterministic-only";
+  /** Integration kinds this vertical may persist or expose in shared chrome. */
+  integrationTypes: readonly IntegrationLinkType[];
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
   /** Optional richer defaults used only for a brand-new non-AI import. */

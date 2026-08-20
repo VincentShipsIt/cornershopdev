@@ -294,8 +294,13 @@ describe("FOOD_RETAIL vertical", () => {
   });
 
   it("rejects restaurant booking links and unprovenanced product images", () => {
-    const bookingDraft = structuredClone(sampleFoodRetailDraft);
-    bookingDraft.integrations[0].type = "booking";
+    const bookingDraft = {
+      ...sampleFoodRetailDraft,
+      integrations: sampleFoodRetailDraft.integrations.map(
+        (integration, index) =>
+          index === 0 ? { ...integration, type: "booking" } : integration,
+      ),
+    };
     expect(foodRetailSiteDraftSchema.safeParse(bookingDraft).success).toBe(
       false,
     );

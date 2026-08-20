@@ -33,7 +33,9 @@ model-assisted default.
   `Product`, or `Service` entities. Unsupported or currency-less prices remain
   unset; missing items are never generated. Availability is nullable and stays
   unknown unless structured evidence explicitly says `InStock`, `OutOfStock`,
-  `SoldOut`, or `Discontinued`.
+  `SoldOut`, or `Discontinued`. Unstructured cards, tiles, and prose-only
+  service lists are not promoted to catalog rows; future extraction needs its
+  own evidence and fidelity contract rather than heuristic claims in this path.
 - Business subtype: schema.org local-service types such as `Plumber`,
   `Electrician`, `GeneralContractor`, `RoofingContractor`, `HVACBusiness`,
   `Locksmith`, `HousePainter`, and `ProfessionalService` are accepted as the

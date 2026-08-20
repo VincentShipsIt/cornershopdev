@@ -96,6 +96,7 @@ export const restaurantConfig = {
   },
   marketing: restaurantMarketing,
   publicationEnabled: true,
+  integrationTypes: ["booking", "ordering", "delivery", "social"],
   attributesSchema: restaurantAttributesSchema,
   attributeDefaults: {
     cuisine: "",

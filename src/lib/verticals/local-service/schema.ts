@@ -75,6 +75,10 @@ export const localServiceItemAttributesSchema = z.object({
   emergencyEligible: z.boolean().default(false),
 });
 
+export const localServiceIntegrationSchema = integrationSchema.extend({
+  type: z.enum(["quote", "contact", "booking", "social"]),
+});
+
 const localServiceSiteTranslationSchema = baseSiteTranslationSchema.extend({
   attributes: z.object({}),
   catalogSections: z.array(
@@ -90,7 +94,7 @@ export const localServiceSiteDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     attributes: localServiceAttributesSchema,
-    integrations: z.array(integrationSchema).max(12),
+    integrations: z.array(localServiceIntegrationSchema).max(12),
     translations: z
       .array(localServiceSiteTranslationSchema)
       .max(8)

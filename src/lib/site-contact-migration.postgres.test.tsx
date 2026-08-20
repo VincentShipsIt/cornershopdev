@@ -231,6 +231,10 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
         expect(verticalValues.rows.map((row) => row.value)).toContain(
           Vertical.LOCAL_SERVICE,
         );
+        expect(verticalValues.rows.map((row) => row.value).slice(-2)).toEqual([
+          "LOCAL_SERVICE",
+          "FOOD_RETAIL",
+        ]);
         const integrationValues = await upgrade.query<{ value: string }>(
           `SELECT enumlabel AS value
            FROM pg_enum

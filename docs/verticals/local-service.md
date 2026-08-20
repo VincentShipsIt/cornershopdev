@@ -27,6 +27,12 @@ bags:
 | Conversion | Shared phone plus `contact`, `quote`, `booking`, and `social` HTTPS integrations |
 | Hours | Shared bounded business-hours rows |
 
+Integration allowlists are vertical-owned even though storage uses one enum:
+Restaurant retains booking/ordering/delivery/social, Beauty accepts only
+booking/social, Food Retail accepts only ordering/delivery/social, and
+LOCAL_SERVICE accepts only quote/contact/booking/social. The shared renderer
+applies the same allowlist as defence in depth before exposing any link.
+
 The model prompt forbids invented services, service areas, emergency response,
 credentials, licences, insurance, guarantees, project outcomes, WhatsApp
 numbers, quote tools, and prices. Deterministic imports default every trust and
@@ -50,6 +56,12 @@ information only. They do not imply credentials, safety, quality, covered
 services, completed work, or outcomes. Structured opening hours are emitted
 only when display rows can be converted to canonical Schema.org day and time
 tokens; ambiguous rows remain visible to customers but are omitted from JSON-LD.
+
+The current importer reconstructs service rows only from supported structured
+Schema.org `Service`, `Offer`, and `OfferCatalog` evidence. Unstructured service
+cards, price tiles, prose-only project galleries, and visual harmonization are
+not claimed by this vertical yet; those inputs remain bounded page text or
+source assets rather than being promoted into factual catalog/project fields.
 
 ## Rendering and SEO
 

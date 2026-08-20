@@ -68,17 +68,9 @@ export const foodRetailTranslationStatusSchema = z.enum([
   "draft",
 ]);
 
-const foodRetailIntegrationSchema = integrationSchema.superRefine(
-  (integration, context) => {
-    if (integration.type === "booking") {
-      context.addIssue({
-        code: "custom",
-        path: ["type"],
-        message: "Food retail uses ordering or delivery links, not bookings",
-      });
-    }
-  },
-);
+export const foodRetailIntegrationSchema = integrationSchema.extend({
+  type: z.enum(["ordering", "delivery", "social"]),
+});
 
 const foodRetailSiteTranslationSchema = baseSiteTranslationSchema.extend({
   // Imported/generated locale copy has not been owner-reviewed merely because

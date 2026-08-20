@@ -67,6 +67,10 @@ export function SiteRenderer({
 }: SiteRendererProps) {
   const config = resolveVerticalConfig(vertical);
   const dictionary = getSiteDictionary(config, locale);
+  const allowedIntegrationTypes = new Set(config.integrationTypes);
+  const integrations = draft.integrations.filter((integration) =>
+    allowedIntegrationTypes.has(integration.type),
+  );
 
   if (vertical === Vertical.RESTAURANT) {
     const selection = parseRestaurantThemeSelection(
@@ -88,19 +92,19 @@ export function SiteRenderer({
     }
   }
 
-  const booking = draft.integrations.find(
+  const booking = integrations.find(
     (integration) =>
       integration.enabled && integration.type === "booking",
   );
-  const ordering = draft.integrations.find(
+  const ordering = integrations.find(
     (integration) =>
       integration.enabled &&
       ["ordering", "delivery"].includes(integration.type),
   );
-  const quote = draft.integrations.find(
+  const quote = integrations.find(
     (integration) => integration.enabled && integration.type === "quote",
   );
-  const contact = draft.integrations.find(
+  const contact = integrations.find(
     (integration) => integration.enabled && integration.type === "contact",
   );
   const resolvedTemplate = config.templates.resolve(draft.attributes);
