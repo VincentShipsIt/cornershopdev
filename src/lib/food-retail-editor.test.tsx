@@ -10,6 +10,7 @@ import {
   FOOD_RETAIL_NEW_LINK_LABEL,
   hasUnreviewedFoodRetailTranslations,
   markFoodRetailTranslationReviewed,
+  markFoodRetailTranslationsStale,
   reconcileFoodRetailDraftAfterSave,
   updateFoodRetailTranslation,
 } from "@/lib/verticals/food-retail/editor";
@@ -184,5 +185,27 @@ describe("food-retail bilingual dashboard editing", () => {
     await saving;
 
     expect(current.description).toContain("must remain in the editor");
+  });
+
+  it("keeps stale translations saveable when canonical claims change shape", () => {
+    const edited = structuredClone(sampleFoodRetailDraft);
+    edited.attributes.pickupDetails = "";
+    edited.catalogSections[0].items[0].attributes.seasonalAvailability =
+      "Weekends only";
+    edited.catalogSections[0].items[0].attributes.preorderNote = "";
+    edited.catalogSections[0].items[0].attributes.allergens.push("nuts");
+
+    const synchronized = markFoodRetailTranslationsStale(edited);
+    const translatedItem =
+      synchronized.translations[0].catalogSections[0].items[0];
+
+    expect(synchronized.translations[0].status).toBe("stale");
+    expect(synchronized.translations[0].attributes.pickupDetails).toBe("");
+    expect(translatedItem.attributes.seasonalAvailability).toBe(
+      "Weekends only",
+    );
+    expect(translatedItem.attributes.preorderNote).toBe("");
+    expect(translatedItem.attributes.allergens).toEqual(["gluten", "nuts"]);
+    expect(foodRetailSiteDraftSchema.parse(synchronized)).toEqual(synchronized);
   });
 });

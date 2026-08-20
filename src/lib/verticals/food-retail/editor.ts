@@ -71,13 +71,42 @@ export function appendFoodRetailIntegrationTranslations(
 export function markFoodRetailTranslationsStale(
   input: FoodRetailSiteDraft,
 ): FoodRetailSiteDraft {
+  const draft = structuredClone(input);
   return {
-    ...input,
-    translations: input.translations.map((translation) => ({
-      ...translation,
-      status: "stale" as const,
-    })),
+    ...draft,
+    translations: draft.translations.map((translation) => {
+      translation.status = "stale";
+      translation.attributes.pickupDetails = syncTranslatedClaim(
+        draft.attributes.pickupDetails,
+        translation.attributes.pickupDetails,
+      );
+      translation.catalogSections.forEach((section, sectionIndex) => {
+        section.items.forEach((item, itemIndex) => {
+          const canonical =
+            draft.catalogSections[sectionIndex]?.items[itemIndex];
+          if (!canonical) return;
+          item.attributes.seasonalAvailability = syncTranslatedClaim(
+            canonical.attributes.seasonalAvailability,
+            item.attributes.seasonalAvailability,
+          );
+          item.attributes.preorderNote = syncTranslatedClaim(
+            canonical.attributes.preorderNote,
+            item.attributes.preorderNote,
+          );
+          item.attributes.allergens = canonical.attributes.allergens.map(
+            (allergen, allergenIndex) =>
+              item.attributes.allergens[allergenIndex]?.trim() || allergen,
+          );
+        });
+      });
+      return translation;
+    }),
   };
+}
+
+function syncTranslatedClaim(canonical: string, translated: string): string {
+  if (!canonical.trim()) return "";
+  return translated.trim() ? translated : canonical;
 }
 
 export function updateFoodRetailTranslation(
