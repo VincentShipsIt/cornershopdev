@@ -24,9 +24,11 @@ umask 077
 
 required_parameters=(
   AWS_REGION
+  BETTER_AUTH_SECRET
   CLAIM_TOKEN_SECRET
   CUSTOM_DOMAIN_CNAME
   DATABASE_URL
+  FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY
   HEALTHCHECK_TOKEN
   NEXT_PUBLIC_APP_URL
   OPERATOR_ALERT_EMAILS
@@ -41,6 +43,7 @@ required_parameters=(
   STRIPE_SECRET_KEY
   STRIPE_STARTER_PRICE_ID
   STRIPE_WEBHOOK_SECRET
+  SUPERADMIN_EMAILS
   WORKFLOW_POSTGRES_JOB_PREFIX
   WORKFLOW_POSTGRES_MAX_POOL_SIZE
   WORKFLOW_POSTGRES_URL
@@ -52,13 +55,11 @@ optional_parameters=(
   AI_GATEWAY_API_KEY
   AI_IMAGE_MODEL
   AI_TEXT_MODEL
-  BETTER_AUTH_SECRET
   EMAIL_FROM
   EMAIL_REPLY_TO
   OPENROUTER_API_KEY
   OPENROUTER_TEXT_MODEL
   STRIPE_LEGACY_PRICE_IDS
-  SUPERADMIN_EMAILS
 )
 
 read_parameter() {
@@ -111,6 +112,20 @@ aws s3 cp "$artifact_uri" "$artifact_file" --region us-west-1 --only-show-errors
 gzip -dc "$artifact_file" | docker load >/dev/null
 docker image inspect "$image_name" >/dev/null
 
+# Run from the reviewed image before its entrypoint can apply migrations. This
+# uses only predecessor-schema columns and blocks a chargeable legacy Checkout
+# from being stranded by the migration. Remediation is an explicit operator
+# procedure after the matching Stripe Session has been expired.
+docker run --rm \
+  --network shipshit \
+  --env-file "$environment_file" \
+  --entrypoint bun \
+  "$image_name" \
+  run operator:preflight-first-customer-migration \
+  --environment production \
+  --mode check \
+  --execute >/dev/null
+
 docker rm -f "$candidate" >/dev/null 2>&1 || true
 docker run -d \
   --name "$candidate" \
@@ -137,6 +152,10 @@ wait_for_health() {
 }
 
 wait_for_health "$candidate"
+# One deployment-time provider read proves the configured live Price still
+# matches the approved founding offer. It is intentionally separate from the
+# five-second health probe so normal readiness never hammers Stripe.
+docker exec "$candidate" bun run operator:preflight-stripe --mode live >/dev/null
 docker rm -f "$previous" >/dev/null 2>&1 || true
 if docker inspect "$container" >/dev/null 2>&1; then
   docker stop "$container" >/dev/null
@@ -164,13 +183,17 @@ docker rm -f "$previous" >/dev/null 2>&1 || true
 
 monitor_service="/etc/systemd/system/cornershopdev-public-health.service"
 monitor_timer="/etc/systemd/system/cornershopdev-public-health.timer"
+alert_service="/etc/systemd/system/cornershopdev-operator-alerts.service"
+alert_timer="/etc/systemd/system/cornershopdev-operator-alerts.timer"
 temporary_monitor_service="$(mktemp /etc/systemd/system/cornershopdev-public-health.service.XXXXXX)"
 temporary_monitor_timer="$(mktemp /etc/systemd/system/cornershopdev-public-health.timer.XXXXXX)"
-trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_service" "$temporary_monitor_timer"' EXIT
+temporary_alert_service="$(mktemp /etc/systemd/system/cornershopdev-operator-alerts.service.XXXXXX)"
+temporary_alert_timer="$(mktemp /etc/systemd/system/cornershopdev-operator-alerts.timer.XXXXXX)"
+trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_service" "$temporary_monitor_timer" "$temporary_alert_service" "$temporary_alert_timer"' EXIT
 
 {
   printf '%s\n' '[Unit]'
-  printf '%s\n' 'Description=Cornershopdev public-site health and operator alert check'
+  printf '%s\n' 'Description=Cornershopdev public-site health check'
   printf '%s\n' 'After=docker.service network-online.target'
   printf '%s\n' 'Wants=network-online.target'
   printf '\n%s\n' '[Service]'
@@ -191,9 +214,35 @@ trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_servic
   printf '%s\n' 'WantedBy=timers.target'
 } >"$temporary_monitor_timer"
 
+{
+  printf '%s\n' '[Unit]'
+  printf '%s\n' 'Description=Dispatch due Cornershopdev operator alerts'
+  printf '%s\n' 'After=docker.service network-online.target'
+  printf '%s\n' 'Wants=network-online.target'
+  printf '\n%s\n' '[Service]'
+  printf '%s\n' 'Type=oneshot'
+  printf '%s\n' 'TimeoutStartSec=45s'
+  printf '%s\n' "ExecStart=/usr/bin/docker run --rm --network shipshit --memory 256m --cpus 0.25 --env-file ${environment_file} --entrypoint bun ${image_name} run operator:dispatch-alerts"
+} >"$temporary_alert_service"
+
+{
+  printf '%s\n' '[Unit]'
+  printf '%s\n' 'Description=Dispatch Cornershopdev operator alerts every minute'
+  printf '\n%s\n' '[Timer]'
+  printf '%s\n' 'OnBootSec=1min'
+  printf '%s\n' 'OnUnitActiveSec=1min'
+  printf '%s\n' 'RandomizedDelaySec=15s'
+  printf '%s\n' 'Persistent=true'
+  printf '\n%s\n' '[Install]'
+  printf '%s\n' 'WantedBy=timers.target'
+} >"$temporary_alert_timer"
+
 install -m 644 "$temporary_monitor_service" "$monitor_service"
 install -m 644 "$temporary_monitor_timer" "$monitor_timer"
+install -m 644 "$temporary_alert_service" "$alert_service"
+install -m 644 "$temporary_alert_timer" "$alert_timer"
 systemctl daemon-reload
 systemctl enable --now cornershopdev-public-health.timer >/dev/null
+systemctl enable --now cornershopdev-operator-alerts.timer >/dev/null
 
 echo "Cornershopdev deployment is healthy: ${image_name}"

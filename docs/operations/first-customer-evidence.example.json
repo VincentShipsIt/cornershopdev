@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "environment": "production",
+  "siteSlug": "le-petit-meunier",
+  "publicUrl": "https://customer-authorized-domain.example/",
+  "ownerAuthorization": {
+    "evidenceRef": "private-crm://owner-authorization/replace-with-record-id",
+    "authorizedAt": "2099-01-01T00:00:00.000Z"
+  },
+  "stripe": {
+    "checkoutSessionId": "cs_live_replace",
+    "webhookEventId": "evt_replace",
+    "subscriptionId": "sub_replace"
+  },
+  "delivery": {
+    "claimInvitationId": "replace-claim-invitation-id",
+    "claimProviderDeliveryEventId": "replace-provider-delivered-claim-event-id",
+    "claimReplayRejectionAuditId": "replace-claim-replay-rejection-audit-id",
+    "authMagicLinkId": "replace-auth-magic-link-id",
+    "authProviderDeliveryEventId": "replace-provider-delivered-auth-event-id"
+  },
+  "session": {
+    "sessionId": "replace-owner-session-id",
+    "siteId": "replace-site-id",
+    "bindingAuditId": "replace-session-binding-audit-id",
+    "revocationAuditId": "replace-session-revocation-audit-id"
+  },
+  "publication": {
+    "sourceImportAuditId": "replace-source-import-audit-id",
+    "draftSaveAuditId": "replace-draft-save-audit-id",
+    "publishAuditId": "replace-publish-audit-id",
+    "publishedVersionId": "replace-published-version-id"
+  },
+  "alerts": {
+    "checkout": {
+      "alertId": "replace-checkout-alert-id",
+      "receiptRef": "private-ops://alert-receipt/replace-checkout"
+    },
+    "publish": {
+      "alertId": "replace-publish-alert-id",
+      "receiptRef": "private-ops://alert-receipt/replace-publish"
+    },
+    "publicSite": {
+      "alertId": "replace-public-health-alert-id",
+      "receiptRef": "private-ops://alert-receipt/replace-public-health"
+    }
+  },
+  "humanEvidence": {
+    "ownerEditConfirmationRef": "private-crm://owner-edit/replace-with-record-id",
+    "ownerEditConfirmedAt": "2099-01-01T00:00:00.000Z",
+    "onboardingCostRef": "private-crm://onboarding-cost/replace-with-record-id",
+    "onboardingRecordedAt": "2099-01-01T00:00:00.000Z",
+    "supportCostRef": "private-crm://support-cost/replace-with-record-id",
+    "supportWindowEndedAt": "2099-01-31T00:00:00.000Z",
+    "thirtyDayReviewRef": "private-calendar://review/replace-with-record-id",
+    "thirtyDayReviewScheduledAt": "2099-01-01T00:00:00.000Z",
+    "thirtyDayReviewCompletedAt": "2099-01-31T00:00:00.000Z"
+  },
+  "attestation": {
+    "algorithm": "ed25519",
+    "signerId": "private-evidence-custodian:replace",
+    "signedAt": "2099-01-31T00:01:00.000Z",
+    "signature": "REPLACE_WITH_BASE64_ED25519_SIGNATURE"
+  }
+}

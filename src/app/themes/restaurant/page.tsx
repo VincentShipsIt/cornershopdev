@@ -7,6 +7,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
+import { fullBrandFontVariables } from "@/components/fonts/full-brand-font-scope";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { restaurantThemeGallerySurface } from "@/lib/theme-gallery-surface";
@@ -41,6 +42,7 @@ export default async function RestaurantThemeGalleryPage() {
           { href: surface.pricingHref, label: "Pricing" },
         ]}
         createHref="/create?vertical=restaurant"
+        fontVariables={fullBrandFontVariables}
       />
       <main>
         <section

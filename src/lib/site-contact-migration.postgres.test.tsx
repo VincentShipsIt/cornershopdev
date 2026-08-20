@@ -1,0 +1,243 @@
+import { randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { describe, expect, mock, test } from "bun:test";
+import { Client } from "pg";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SiteRenderer } from "@/components/site-renderer";
+import { Vertical } from "@/generated/prisma/enums";
+import { siteDraftScalarData } from "@/lib/site-persistence";
+import type { PublishedSiteVersionRecord } from "@/lib/sites";
+import { restaurantConfig } from "@/lib/verticals/restaurant/config";
+import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
+
+mock.module("server-only", () => ({}));
+
+const enabled = process.env.SITE_CONTACT_MIGRATION_POSTGRES_TEST === "1";
+const migrationsDirectory = fileURLToPath(
+  new URL("../../prisma/migrations/", import.meta.url),
+);
+const lastPredecessorMigration =
+  "20260820140000_claim_invitation_delivery";
+const authRotationMigration =
+  "20260820150000_auth_link_rotation_generation";
+const reconstructionMigration =
+  "20260820170000_deterministic_source_reconstruction";
+const privacyMigration =
+  "20260820200000_site_contact_privacy_and_catalog_availability";
+const foodRetailMigration = "20260820210000_food_retail_vertical";
+
+describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
+  test(
+    "runs the exact migrations while preserving private recipients and compatible public snapshots",
+    async () => {
+      const sourceDatabaseUrl = process.env.DATABASE_URL;
+      if (!sourceDatabaseUrl) throw new Error("DATABASE_URL is required");
+
+      const databaseName = `site_contact_upgrade_${randomUUID().replaceAll("-", "")}`;
+      const adminUrl = new URL(sourceDatabaseUrl);
+      adminUrl.pathname = "/postgres";
+      adminUrl.searchParams.delete("schema");
+      const upgradeUrl = new URL(sourceDatabaseUrl);
+      upgradeUrl.pathname = `/${databaseName}`;
+      upgradeUrl.searchParams.delete("schema");
+      const admin = new Client({ connectionString: adminUrl.toString() });
+      let upgrade: Client | null = null;
+
+      await admin.connect();
+      await admin.query(`CREATE DATABASE "${databaseName}" TEMPLATE template0`);
+      try {
+        upgrade = new Client({ connectionString: upgradeUrl.toString() });
+        await upgrade.connect();
+
+        const migrationNames = (await readdir(migrationsDirectory, {
+          withFileTypes: true,
+        }))
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name)
+          .sort();
+        const predecessorMigrations = migrationNames.filter(
+          (name) => name <= lastPredecessorMigration,
+        );
+        expect(predecessorMigrations.at(-1)).toBe(lastPredecessorMigration);
+        for (const migrationName of predecessorMigrations) {
+          await applyMigration(upgrade, migrationName);
+        }
+
+        const businessEmail = "hello@business.example";
+        const privateRecipient = "owner.private@example.test";
+        const legacyProspectRecipient = "legacy.prospect@example.test";
+        const sourceUrl = "https://business.example/";
+        const legacyImageUrl = "http://business.example/legacy-hero.jpg";
+        const scalar = siteDraftScalarData(
+          sampleSiteDraft,
+          restaurantConfig.id,
+        );
+        const legacySnapshot = {
+          ...sampleSiteDraft,
+          slug: "migration-business",
+          email: businessEmail,
+          sourceUrl,
+          logoUrl: legacyImageUrl,
+          faviconUrl: legacyImageUrl,
+          heroImageUrl: legacyImageUrl,
+          heroOriginalImageUrl: legacyImageUrl,
+          sourceData: {
+            navigation: [
+              { label: "Menu", url: "https://business.example/menu" },
+            ],
+            brandAssets: [
+              {
+                type: "hero",
+                url: legacyImageUrl,
+                sourceUrl,
+                provenance: "official",
+                evidence: "meta",
+              },
+            ],
+            evidence: [],
+          },
+        };
+
+        await upgrade.query(
+          `INSERT INTO "Site" ("id", "slug", "name", "email", "status", "updatedAt")
+           VALUES
+             ('site-business', 'migration-business', 'Migration Business', $1, 'LIVE', NOW()),
+             ('site-prospect', 'migration-prospect', 'Migration Prospect', $2, 'PROSPECT', NOW())`,
+          [privateRecipient, legacyProspectRecipient],
+        );
+        await upgrade.query(
+          `INSERT INTO "SiteVersion" (
+             "id", "version", "vertical", "theme", "themeVersion", "palette",
+             "content", "translations", "integrations", "publishedAt", "siteId"
+           ) VALUES (
+             'version-business', 1, 'RESTAURANT', $1::jsonb, $2, $3::jsonb,
+             $4::jsonb, $5::jsonb, $6::jsonb, NOW(), 'site-business'
+           )`,
+          [
+            JSON.stringify(scalar.draftTheme),
+            scalar.draftThemeVersion,
+            JSON.stringify(sampleSiteDraft.palette),
+            JSON.stringify(legacySnapshot),
+            JSON.stringify(sampleSiteDraft.translations),
+            JSON.stringify(sampleSiteDraft.integrations),
+          ],
+        );
+
+        await applyMigration(upgrade, authRotationMigration);
+        await applyMigration(upgrade, reconstructionMigration);
+        await applyMigration(upgrade, privacyMigration);
+        await applyMigration(upgrade, foodRetailMigration);
+
+        const contacts = await upgrade.query<{
+          email: string | null;
+          leadContactEmail: string | null;
+          slug: string;
+        }>(
+          `SELECT "slug", "email", "leadContactEmail"
+           FROM "Site"
+           ORDER BY "slug"`,
+        );
+        expect(contacts.rows).toEqual([
+          {
+            slug: "migration-business",
+            email: null,
+            leadContactEmail: privateRecipient,
+          },
+          {
+            slug: "migration-prospect",
+            email: null,
+            leadContactEmail: legacyProspectRecipient,
+          },
+        ]);
+
+        const versionResult = await upgrade.query<{
+          vertical: Vertical;
+          theme: PublishedSiteVersionRecord["theme"];
+          themeVersion: string;
+          palette: PublishedSiteVersionRecord["palette"];
+          content: PublishedSiteVersionRecord["content"];
+          translations: PublishedSiteVersionRecord["translations"];
+          integrations: PublishedSiteVersionRecord["integrations"];
+          publishedAt: Date;
+        }>(
+          `SELECT "vertical", "theme", "themeVersion", "palette", "content",
+                  "translations", "integrations", "publishedAt"
+           FROM "SiteVersion"
+           WHERE "id" = 'version-business'`,
+        );
+        const { projectPublishedSiteVersion } = await import("@/lib/sites");
+        const loaded = projectPublishedSiteVersion(
+          versionResult.rows[0] as PublishedSiteVersionRecord,
+        );
+        expect(loaded).not.toBeNull();
+        const publicJson = JSON.stringify(loaded?.draft);
+        const markup = renderToStaticMarkup(
+          <SiteRenderer
+            draft={loaded!.draft}
+            vertical={restaurantConfig.id}
+          />,
+        );
+
+        expect(publicJson).toContain(businessEmail);
+        expect(publicJson).not.toContain(privateRecipient);
+        expect(publicJson).not.toContain(legacyImageUrl);
+        expect(markup).toContain(`mailto:${businessEmail}`);
+        expect(markup).not.toContain(privateRecipient);
+        expect(markup).not.toContain(legacyImageUrl);
+        expect(loaded?.draft.sourceData?.navigation).toEqual([
+          {
+            label: "Menu",
+            url: "/menu",
+            destinationUrl: "https://business.example/menu",
+          },
+        ]);
+
+        const retainedSecurityTables = await upgrade.query<{ name: string }>(
+          `SELECT table_name AS "name"
+           FROM information_schema.tables
+           WHERE table_schema = 'public'
+             AND table_name IN ('AuthProviderEvent', 'ClaimProviderEvent')
+           ORDER BY table_name`,
+        );
+        expect(retainedSecurityTables.rows).toEqual([
+          { name: "AuthProviderEvent" },
+          { name: "ClaimProviderEvent" },
+        ]);
+
+        const verticalValues = await upgrade.query<{ value: string }>(
+          `SELECT enumlabel AS value
+           FROM pg_enum
+           JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+           WHERE pg_type.typname = 'Vertical'
+           ORDER BY enumsortorder`,
+        );
+        expect(verticalValues.rows.map((row) => row.value)).toContain(
+          Vertical.FOOD_RETAIL,
+        );
+      } finally {
+        await upgrade?.end().catch(() => undefined);
+        await admin.query(
+          `SELECT pg_terminate_backend(pid)
+           FROM pg_stat_activity
+           WHERE datname = $1 AND pid <> pg_backend_pid()`,
+          [databaseName],
+        );
+        await admin.query(`DROP DATABASE "${databaseName}"`);
+        await admin.end();
+      }
+    },
+    120_000,
+  );
+});
+
+async function applyMigration(
+  client: Client,
+  migrationName: string,
+): Promise<void> {
+  const sql = await readFile(
+    `${migrationsDirectory}/${migrationName}/migration.sql`,
+    "utf8",
+  );
+  await client.query(sql);
+}

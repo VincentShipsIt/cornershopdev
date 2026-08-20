@@ -11,6 +11,7 @@ import type { VerticalMarketing } from "@/lib/verticals/types";
  * product has actually produced for this niche.
  */
 export const beautyMarketing = {
+  publiclyAccessible: true,
   hostnames: [],
   domain: null,
   brand: { name: "Salonfront", initials: "SF" },

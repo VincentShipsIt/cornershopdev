@@ -12,6 +12,29 @@ export type SitePaletteView = {
   background: string;
   foreground: string;
   accent: string;
+  accentForeground?: string;
+};
+
+export type SiteSourceDataView = {
+  navigation: Array<{
+    label: string;
+    url: string;
+    destinationUrl: string | null;
+  }>;
+  brandAssets: Array<{
+    type: "logo" | "favicon" | "hero" | "content";
+    url: string;
+    sourceUrl: string;
+    provenance: "official";
+    evidence: "json-ld" | "meta" | "html" | "link" | "css";
+  }>;
+  evidence: Array<{
+    field: string;
+    value: string;
+    sourceUrl: string;
+    method: "json-ld" | "meta" | "html" | "link" | "css";
+    excerpt: string;
+  }>;
 };
 
 export const LEGACY_THEME_VERSION = "legacy-v1";
@@ -35,7 +58,8 @@ export type SiteCatalogItemView = {
   description: string;
   price: number | null;
   currency: string;
-  available: boolean;
+  /** Null means the source or owner has not made an availability claim. */
+  available: boolean | null;
   imageUrl: string | null;
   attributes: Record<string, unknown>;
 };
@@ -90,9 +114,13 @@ export type SiteDraftView = {
   description: string;
   address: string;
   phone: string;
+  email?: string;
   sourceUrl: string | null;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
   heroImageUrl: string | null;
   palette: SitePaletteView;
+  sourceData?: SiteSourceDataView;
   defaultLocale: string;
   businessHours: Array<{ days: string; hours: string }>;
   attributes: Record<string, unknown>;
@@ -100,6 +128,16 @@ export type SiteDraftView = {
   integrations: SiteIntegrationView[];
   translations: SiteTranslationView[];
 };
+
+export function slugify(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 72);
+}
 
 export function formatPrice(
   price: number | null,

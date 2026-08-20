@@ -1,10 +1,12 @@
 import { betterAuthAllowedHosts } from "@/lib/better-auth-config";
+import { firstCustomerTestModeEnabled } from "@/lib/first-customer-test-mode";
 import { requestHostname } from "@/lib/request-hostname";
 
 type AuthRequestEnvironment = Record<string, string | undefined>;
 type AuthRequest = Pick<Request, "headers" | "url">;
 
 const FACTORY_ORIGIN = "https://cornershop.dev";
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
 function firstHeaderValue(value: string | null): string {
   return value?.split(",")[0]?.trim() ?? "";
@@ -42,6 +44,15 @@ export function resolveAuthRequestOrigin(
   }
 
   if (environment.NODE_ENV === "production") {
+    const configuredOrigin = fallbackOrigin(environment);
+    const configuredUrl = new URL(configuredOrigin);
+    if (
+      firstCustomerTestModeEnabled(environment) &&
+      LOOPBACK_HOSTNAMES.has(hostname) &&
+      configuredUrl.hostname === hostname
+    ) {
+      return configuredOrigin;
+    }
     return `https://${hostname}`;
   }
 
@@ -77,4 +88,34 @@ export function resolveAuthRequestOrigin(
 
 export function authRequestUrl(path: string, request: AuthRequest): URL {
   return new URL(path, resolveAuthRequestOrigin(request));
+}
+
+/**
+ * Builds headers for a server-owned Better Auth mutation. Browser navigation
+ * metadata is intentionally not forwarded: Stripe returns can carry an
+ * external Origin even though the wrapper already authenticated the signed
+ * single-use credential.
+ */
+export function internalAuthMutationHeaders(request: AuthRequest): Headers {
+  const headers = new Headers({
+    "content-type": "application/json",
+    origin: resolveAuthRequestOrigin(request),
+  });
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+  const userAgent = request.headers.get("user-agent");
+  if (userAgent) headers.set("user-agent", userAgent);
+  return headers;
+}
+
+/** Preserves Better Auth cookie mutations while redirecting to a safe URL. */
+export function authMutationRedirectResponse(
+  response: Response,
+  destination: URL,
+): Response {
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.delete("content-type");
+  headers.set("location", destination.toString());
+  return new Response(null, { status: 303, headers });
 }

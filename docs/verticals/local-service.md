@@ -3,8 +3,8 @@
 `LOCAL_SERVICE` is the bounded local-trade implementation for plumbers,
 electricians, builders, repair businesses, and artisans. It is registered in
 the existing vertical registry and uses the shared crawler, import workflow,
-site tables, immutable publication snapshots, renderer, analytics, claim flow,
-domain routing, and source-monitoring engine. It does not fork the app and it
+site tables, renderer, owner editing, analytics, domain routing, and
+source-monitoring engine. It does not fork the app and it
 does not accept model-authored HTML, CSS, class names, or components.
 
 ## Data contract
@@ -50,13 +50,13 @@ Private previews remain `noindex` and emit no structured data.
 ## Owner editing and persistence
 
 The tenant-scoped dashboard loads the same validated nested draft used by the
-preview and publication paths. Owners can edit business copy, phone, address,
+preview path. Owners can edit business copy, phone, address,
 hours, trade and availability posture, service areas, insurance evidence,
 credentials, trust signals, services, projects, and external tools. Save uses
 the existing optimistic draft revision, organization membership, same-origin
-mutation, relation-replacement, and audit boundaries. Publish continues to read
-only the persisted draft, requires billing, creates an immutable snapshot, and
-never promotes an unclaimed or paused site.
+mutation, relation-replacement, and audit boundaries. Publication and rollback
+are disabled server-side and absent from the editor while the vertical remains
+a private pilot.
 
 ## Launch gate
 
@@ -84,6 +84,10 @@ Focused tests cover:
 - registry, slug, asset namespace, and launch-readiness behavior;
 - LocalBusiness subtype, services, areas, hours, actions, and script escaping;
 - existing restaurant and beauty vertical compatibility.
+- a realistic French plumber HTML source through reconstruction, deterministic
+  draft generation, and the shared preview renderer, including sourced subtype,
+  language, logo/favicon, palette, contact details, hours, navigation, services,
+  pricing evidence, and the absence of invented emergency/trust claims;
 
 Run the complete repository gates on the Mac Studio and in required GitHub CI:
 

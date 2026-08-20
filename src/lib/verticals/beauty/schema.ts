@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  assertTranslationParity,
+  assertSiteDraftInvariants,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
   catalogItemSchema,
@@ -75,7 +75,7 @@ export const beautySiteDraftSchema = z
       .min(1)
       .max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 export type ServiceStyle = z.infer<typeof serviceStyleSchema>;
 export type BeautyAttributes = z.infer<typeof beautyAttributesSchema>;

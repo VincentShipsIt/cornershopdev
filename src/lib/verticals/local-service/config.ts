@@ -58,6 +58,22 @@ export const localServiceDictionaryExtensions = {
     trustHeading: "Why customers call",
     projectsHeading: "Completed projects",
   },
+  fr: {
+    language: "Langue",
+    reservationsVia: "Contacter via",
+    bookingPartner: "notre outil de contact",
+    seasonalNotice:
+      "Les zones desservies et les disponibilités peuvent évoluer. Confirmez avant les travaux.",
+    heroImageAlt: "Travaux de",
+    bookingHeading: "Contact",
+    bookingRequestHeading: "Demander une intervention",
+    bookingRequestIntro:
+      "Utilisez le téléphone, WhatsApp ou l’outil de devis indiqué pour décrire les travaux.",
+    serviceAreasHeading: "Zones desservies",
+    credentialsHeading: "Qualifications et assurance",
+    trustHeading: "Éléments de confiance",
+    projectsHeading: "Réalisations",
+  },
 } satisfies Record<string, Record<string, string>>;
 
 const attributeDefaults: LocalServiceAttributes = {
@@ -72,13 +88,51 @@ const attributeDefaults: LocalServiceAttributes = {
   showProjectGallery: true,
 };
 
+function tradeTypeFromSource(
+  businessTypes: string[] = [],
+): LocalServiceTradeType {
+  const types = new Set(businessTypes.map((type) => type.toLowerCase()));
+  if (types.has("plumber")) return "plumber";
+  if (types.has("electrician")) return "electrician";
+  if (types.has("generalcontractor") || types.has("roofingcontractor")) {
+    return "builder";
+  }
+  if (types.has("hvacbusiness") || types.has("locksmith")) return "repair";
+  if (types.has("housepainter")) return "artisan";
+  return "general-trades";
+}
+
 export const localServiceConfig = {
   id: Vertical.LOCAL_SERVICE,
   vocabulary: { catalog: "Services", section: "Service group", item: "Service" },
   marketing: localServiceMarketing,
+  publicationEnabled: false,
   attributesSchema: localServiceAttributesSchema,
   attributeDefaults,
   deterministicAttributes: attributeDefaults,
+  deterministicAttributesFromSource: (source) => ({
+    ...attributeDefaults,
+    tradeType: tradeTypeFromSource(source.businessTypes),
+    showProjectGallery: false,
+  }),
+  deterministicCopy: {
+    en: {
+      eyebrow: "Private local-service preview",
+      description:
+        "A private local-service preview built only from source information currently available.",
+      catalogName: "Services",
+      emptyCatalogDescription:
+        "No service details were present in deterministic source markup.",
+    },
+    fr: {
+      eyebrow: "Aperçu privé de l’entreprise",
+      description:
+        "Un aperçu privé fondé uniquement sur les informations source disponibles.",
+      catalogName: "Services",
+      emptyCatalogDescription:
+        "Aucun service n’était présent dans les données source structurées.",
+    },
+  },
   itemAttributesSchema: localServiceItemAttributesSchema,
   itemAttributeDefaults: {
     pricingModel: "not-stated",
@@ -153,6 +207,11 @@ export const localServiceConfig = {
       attributes.projects.length > 0 &&
       (attributes.showProjectGallery || template.showProjectImagesByDefault),
   }),
+  deterministicItemAttributes: (item) => ({
+    pricingModel: item.price === null ? "not-stated" : "fixed",
+    priceUnit: "",
+    emergencyEligible: false,
+  }),
   providers: localServiceProviders,
   crawl: {
     relevantPathPattern: localServiceRelevantPathPattern,
@@ -161,7 +220,8 @@ export const localServiceConfig = {
   i18n: localServiceDictionaryExtensions,
   rendererCapabilities: (attributes) => ({
     showGallery: attributes.showProjectGallery,
-    bookingRequestForm: "never",
+    primaryAction: "quote",
+    bookingRequestMode: "never",
   }),
 } satisfies VerticalConfig<
   LocalServiceAttributes,

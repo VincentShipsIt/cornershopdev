@@ -1,10 +1,10 @@
 import { ImageResponse } from "next/og";
 import { notFound } from "next/navigation";
 import {
-  listMarketingVerticals,
+  isVerticalPubliclyAccessible,
+  listPublicVerticals,
   resolveVerticalBySlug,
   resolveVerticalConfig,
-  verticalLaunchReadiness,
   verticalSlug,
 } from "@/lib/verticals/registry";
 
@@ -27,7 +27,7 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export function generateStaticParams() {
-  return listMarketingVerticals().map((id) => ({ vertical: verticalSlug(id) }));
+  return listPublicVerticals().map((id) => ({ vertical: verticalSlug(id) }));
 }
 
 export default async function OpenGraphImage({
@@ -37,60 +37,62 @@ export default async function OpenGraphImage({
 }) {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id || !verticalLaunchReadiness(id).ready) notFound();
+  if (!id || !isVerticalPubliclyAccessible(id)) notFound();
   const { marketing } = resolveVerticalConfig(id);
   const { brand, hero, tagline } = marketing;
 
   return new ImageResponse(
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        padding: "72px",
-        color: "#1F2622",
-        background: "#F7F1E7",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-        <div
-          style={{
-            width: 58,
-            height: 58,
-            borderRadius: 14,
-            background: "#0D4A39",
-            color: "#F7F1E7",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 20,
-            fontWeight: 700,
-            letterSpacing: "-1px",
-          }}
-        >
-          {brand.initials}
-        </div>
-        <div style={{ fontSize: 28, fontWeight: 700 }}>{brand.name}</div>
-      </div>
+    (
       <div
         style={{
+          width: "100%",
+          height: "100%",
           display: "flex",
-          maxWidth: 900,
-          fontFamily: "Georgia, serif",
-          fontSize: 92,
-          lineHeight: 0.9,
-          letterSpacing: "-5px",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "72px",
+          color: "#1F2622",
+          background: "#F7F1E7",
+          fontFamily: "Arial, sans-serif",
         }}
       >
-        {hero.headline}
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div
+            style={{
+              width: 58,
+              height: 58,
+              borderRadius: 14,
+              background: "#0D4A39",
+              color: "#F7F1E7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 20,
+              fontWeight: 700,
+              letterSpacing: "-1px",
+            }}
+          >
+            {brand.initials}
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{brand.name}</div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            maxWidth: 900,
+            fontFamily: "Georgia, serif",
+            fontSize: 92,
+            lineHeight: 0.9,
+            letterSpacing: "-5px",
+          }}
+        >
+          {hero.headline}
+        </div>
+        <div style={{ display: "flex", fontSize: 23, color: "#646863" }}>
+          {tagline}
+        </div>
       </div>
-      <div style={{ display: "flex", fontSize: 23, color: "#646863" }}>
-        {tagline}
-      </div>
-    </div>,
+    ),
     size,
   );
 }

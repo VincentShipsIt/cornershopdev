@@ -80,6 +80,7 @@ export async function POST(request: Request) {
         siteSlug,
         reason: error.code,
         actor: "claimant:self-serve",
+        invitationId: error.invitationId,
       });
       return NextResponse.json(
         { error: error.message },

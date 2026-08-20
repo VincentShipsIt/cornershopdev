@@ -6,7 +6,6 @@ import {
   ExternalLink,
   LoaderCircle,
   Plus,
-  Rocket,
   Save,
   Trash2,
 } from "lucide-react";
@@ -19,18 +18,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { BrandIdentity } from "@/lib/brand";
-import type { BillingAccess } from "@/lib/billing-access";
-import type { SitePublicationHistoryItem } from "@/lib/site-publication";
 import {
   localServiceSiteDraftSchema,
   type LocalServiceAttributes,
   type LocalServiceSiteDraft,
 } from "@/lib/verticals/local-service/schema";
-
-type ClientPublicationHistoryItem = Omit<
-  SitePublicationHistoryItem,
-  "publishedAt"
-> & { publishedAt: string };
 
 const tradeTypes: LocalServiceAttributes["tradeType"][] = [
   "plumber",
@@ -59,24 +51,21 @@ const linkTypes: LocalServiceSiteDraft["integrations"][number]["type"][] = [
 
 export function LocalServiceDashboard({
   initialDraft,
+  initialRevision,
   email,
   brand,
-  billingAccess,
-  publicationHistory,
   canSwitchWorkspace,
 }: {
   initialDraft: LocalServiceSiteDraft;
+  initialRevision: number;
   email: string;
   brand: BrandIdentity;
-  billingAccess: BillingAccess;
-  publicationHistory: ClientPublicationHistoryItem[];
   canSwitchWorkspace: boolean;
 }) {
   const [draft, setDraft] = useState(initialDraft);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [savedRevision, setSavedRevision] = useState<number | null>(null);
+  const [savedRevision, setSavedRevision] = useState(initialRevision);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,9 +99,7 @@ export function LocalServiceDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...parsed.data,
-          ...(savedRevision === null
-            ? {}
-            : { expectedRevision: savedRevision }),
+          expectedRevision: savedRevision,
         }),
       });
       const result = (await response.json()) as {
@@ -120,8 +107,11 @@ export function LocalServiceDashboard({
         revision?: number;
       };
       if (!response.ok) throw new Error(result.error ?? "Save failed");
+      if (typeof result.revision !== "number") {
+        throw new Error("Save succeeded without a draft revision");
+      }
       setDraft(parsed.data);
-      setSavedRevision(result.revision ?? null);
+      setSavedRevision(result.revision);
       setDirty(false);
       setNotice("Private draft saved");
       return true;
@@ -130,40 +120,6 @@ export function LocalServiceDashboard({
       return false;
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function publish() {
-    if (!billingAccess.ok) {
-      setError(billingAccess.message);
-      return;
-    }
-    const changeSummary = window
-      .prompt("Summarize what will change on the public site:", "Update services and trade details")
-      ?.trim();
-    if (!changeSummary) return;
-    if (!window.confirm("Publish this saved draft to the public site now?")) return;
-    setPublishing(true);
-    setError(null);
-    try {
-      if (!(await save())) return;
-      const response = await fetch(`/api/sites/${draft.slug}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changeSummary }),
-      });
-      const result = (await response.json()) as {
-        error?: string;
-        published?: { version: number };
-      };
-      if (!response.ok || !result.published) {
-        throw new Error(result.error ?? "Publish failed");
-      }
-      setNotice(`Published version ${result.published.version}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Publish failed");
-    } finally {
-      setPublishing(false);
     }
   }
 
@@ -184,7 +140,7 @@ export function LocalServiceDashboard({
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Local-service editor</p>
             <h1 className="font-display mt-2 text-5xl leading-none tracking-[-0.045em]">Services, proof and contact.</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Edit only facts the business can support. Phone, WhatsApp and quote links stay external; publishing remains a separate, billed action.</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Edit only facts the business can support. Phone, WhatsApp and quote links stay external; this vertical remains a private pilot with publishing disabled.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button render={<Link href={`/preview/${draft.slug}`} target="_blank" />} nativeButton={false} variant="outline">
@@ -194,17 +150,12 @@ export function LocalServiceDashboard({
               {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
               {dirty ? "Save draft" : "Saved"}
             </Button>
-            <Button onClick={() => void publish()} disabled={publishing || !billingAccess.ok}>
-              {publishing ? <LoaderCircle className="animate-spin" /> : <Rocket />}
-              Publish
-            </Button>
           </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant={dirty ? "outline" : "secondary"}>{dirty ? "Unsaved changes" : savedRevision === null ? "Loaded draft" : `Draft revision ${savedRevision}`}</Badge>
-          <Badge variant="outline">{publicationHistory.length} published version{publicationHistory.length === 1 ? "" : "s"}</Badge>
-          {!billingAccess.ok ? <Badge variant="outline">{billingAccess.message}</Badge> : null}
+          <Badge variant={dirty ? "outline" : "secondary"}>{dirty ? "Unsaved changes" : `Draft revision ${savedRevision}`}</Badge>
+          <Badge variant="outline">Private pilot · publishing disabled</Badge>
           {notice ? <span role="status" className="text-emerald-700">{notice}</span> : null}
         </div>
         {error ? <p role="alert" className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">{error}</p> : null}
@@ -235,14 +186,24 @@ export function LocalServiceDashboard({
           </Card>
         </div>
 
-        <EditorSection title="Services" actionLabel="Add service group" onAdd={() => change((next) => { next.catalogSections.push({ name: "New service group", description: "", items: [] }); })}>
+        <EditorSection title="Services" actionLabel="Add service group" onAdd={() => change((next) => {
+          next.catalogSections.push({ name: "New service group", description: "", items: [] });
+          next.translations.forEach((translation) => {
+            translation.catalogSections.push({ name: "New service group", description: "", items: [] });
+          });
+        })}>
           {draft.catalogSections.map((section, sectionIndex) => (
             <Card key={`section-${sectionIndex}`}>
               <CardContent className="space-y-4 pt-2">
                 <div className="grid gap-3 md:grid-cols-[1fr_1.5fr_auto]">
                   <Input aria-label="Service group name" value={section.name} onChange={(event) => change((next) => { next.catalogSections[sectionIndex].name = event.target.value; })} />
                   <Input aria-label="Service group description" value={section.description} onChange={(event) => change((next) => { next.catalogSections[sectionIndex].description = event.target.value; })} />
-                  <Button variant="destructive" size="icon" aria-label={`Delete ${section.name}`} disabled={draft.catalogSections.length === 1} onClick={() => change((next) => { next.catalogSections.splice(sectionIndex, 1); })}><Trash2 /></Button>
+                  <Button variant="destructive" size="icon" aria-label={`Delete ${section.name}`} disabled={draft.catalogSections.length === 1} onClick={() => change((next) => {
+                    next.catalogSections.splice(sectionIndex, 1);
+                    next.translations.forEach((translation) => {
+                      translation.catalogSections.splice(sectionIndex, 1);
+                    });
+                  })}><Trash2 /></Button>
                 </div>
                 {section.items.map((item, itemIndex) => (
                   <div key={`service-${sectionIndex}-${itemIndex}`} className="grid gap-3 rounded-xl border p-4 md:grid-cols-2">
@@ -251,10 +212,20 @@ export function LocalServiceDashboard({
                     <Field label="Pricing model"><select className="h-8 w-full rounded-lg border bg-background px-2.5 text-sm" value={item.attributes.pricingModel} onChange={(event) => change((next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.pricingModel = event.target.value as typeof item.attributes.pricingModel; })}><option>not-stated</option><option>fixed</option><option>from</option><option>hourly</option><option>quote</option></select></Field>
                     <Field label="Price / unit"><div className="grid grid-cols-2 gap-2"><Input type="number" min="0" value={item.price ?? ""} placeholder="No price" onChange={(event) => change((next) => { next.catalogSections[sectionIndex].items[itemIndex].price = event.target.value === "" ? null : Number(event.target.value); })} /><Input value={item.attributes.priceUnit} placeholder="per hour" onChange={(event) => change((next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.priceUnit = event.target.value; })} /></div></Field>
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.attributes.emergencyEligible} onChange={(event) => change((next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.emergencyEligible = event.target.checked; })} /> Emergency-eligible</label>
-                    <Button variant="destructive" size="sm" onClick={() => change((next) => { next.catalogSections[sectionIndex].items.splice(itemIndex, 1); })}><Trash2 /> Remove service</Button>
+                    <Button variant="destructive" size="sm" onClick={() => change((next) => {
+                      next.catalogSections[sectionIndex].items.splice(itemIndex, 1);
+                      next.translations.forEach((translation) => {
+                        translation.catalogSections[sectionIndex]?.items.splice(itemIndex, 1);
+                      });
+                    })}><Trash2 /> Remove service</Button>
                   </div>
                 ))}
-                <Button variant="outline" size="sm" onClick={() => change((next) => { next.catalogSections[sectionIndex].items.push({ name: "New service", description: "", price: null, currency: "EUR", available: true, imageUrl: null, attributes: { pricingModel: "quote", priceUnit: "", emergencyEligible: false } }); })}><Plus /> Add service</Button>
+                <Button variant="outline" size="sm" onClick={() => change((next) => {
+                  next.catalogSections[sectionIndex].items.push({ name: "New service", description: "", price: null, currency: "EUR", available: null, imageUrl: null, attributes: { pricingModel: "not-stated", priceUnit: "", emergencyEligible: false } });
+                  next.translations.forEach((translation) => {
+                    translation.catalogSections[sectionIndex]?.items.push({ name: "New service", description: "", attributes: {} });
+                  });
+                })}><Plus /> Add service</Button>
               </CardContent>
             </Card>
           ))}
@@ -268,10 +239,20 @@ export function LocalServiceDashboard({
           </div>
         </EditorSection>
 
-        <EditorSection title="External tools" actionLabel="Add link" onAdd={() => change((next) => { next.integrations.push({ type: "quote", label: "Request a quote", provider: null, url: "https://example.com", enabled: true, venueId: null }); })}>
+        <EditorSection title="External tools" actionLabel="Add link" onAdd={() => change((next) => {
+          next.integrations.push({ type: "quote", label: "Request a quote", provider: null, url: "https://example.com", enabled: true, venueId: null });
+          next.translations.forEach((translation) => {
+            translation.integrationLabels.push("Request a quote");
+          });
+        })}>
           <div className="grid gap-4 md:grid-cols-2">
             {draft.integrations.map((integration, index) => (
-              <Card key={`link-${index}`}><CardContent className="grid gap-3 pt-2 md:grid-cols-2"><Field label="Type"><select className="h-8 w-full rounded-lg border bg-background px-2.5 text-sm" value={integration.type} onChange={(event) => change((next) => { next.integrations[index].type = event.target.value as typeof integration.type; })}>{linkTypes.map((value) => <option key={value}>{value}</option>)}</select></Field><Field label="Label"><Input value={integration.label} onChange={(event) => change((next) => { next.integrations[index].label = event.target.value; })} /></Field><Field label="HTTPS destination" className="md:col-span-2"><Input type="url" value={integration.url} onChange={(event) => change((next) => { next.integrations[index].url = event.target.value; })} /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={integration.enabled} onChange={(event) => change((next) => { next.integrations[index].enabled = event.target.checked; })} /> Visible publicly</label><Button variant="destructive" size="sm" onClick={() => change((next) => { next.integrations.splice(index, 1); })}><Trash2 /> Remove link</Button></CardContent></Card>
+              <Card key={`link-${index}`}><CardContent className="grid gap-3 pt-2 md:grid-cols-2"><Field label="Type"><select className="h-8 w-full rounded-lg border bg-background px-2.5 text-sm" value={integration.type} onChange={(event) => change((next) => { next.integrations[index].type = event.target.value as typeof integration.type; })}>{linkTypes.map((value) => <option key={value}>{value}</option>)}</select></Field><Field label="Label"><Input value={integration.label} onChange={(event) => change((next) => { next.integrations[index].label = event.target.value; })} /></Field><Field label="HTTPS destination" className="md:col-span-2"><Input type="url" value={integration.url} onChange={(event) => change((next) => { next.integrations[index].url = event.target.value; })} /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={integration.enabled} onChange={(event) => change((next) => { next.integrations[index].enabled = event.target.checked; })} /> Visible in preview</label><Button variant="destructive" size="sm" onClick={() => change((next) => {
+                next.integrations.splice(index, 1);
+                next.translations.forEach((translation) => {
+                  translation.integrationLabels.splice(index, 1);
+                });
+              })}><Trash2 /> Remove link</Button></CardContent></Card>
             ))}
           </div>
         </EditorSection>

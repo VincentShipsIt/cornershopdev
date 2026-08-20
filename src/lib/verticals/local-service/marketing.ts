@@ -5,6 +5,7 @@ import type { VerticalMarketing } from "@/lib/verticals/types";
  * or verified sender yet, so hostname, domain and email stay empty together.
  */
 export const localServiceMarketing = {
+  publiclyAccessible: false,
   hostnames: [],
   domain: null,
   brand: { name: "Tradefront", initials: "TF" },

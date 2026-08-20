@@ -2,6 +2,14 @@ import { BlockList, isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
+import {
+  reconstructSource,
+  type AccessiblePalette,
+  type ExtractedBrandAsset,
+  type ExtractedCatalogSection,
+  type ExtractedNavigationLink,
+  type ReconstructionEvidence,
+} from "@/lib/source-reconstruction";
 import type {
   IntegrationLinkType,
   LinkClassificationHint,
@@ -9,7 +17,10 @@ import type {
   VerticalConfig,
 } from "@/lib/verticals/types";
 
-type ImporterVerticalConfig = Pick<VerticalConfig, "providers" | "crawl">;
+type ImporterVerticalConfig = Pick<
+  VerticalConfig,
+  "providers" | "crawl" | "presentation"
+>;
 
 const MAX_HTML_BYTES = 1_500_000;
 const MAX_IMAGE_BYTES = 12_000_000;
@@ -31,12 +42,22 @@ export type ExtractedLink = {
 export type ExtractedSite = {
   source: string;
   sourceUrl: string | null;
+  businessTypes?: string[];
   sourceLocale: string | null;
   name: string;
   description: string;
   address: string;
   phone: string;
+  email?: string;
+  businessHours?: Array<{ days: string; hours: string }>;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
   heroImageUrl: string | null;
+  palette?: AccessiblePalette | null;
+  navigation?: ExtractedNavigationLink[];
+  catalogSections?: ExtractedCatalogSection[];
+  brandAssets?: ExtractedBrandAsset[];
+  evidence?: ReconstructionEvidence[];
   pageText: string;
   links: ExtractedLink[];
 };
@@ -171,7 +192,7 @@ async function fetchPublicResponse(
 
   const hostname = normalizeHostname(url.hostname);
   const addresses = await resolvePublicAddresses(hostname);
-  // Prefer IPv4 when available; many restaurant origins still lack AAAA.
+  // Prefer IPv4 when available; many independent-business origins still lack AAAA.
   const pinnedIp =
     addresses.find((address) => isIP(address) === 4) ?? addresses[0];
   const family = isIP(pinnedIp) === 6 ? 6 : 4;
@@ -238,7 +259,7 @@ async function readLimitedBody(response: Response): Promise<string> {
     bytes += value.byteLength;
     if (bytes > MAX_HTML_BYTES) {
       await reader.cancel();
-      throw new Error("The restaurant website is too large to import safely");
+      throw new Error("The business website is too large to import safely");
     }
     html += decoder.decode(value, { stream: true });
   }
@@ -257,7 +278,7 @@ async function fetchHtml(initialUrl: URL): Promise<{
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
-          "Cornershopdev Importer/1.0 (+https://cornershop.dev; restaurant preview builder)",
+          "Cornershopdev Importer/1.0 (+https://cornershop.dev; local business preview builder)",
       },
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),
@@ -296,7 +317,7 @@ export async function fetchPublicImage(rawUrl: string): Promise<{
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg",
         "User-Agent":
-          "Cornershopdev Image Importer/1.0 (+https://cornershop.dev; authentic restaurant photo enhancement)",
+          "Cornershopdev Image Importer/1.0 (+https://cornershop.dev; provenance-preserving business photo enhancement)",
       },
       redirect: "manual",
       signal: AbortSignal.timeout(15_000),
@@ -394,46 +415,6 @@ function decodeHtml(value: string): string {
     .replaceAll("&gt;", ">")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function metaContent(html: string, key: string): string {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const patterns = [
-    new RegExp(
-      `<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`,
-      "i",
-    ),
-    new RegExp(
-      `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`,
-      "i",
-    ),
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return decodeHtml(match[1]);
-  }
-  return "";
-}
-
-function extractTitle(html: string): string {
-  return (
-    metaContent(html, "og:site_name") ||
-    metaContent(html, "og:title") ||
-    decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "")
-      .split(/[|–—]/)[0]
-      .trim()
-  );
-}
-
-function extractDocumentLocale(html: string): string | null {
-  const locale =
-    html.match(/<html[^>]+lang=["']([^"']+)["']/i)?.[1] ??
-    metaContent(html, "content-language");
-  const normalized = locale?.trim().replace("_", "-");
-  return normalized && /^[a-z]{2}(?:-[A-Z]{2})?$/i.test(normalized)
-    ? normalized.split("-")[0].toLowerCase()
-    : null;
 }
 
 function stripMarkup(html: string): string {
@@ -563,14 +544,6 @@ function extractInternalContentUrls(
   return urls;
 }
 
-function extractContact(pageText: string): { address: string; phone: string } {
-  const phone =
-    pageText.match(
-      /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?){2,4}\d{2,4}/,
-    )?.[0] ?? "";
-  return { address: "", phone };
-}
-
 export async function inspectSource(
   rawSource: string,
   vertical: ImporterVerticalConfig,
@@ -584,12 +557,22 @@ export async function inspectSource(
     return {
       source,
       sourceUrl: null,
+      businessTypes: [],
       sourceLocale: null,
       name: source,
       description: "",
       address: "",
       phone: "",
+      email: "",
+      businessHours: [],
+      logoUrl: null,
+      faviconUrl: null,
       heroImageUrl: null,
+      palette: null,
+      navigation: [],
+      catalogSections: [],
+      brandAssets: [],
+      evidence: [],
       pageText: source,
       links: [],
     };
@@ -623,8 +606,6 @@ export async function inspectSource(
   ]
     .join("\n\n")
     .slice(0, MAX_SOURCE_TEXT_CHARS);
-  const contact = extractContact(pageText);
-  const hero = metaContent(html, "og:image");
   const links = [html, ...discoveredPages.map((page) => page.html)]
     .flatMap((pageHtml) =>
       extractLinks(
@@ -647,17 +628,21 @@ export async function inspectSource(
           ) === index),
     );
 
+  const reconstructed = reconstructSource({
+    homepage: { html, url: finalUrl },
+    pages: discoveredPages.map((page) => ({ html: page.html, url: page.url })),
+    fallbackName: finalUrl.hostname.replace(/^www\./, ""),
+    links,
+    fallbackPalette: {
+      ...vertical.presentation.fallbackPalette,
+      accentForeground: "#ffffff",
+    },
+  });
+
   return {
     source,
     sourceUrl: finalUrl.toString(),
-    sourceLocale: extractDocumentLocale(html),
-    name: extractTitle(html) || finalUrl.hostname.replace(/^www\./, ""),
-    description:
-      metaContent(html, "og:description") ||
-      metaContent(html, "description"),
-    address: contact.address,
-    phone: contact.phone,
-    heroImageUrl: hero ? new URL(hero, finalUrl).toString() : null,
+    ...reconstructed,
     pageText,
     links,
   };

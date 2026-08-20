@@ -8,6 +8,7 @@ export type PreviewMetadataDraft = {
   description: string;
   slug: string;
   defaultLocale: string;
+  faviconUrl?: string | null;
 };
 
 export type PreviewMetadataOptions = {
@@ -80,6 +81,9 @@ export function previewMetadata(
     robots: options.isLiveSurface
       ? { index: true, follow: true }
       : { index: false, follow: false },
+    ...(site.faviconUrl
+      ? { icons: { icon: [{ url: site.faviconUrl }] } }
+      : {}),
     alternates: {
       canonical: canonicalPath,
       languages: Object.fromEntries(

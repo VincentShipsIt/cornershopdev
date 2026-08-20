@@ -15,7 +15,9 @@ type LocalServiceJsonLd = {
   name: string;
   description?: string;
   telephone?: string;
+  email?: string;
   url?: string;
+  logo?: string;
   image?: string;
   address?: { "@type": "PostalAddress"; streetAddress: string };
   openingHours?: string[];
@@ -50,7 +52,7 @@ export function buildLocalServiceJsonLd(
   const credentials = objectArray(attributes.credentials);
   const services = draft.catalogSections.flatMap((section) =>
     section.items
-      .filter((item) => item.available)
+      .filter((item) => item.available !== false)
       .map((item) => ({
         "@type": "Offer" as const,
         itemOffered: {
@@ -88,7 +90,9 @@ export function buildLocalServiceJsonLd(
     name: draft.name,
     description: draft.description.trim() || undefined,
     telephone: draft.phone.trim() || undefined,
+    email: draft.email?.trim() || undefined,
     url: draft.sourceUrl ?? undefined,
+    logo: draft.logoUrl ?? undefined,
     image: draft.heroImageUrl ?? undefined,
     address: draft.address.trim()
       ? { "@type": "PostalAddress", streetAddress: draft.address.trim() }

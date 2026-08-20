@@ -21,9 +21,15 @@ import {
 import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 import {
+  isVerticalPublicationEnabled,
   resolveVerticalConfig,
   type ErasedVerticalConfig,
 } from "@/lib/verticals/registry";
+import {
+  safeExternalHttpsUrlSchema,
+  siteImageUrlSchema,
+  sourceNavigationIntentSchema,
+} from "@/lib/verticals/schema";
 import type { VerticalId } from "@/lib/verticals/types";
 
 /**
@@ -53,7 +59,17 @@ export type LoadedSite = {
   vertical: VerticalId;
   config: ErasedVerticalConfig;
   draft: unknown;
+  revision: number;
   theme: SiteThemeView;
+};
+
+/**
+ * Shared server-to-client contract for an owner editor's initial full-replace
+ * save. Every vertical must send this revision back as `expectedRevision`.
+ */
+export type OwnerDraftDto<TDraft> = {
+  draft: TDraft;
+  revision: number;
 };
 
 /**
@@ -98,9 +114,14 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     description: site.description ?? config.presentation.fallbackDescription,
     address: site.address ?? "",
     phone: site.phone ?? "",
+    email: site.email ?? "",
     sourceUrl: site.sourceUrl,
-    heroImageUrl: site.heroImageUrl,
-    heroOriginalImageUrl: site.heroOriginalImageUrl,
+    logoUrl: compatiblePersistedImageUrl(site.logoUrl),
+    faviconUrl: compatiblePersistedImageUrl(site.faviconUrl),
+    heroImageUrl: compatiblePersistedImageUrl(site.heroImageUrl),
+    heroOriginalImageUrl: compatiblePersistedImageUrl(
+      site.heroOriginalImageUrl,
+    ),
     heroImageProvenance: fromDatabaseImageProvenance(
       site.heroImageProvenance,
     ),
@@ -108,6 +129,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
       site.draftPalette,
       config.presentation.fallbackPalette,
     ),
+    sourceData: compatibleSourceData(site.sourceData, site.sourceUrl),
     attributes,
     autoEnhanceImages: site.autoEnhanceImages,
     defaultLocale: site.defaultLocale,
@@ -123,8 +145,8 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
         currency: item.currency,
         available: item.available,
         attributes: config.itemAttributesSchema.parse(item.attributes),
-        imageUrl: item.imageUrl,
-        originalImageUrl: item.originalImageUrl,
+        imageUrl: compatiblePersistedImageUrl(item.imageUrl),
+        originalImageUrl: compatiblePersistedImageUrl(item.originalImageUrl),
         imageProvenance: fromDatabaseImageProvenance(item.imageProvenance),
       })),
     })),
@@ -142,6 +164,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     vertical: site.vertical,
     config,
     draft,
+    revision: site.draftRevision,
     theme: editableTheme(
       site.vertical,
       config,
@@ -153,8 +176,8 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
 }
 
 /**
- * Loads only editable draft state. Private previews and owner dashboards use
- * this path; custom domains never do.
+ * Loads editable draft state, including its optimistic-concurrency revision.
+ * Custom domains never use this mutable-draft path.
  */
 export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   if (!process.env.DATABASE_URL) return null;
@@ -165,6 +188,13 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   });
 
   return site ? projectSiteDraft(site) : null;
+}
+
+/** Backward-compatible owner loader; `LoadedSite.revision` is the token. */
+export async function findOwnerSiteDraft(
+  slug: string,
+): Promise<LoadedSite | null> {
+  return findSiteDraft(slug);
 }
 
 /**
@@ -221,7 +251,8 @@ export async function findPublishedSiteView(
           },
         })
       )?.publishedSiteVersion;
-  return version ? projectPublishedSiteVersion(version) : null;
+  if (!version || !isVerticalPublicationEnabled(version.vertical)) return null;
+  return projectPublishedSiteVersion(version);
 }
 
 /**
@@ -282,7 +313,7 @@ export function projectPublishedSiteVersion(
 ): SiteView | null {
   if (!version.publishedAt) return null;
   const config = resolveVerticalConfig(version.vertical);
-  const content = jsonRecord(version.content);
+  const content = compatiblePublishedContent(version.content);
   const draft = config.draftSchema.parse({
     ...content,
     palette: version.palette,
@@ -426,7 +457,9 @@ function publishedTheme(
 
 function storedPalette(
   value: Prisma.JsonValue,
-  fallback: SitePaletteView,
+  fallback: Omit<SitePaletteView, "accentForeground"> & {
+    accentForeground?: string;
+  },
 ): SitePaletteView {
   const palette = jsonRecord(value);
   if (
@@ -434,19 +467,153 @@ function storedPalette(
     typeof palette.foreground !== "string" ||
     typeof palette.accent !== "string"
   ) {
-    return fallback;
+    return {
+      ...fallback,
+      accentForeground: fallback.accentForeground ?? "#ffffff",
+    };
   }
   return {
     background: palette.background,
     foreground: palette.foreground,
     accent: palette.accent,
+    accentForeground:
+      typeof palette.accentForeground === "string"
+        ? palette.accentForeground
+        : "#ffffff",
   };
 }
 
-function jsonRecord(value: Prisma.JsonValue): Record<string, unknown> {
+function jsonRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function compatiblePersistedImageUrl(value: unknown): string | null {
+  const parsed = siteImageUrlSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function compatibleSourceData(
+  value: unknown,
+  sourceUrl: unknown,
+): Record<string, unknown> {
+  const sourceData = jsonRecord(value);
+  const source = validHttpUrl(sourceUrl);
+  const navigation = Array.isArray(sourceData.navigation)
+    ? sourceData.navigation.flatMap((entry) => {
+        const normalized = compatibleSourceNavigation(entry, source);
+        return normalized ? [normalized] : [];
+      })
+    : [];
+  const brandAssets = Array.isArray(sourceData.brandAssets)
+    ? sourceData.brandAssets.flatMap((entry) => {
+        const asset = jsonRecord(entry);
+        const url = compatiblePersistedImageUrl(asset.url);
+        return url ? [{ ...asset, url }] : [];
+      })
+    : [];
+  const evidence = Array.isArray(sourceData.evidence)
+    ? sourceData.evidence.map((entry) => {
+        const record = jsonRecord(entry);
+        return {
+          ...record,
+          value:
+            typeof record.value === "string"
+              ? record.value.slice(0, 500)
+              : record.value,
+          excerpt:
+            typeof record.excerpt === "string"
+              ? record.excerpt.slice(0, 280)
+              : record.excerpt,
+        };
+      })
+    : [];
+  return { ...sourceData, navigation, brandAssets, evidence };
+}
+
+function compatibleSourceNavigation(
+  value: unknown,
+  source: URL | null,
+): Record<string, unknown> | null {
+  const navigation = jsonRecord(value);
+  if (
+    typeof navigation.label !== "string" ||
+    typeof navigation.url !== "string"
+  ) {
+    return null;
+  }
+
+  let intent = navigation.url;
+  try {
+    const absolute = new URL(intent);
+    if (!source || absolute.origin !== source.origin) return null;
+    intent = `${absolute.pathname}${absolute.search}${absolute.hash}`;
+  } catch {
+    // Current rows already store a bounded internal intent.
+  }
+  const parsedIntent = sourceNavigationIntentSchema.safeParse(intent);
+  if (!parsedIntent.success) {
+    return null;
+  }
+
+  const candidateDestination =
+    source?.protocol === "https:"
+      ? new URL(parsedIntent.data, source).toString()
+      : null;
+  const destination = safeExternalHttpsUrlSchema.safeParse(
+    candidateDestination,
+  );
+  return {
+    label: navigation.label,
+    url: parsedIntent.data,
+    destinationUrl: destination.success ? destination.data : null,
+  };
+}
+
+function compatiblePublishedContent(value: unknown): Record<string, unknown> {
+  const content = jsonRecord(value);
+  const sourceUrl = content.sourceUrl;
+  const catalogSections = Array.isArray(content.catalogSections)
+    ? content.catalogSections.map((sectionValue) => {
+        const section = jsonRecord(sectionValue);
+        const items = Array.isArray(section.items)
+          ? section.items.map((itemValue) => {
+              const item = jsonRecord(itemValue);
+              return {
+                ...item,
+                imageUrl: compatiblePersistedImageUrl(item.imageUrl),
+                originalImageUrl: compatiblePersistedImageUrl(
+                  item.originalImageUrl,
+                ),
+              };
+            })
+          : section.items;
+        return { ...section, items };
+      })
+    : content.catalogSections;
+
+  return {
+    ...content,
+    logoUrl: compatiblePersistedImageUrl(content.logoUrl),
+    faviconUrl: compatiblePersistedImageUrl(content.faviconUrl),
+    heroImageUrl: compatiblePersistedImageUrl(content.heroImageUrl),
+    heroOriginalImageUrl: compatiblePersistedImageUrl(
+      content.heroOriginalImageUrl,
+    ),
+    sourceData: compatibleSourceData(content.sourceData, sourceUrl),
+    catalogSections,
+  };
+}
+
+function validHttpUrl(value: unknown): URL | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 function fromDatabaseImageProvenance(

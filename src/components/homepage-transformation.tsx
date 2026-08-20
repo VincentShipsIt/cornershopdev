@@ -12,26 +12,8 @@ const menuItems = sampleRestaurant.menuSections
   .flatMap((section) => section.items)
   .slice(0, 3);
 
-/**
- * `sampleRestaurant.heroImageUrl` is sourced at a width tuned for a full-bleed
- * hero (see other Unsplash usages in `verticals/restaurant/schema.ts`), but this
- * component only ever renders it inside browser-chrome mockups a few hundred
- * pixels wide. `images.unoptimized: true` (next.config.ts) means Next never
- * downsizes it for us, so request a variant sized for where it actually lands
- * here — otherwise every visitor downloads the full ~1800px asset for a ~300px
- * frame, which is exactly the kind of oversized, high-priority fetch that can
- * push out the page's real LCP element under Lighthouse's simulated throttling.
- */
-function unsplashSrc(url: string, width: number, quality = 75): string {
-  try {
-    const resized = new URL(url);
-    resized.searchParams.set("w", String(width));
-    resized.searchParams.set("q", String(quality));
-    return resized.toString();
-  } catch {
-    return url;
-  }
-}
+const transformationImageSrc =
+  "/marketing/restaurant-transformation.webp";
 
 /**
  * A before/after mock of a real restaurant site, so it is the restaurant niche's
@@ -63,7 +45,7 @@ export function HomepageTransformation({ brandName }: { brandName: string }) {
           </div>
           <div className="relative h-32 overflow-hidden border-b border-foreground/10">
             <Image
-              src={unsplashSrc(sampleRestaurant.heroImageUrl ?? "", 560)}
+              src={transformationImageSrc}
               alt=""
               fill
               sizes="(max-width: 640px) 48vw, 280px"
@@ -120,7 +102,7 @@ export function HomepageTransformation({ brandName }: { brandName: string }) {
             <div className="absolute left-1/2 top-2 z-30 h-4 w-16 -translate-x-1/2 rounded-full bg-[#171914]" />
             <div className="relative h-60 overflow-hidden sm:h-72">
               <Image
-                src={unsplashSrc(sampleRestaurant.heroImageUrl ?? "", 700)}
+                src={transformationImageSrc}
                 alt={`${sampleRestaurant.name} dining room`}
                 fill
                 sizes="(max-width: 640px) 58vw, 350px"

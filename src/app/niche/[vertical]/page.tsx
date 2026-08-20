@@ -12,19 +12,21 @@ import {
   MousePointerClick,
   RefreshCcw,
   ShieldCheck,
+  ShoppingBasket,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { HomepageTransformation } from "@/components/homepage-transformation";
 import { ImportForm } from "@/components/import-form";
 import { SiteHeader } from "@/components/site-header";
+import { nicheFontVariables } from "@/components/fonts/niche-font-scope";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  listMarketingVerticals,
+  isVerticalPubliclyAccessible,
+  listPublicVerticals,
   resolveVerticalBySlug,
   resolveVerticalConfig,
-  verticalLaunchReadiness,
   verticalSlug,
 } from "@/lib/verticals/registry";
 import type { MarketingIconName } from "@/lib/verticals/types";
@@ -45,16 +47,17 @@ const icons: Record<MarketingIconName, LucideIcon> = {
   catalog: MenuSquare,
   imagery: Images,
   booking: CalendarCheck2,
+  ordering: ShoppingBasket,
   refresh: RefreshCcw,
   shield: ShieldCheck,
   cursor: MousePointerClick,
 };
 
-// Only launch-ready niches are fixed at build time. Registered drafts stay 404s
-// until their domain, sender and proxy hostname agree; `dynamicParams` prevents
-// an unlaunched slug from rendering on demand between deployments.
+// The niche set is fixed at build time — it is the vertical registry — so every
+// storefront prerenders and `dynamicParams` keeps an unregistered slug a 404
+// instead of an on-demand render of nothing.
 export function generateStaticParams() {
-  return listMarketingVerticals().map((id) => ({ vertical: verticalSlug(id) }));
+  return listPublicVerticals().map((id) => ({ vertical: verticalSlug(id) }));
 }
 
 export const dynamicParams = false;
@@ -66,12 +69,14 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id || !verticalLaunchReadiness(id).ready) return {};
+  if (!id || !isVerticalPubliclyAccessible(id)) return {};
   const { marketing } = resolveVerticalConfig(id);
   const { mark } = marketing.brand;
   const title = `${marketing.brand.name} — ${marketing.hero.headline}`;
   const description = marketing.hero.subheadline;
-  const canonical = marketing.domain ? `https://${marketing.domain}` : undefined;
+  const canonical = marketing.domain
+    ? `https://${marketing.domain}`
+    : undefined;
   return {
     // Absolute so the root layout's "| Cornershopdev" template stays off a niche
     // storefront: a visitor on restofront.com should never see the factory's name
@@ -130,16 +135,19 @@ export default async function NichePage({
 }) {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id || !verticalLaunchReadiness(id).ready) notFound();
+  if (!id || !isVerticalPubliclyAccessible(id)) notFound();
 
   const { marketing } = resolveVerticalConfig(id);
   const slug = verticalSlug(id);
+  const fontVariables = nicheFontVariables(id);
   // Every route out of this page carries the niche, so a lead is attached to the
   // vertical that produced it before the studio ever opens.
   const createHref = `/create?vertical=${slug}`;
   const headerLinks = [
     { href: "#how-it-works", label: "How it works" },
-    ...(marketing.themeGallery ? [marketing.themeGallery] : []),
+    ...(marketing.themeGallery
+      ? [{ ...marketing.themeGallery, prefetch: false }]
+      : []),
     { href: "#features", label: "What stays yours" },
     { href: "#pricing", label: "Pricing" },
   ];
@@ -157,6 +165,7 @@ export default async function NichePage({
         brand={{ ...marketing.brand }}
         links={headerLinks}
         createHref={createHref}
+        fontVariables={fontVariables}
       />
       <main>
         <section className="paper-grid overflow-hidden border-b">
@@ -191,6 +200,7 @@ export default async function NichePage({
               {marketing.themeGallery ? (
                 <Link
                   href={marketing.themeGallery.href}
+                  prefetch={false}
                   className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary"
                 >
                   {marketing.themeGallery.label}
@@ -394,7 +404,9 @@ export default async function NichePage({
                   nativeButton={false}
                   variant={plan.featured ? "secondary" : "outline"}
                   className={`mt-8 w-full ${
-                    plan.featured ? "bg-white text-primary hover:bg-white/90" : ""
+                    plan.featured
+                      ? "bg-white text-primary hover:bg-white/90"
+                      : ""
                   }`}
                 >
                   Build a free preview
@@ -424,7 +436,10 @@ export default async function NichePage({
             {marketing.brand.name}
           </span>
           <span>{marketing.footerTagline}</span>
-          <Link href={createHref} className="flex items-center gap-1.5 text-white">
+          <Link
+            href={createHref}
+            className="flex items-center gap-1.5 text-white"
+          >
             Build a preview <ArrowRight className="size-3.5" />
           </Link>
         </div>

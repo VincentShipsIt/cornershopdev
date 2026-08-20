@@ -12,7 +12,7 @@ export type LocalServiceTemplate = {
   titleClassName: string;
   sectionClassName: string;
   showProjectImagesByDefault: boolean;
-  copy: Record<"en", VerticalTemplateCopy>;
+  copy: Record<"en" | "fr", VerticalTemplateCopy>;
 };
 
 const sharedTitle =
@@ -75,7 +75,15 @@ function template(
     titleClassName: sharedTitle,
     sectionClassName: "border-t-2 border-current/15 pt-6",
     showProjectImagesByDefault,
-    copy: { en: copy },
+    copy: {
+      en: copy,
+      fr: {
+        catalogEyebrow: "Services",
+        catalogHeading: "Des interventions décrites clairement.",
+        featuredHeading: "Réalisations récentes",
+        featuredSubheading: "Des travaux réels, présentés sans exagération.",
+      },
+    },
   };
 }
 

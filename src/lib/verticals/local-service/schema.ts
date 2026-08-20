@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  assertTranslationParity,
+  assertSiteDraftInvariants,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
   catalogItemSchema,
@@ -110,7 +110,7 @@ export const localServiceSiteDraftSchema = z
       .min(1)
       .max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 export type LocalServiceTradeType = z.infer<
   typeof localServiceTradeTypeSchema

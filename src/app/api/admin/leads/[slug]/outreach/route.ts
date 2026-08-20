@@ -131,7 +131,7 @@ export async function POST(
       where: { slug },
       select: {
         id: true,
-        email: true,
+        leadContactEmail: true,
         status: true,
         vertical: true,
         updatedAt: true,
@@ -160,14 +160,14 @@ export async function POST(
     if (
       site.vertical !== Vertical.RESTAURANT ||
       !mutableLeadStatuses.has(site.status) ||
-      !site.email
+      !site.leadContactEmail
     ) {
       return NextResponse.json(
         { error: "This lead is not eligible for outreach." },
         { status: 409 },
       );
     }
-    const recipient = site.email.trim().toLowerCase();
+    const recipient = site.leadContactEmail.trim().toLowerCase();
     const reviewedAt = site.auditEvents[0]?.createdAt ?? null;
     if (!reviewedAt || !isOperatorReviewCurrent(reviewedAt, site.updatedAt)) {
       return NextResponse.json(
@@ -325,7 +325,7 @@ async function sendOperatorThreadReply(input: {
     where: { slug: input.slug },
     select: {
       id: true,
-      email: true,
+      leadContactEmail: true,
       vertical: true,
       status: true,
     },
@@ -333,7 +333,7 @@ async function sendOperatorThreadReply(input: {
   if (!site) {
     return NextResponse.json({ error: "Lead not found." }, { status: 404 });
   }
-  if (site.vertical !== Vertical.RESTAURANT || !site.email) {
+  if (site.vertical !== Vertical.RESTAURANT || !site.leadContactEmail) {
     return NextResponse.json(
       { error: "This lead is not eligible for outreach." },
       { status: 409 },

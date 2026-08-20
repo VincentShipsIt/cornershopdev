@@ -95,6 +95,7 @@ export const restaurantConfig = {
     item: "Dish",
   },
   marketing: restaurantMarketing,
+  publicationEnabled: true,
   attributesSchema: restaurantAttributesSchema,
   attributeDefaults: {
     cuisine: "",
@@ -160,7 +161,8 @@ export const restaurantConfig = {
   i18n: restaurantDictionaryExtensions,
   rendererCapabilities: (attributes) => ({
     showGallery: attributes.showMenuImages,
-    bookingRequestForm: "missing-provider",
+    primaryAction: "booking",
+    bookingRequestMode: "when-missing",
   }),
 } satisfies VerticalConfig<
   RestaurantAttributes,
