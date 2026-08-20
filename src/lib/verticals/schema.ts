@@ -149,13 +149,58 @@ export const businessHoursSchema = z
   .max(14)
   .default([]);
 
+/**
+ * A storefront navigation target is either an HTTPS URL or an unambiguous
+ * same-origin path, query, or fragment. Protocol-relative and backslash forms
+ * are excluded because browsers can reinterpret them as external authorities.
+ */
+export const safeStorefrontHrefSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2_048)
+  .superRefine((value, context) => {
+    if (/[\\\u0000-\u001f\u007f]/.test(value)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Navigation links cannot contain backslashes or control characters",
+      });
+      return;
+    }
+    if (/^(?:\/(?!\/)|\?|#)/.test(value)) {
+      return;
+    }
+
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:") {
+        context.addIssue({
+          code: "custom",
+          message: "External navigation links must use HTTPS",
+        });
+      }
+      if (url.username || url.password) {
+        context.addIssue({
+          code: "custom",
+          message: "Navigation links cannot contain credentials",
+        });
+      }
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Navigation links must be internal or use HTTPS",
+      });
+    }
+  });
+
 export const sourceDataSchema = z
   .object({
     navigation: z
       .array(
         z.object({
           label: z.string().trim().min(1).max(60),
-          url: z.url(),
+          url: safeStorefrontHrefSchema,
         }),
       )
       .max(12)

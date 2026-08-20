@@ -55,10 +55,10 @@ describe("deterministic source reconstruction", () => {
         { days: "Tuesday, Wednesday, Thursday", hours: "12:00–22:30" },
       ],
       navigation: [
-        { label: "La carte", url: "https://maisonsafran.example/menu" },
+        { label: "La carte", url: "/menu" },
         {
           label: "Notre histoire",
-          url: "https://maisonsafran.example/a-propos",
+          url: "/a-propos",
         },
       ],
     });
@@ -94,6 +94,142 @@ describe("deterministic source reconstruction", () => {
         expect.objectContaining({ field: "catalog.item", value: "Œuf mayonnaise" }),
       ]),
     );
+  });
+
+  it("preserves same-origin navigation from an HTTP-only source as internal hrefs", async () => {
+    const html = await fixture("http-only-source.html");
+    const reconstructed = reconstructSource({
+      homepage: { html, url: new URL("http://legacy-bistro.example/") },
+      fallbackName: "legacy-bistro.example",
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.navigation).toEqual([
+      {
+        label: "Lunch menu",
+        url: "/menu?service=lunch#specials",
+      },
+    ]);
+  });
+
+  it.each([500, 501, 100_000])(
+    "bounds %i-character evidence before no-model draft parsing",
+    async (length) => {
+      delete process.env.OPENROUTER_API_KEY;
+      const sourceUrl = new URL("https://long-evidence.example/");
+      const description = "x".repeat(length);
+      const reconstructed = reconstructSource({
+        homepage: {
+          html: `<html lang="en"><head><meta name="description" content="${description}"></head><body><h1>Long Evidence</h1></body></html>`,
+          url: sourceUrl,
+        },
+        fallbackName: sourceUrl.hostname,
+        links: [],
+        fallbackPalette,
+      });
+      const evidence = reconstructed.evidence.find(
+        (entry) => entry.field === "description",
+      );
+
+      expect(reconstructed.description).toBe("x".repeat(500));
+      expect(evidence).toMatchObject({
+        value: "x".repeat(500),
+        method: "meta",
+        sourceUrl: sourceUrl.toString(),
+      });
+      expect(evidence?.excerpt.length).toBeLessThanOrEqual(280);
+
+      const extracted: ExtractedSite = {
+        source: sourceUrl.toString(),
+        sourceUrl: sourceUrl.toString(),
+        pageText: reconstructed.description,
+        links: [],
+        ...reconstructed,
+      };
+      await expect(
+        generateSiteDraft(extracted, restaurantConfig),
+      ).resolves.toMatchObject({
+        description: "x".repeat(500),
+        sourceData: {
+          evidence: expect.arrayContaining([
+            expect.objectContaining({ value: "x".repeat(500) }),
+          ]),
+        },
+      });
+    },
+  );
+
+  it("normalizes mailto email candidates and skips malformed earlier evidence", () => {
+    const sourceUrl = new URL("https://email-source.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `
+          <html lang="en">
+            <head>
+              <script type="application/ld+json">
+                {
+                  "@context": "https://schema.org",
+                  "@type": "Restaurant",
+                  "name": "Email Source",
+                  "email": "owner@example.com?subject=poisoned"
+                }
+              </script>
+            </head>
+            <body>
+              <a href="mailto:broken%ZZ@example.com">Broken email</a>
+              <a href="mailto:Hello@Example.com?subject=Booking">Email us</a>
+            </body>
+          </html>
+        `,
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.email).toBe("hello@example.com");
+    expect(reconstructed.evidence).toContainEqual(
+      expect.objectContaining({
+        field: "email",
+        value: "hello@example.com",
+        method: "link",
+      }),
+    );
+  });
+
+  it.each([
+    ["mailto:hello@example.com", "hello@example.com"],
+    ["not an email", "fallback@example.com"],
+    ["mailto:%0A@example.com", "fallback@example.com"],
+  ])("selects the next valid email after %s", (jsonEmail, expected) => {
+    const sourceUrl = new URL("https://email-candidates.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `
+          <html lang="en">
+            <head>
+              <script type="application/ld+json">
+                {
+                  "@context": "https://schema.org",
+                  "@type": "Restaurant",
+                  "name": "Email Candidates",
+                  "email": ${JSON.stringify(jsonEmail)}
+                }
+              </script>
+            </head>
+            <body><span itemprop="email">fallback@example.com</span></body>
+          </html>
+        `,
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.email).toBe(expected);
   });
 
   it("degrades safely across malformed HTML and JSON-LD without accepting private assets", async () => {
@@ -221,6 +357,10 @@ describe("deterministic source reconstruction", () => {
     "https://user:pass@images.example/logo.png",
     "https://images.example:8443/logo.png",
     "https://127.0.0.1/logo.png",
+    "https://2130706433/logo.png",
+    "https://0x7f000001/logo.png",
+    "https://0177.0.0.1/logo.png",
+    "https://127.1/logo.png",
     "https://169.254.169.254/latest/meta-data/",
     "https://[::1]/logo.png",
     "data:image/png;base64,abc",

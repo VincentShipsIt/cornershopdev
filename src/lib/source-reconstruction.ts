@@ -1,3 +1,4 @@
+import { normalizeAccountEmail } from "@/lib/account-email";
 import type { ExtractedLink } from "@/lib/importer";
 
 const MAX_JSON_LD_BLOCKS = 24;
@@ -179,14 +180,16 @@ export function reconstructSource(input: {
     itemPropCandidate(input.homepage, "telephone"),
   ]);
   const email = firstCandidate([
-    jsonStringCandidate(
-      business?.email,
-      "json-ld",
-      businessSourceUrl,
-      business,
+    validEmailCandidate(
+      jsonStringCandidate(
+        business?.email,
+        "json-ld",
+        businessSourceUrl,
+        business,
+      ),
     ),
-    contactLinkCandidate(pages, "mailto:"),
-    itemPropCandidate(input.homepage, "email"),
+    emailLinkCandidate(pages),
+    validEmailCandidate(itemPropCandidate(input.homepage, "email")),
   ]);
   const businessHours = extractBusinessHours(
     business,
@@ -573,8 +576,27 @@ function contactLinkCandidate(
     for (const tag of page.html.match(/<a\b[^>]*>/gi) ?? []) {
       const href = parseAttributes(tag).href;
       if (!href?.toLowerCase().startsWith(scheme)) continue;
-      const value = decodeURIComponent(href.slice(scheme.length).split("?")[0] ?? "");
+      let value: string;
+      try {
+        value = decodeURIComponent(
+          href.slice(scheme.length).split("?")[0] ?? "",
+        );
+      } catch {
+        continue;
+      }
       if (cleanText(value)) return candidate(value, "link", page.url, tag);
+    }
+  }
+  return null;
+}
+
+function emailLinkCandidate(pages: ReconstructedPage[]): Candidate | null {
+  for (const page of pages) {
+    for (const tag of page.html.match(/<a\b[^>]*>/gi) ?? []) {
+      const href = parseAttributes(tag).href;
+      if (!href?.toLowerCase().startsWith("mailto:")) continue;
+      const source = validEmailCandidate(candidate(href, "link", page.url, tag));
+      if (source) return source;
     }
   }
   return null;
@@ -739,10 +761,16 @@ function extractNavigation(
         if (!label || !attributes.href) continue;
         try {
           const url = new URL(decodeHtml(attributes.href), page.url);
-          url.hash = "";
-          if (!["http:", "https:"].includes(url.protocol) || url.origin !== homepageUrl.origin) continue;
-          if (links.some((link) => link.url === url.toString() || link.label === label)) continue;
-          links.push({ label, url: url.toString() });
+          if (
+            !["http:", "https:"].includes(url.protocol) ||
+            url.origin !== homepageUrl.origin
+          ) {
+            continue;
+          }
+          const href = `${url.pathname}${url.search}${url.hash}`;
+          if (href.length > 2_048) continue;
+          if (links.some((link) => link.url === href || link.label === label)) continue;
+          links.push({ label, url: href });
           if (links.length >= MAX_NAVIGATION_LINKS) return links;
         } catch {
           // Malformed navigation does not invalidate other source evidence.
@@ -1060,8 +1088,12 @@ function addEvidence(
   source: Candidate | null | undefined,
 ): void {
   if (!source || !source.value || evidence.length >= MAX_EVIDENCE_RECORDS) return;
-  if (evidence.some((item) => item.field === field && item.value === source.value)) return;
-  evidence.push({ field, ...source });
+  const value = boundedText(cleanText(source.value), 500);
+  if (!value) return;
+  if (evidence.some((item) => item.field === field && item.value === value)) {
+    return;
+  }
+  evidence.push({ field, ...source, value });
 }
 
 function stringValue(value: unknown): string {
@@ -1097,8 +1129,30 @@ function normalizePhone(value: string): string {
 }
 
 function normalizeEmail(value: string): string {
-  const cleaned = value.trim().toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned) ? cleaned : "";
+  let cleaned = value.trim();
+  if (/^mailto:/i.test(cleaned)) {
+    try {
+      const mailto = new URL(cleaned);
+      if (mailto.protocol !== "mailto:") return "";
+      cleaned = decodeURIComponent(mailto.pathname);
+    } catch {
+      return "";
+    }
+  } else if (/[?#]/.test(cleaned)) {
+    return "";
+  }
+
+  try {
+    return normalizeAccountEmail(cleaned);
+  } catch {
+    return "";
+  }
+}
+
+function validEmailCandidate(source: Candidate | null): Candidate | null {
+  if (!source) return null;
+  const value = normalizeEmail(source.value);
+  return value ? { ...source, value } : null;
 }
 
 function safeStringify(value: unknown): string {

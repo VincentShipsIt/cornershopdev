@@ -169,7 +169,10 @@ Restaurant crawling, same-origin page discovery, SSRF checks, and source
 reconstruction run locally without a model. JSON-LD, metadata, explicit contact
 links, semantic address markup, source navigation, logos/favicons, and CSS/meta
 colours are recovered with bounded parsers. Every accepted fact keeps its source
-URL, extraction method, and excerpt. Structured menu/product/service candidates
+URL, extraction method, and excerpt; evidence values are capped before draft
+validation and malformed email candidates are skipped. Same-origin navigation
+is persisted as safe internal hrefs, including for HTTP-only source sites.
+Structured menu/product/service candidates
 are accepted only when deterministic schema evidence exists. Each JSON-LD
 entity keeps its owning page URL for provenance and relative asset resolution;
 catalog availability remains unknown unless the source explicitly states it.
