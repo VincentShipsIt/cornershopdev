@@ -52,4 +52,24 @@ describe("Lighthouse CI environment", () => {
     ]);
     expect(workflow).toContain("          include-hidden-files: true\n");
   });
+
+  it("keeps audited LCP text and imagery off remote critical assets", async () => {
+    const [layout, globalStyles, transformation] = await Promise.all([
+      readFile(path.join(repoRoot, "src/app/layout.tsx"), "utf8"),
+      readFile(path.join(repoRoot, "src/app/globals.css"), "utf8"),
+      readFile(
+        path.join(repoRoot, "src/components/homepage-transformation.tsx"),
+        "utf8",
+      ),
+    ]);
+
+    expect(layout).not.toContain('from "next/font/');
+    expect(globalStyles).toContain(
+      "--font-sans: ui-sans-serif, system-ui, sans-serif;",
+    );
+    expect(globalStyles).toContain("font-family: Georgia, serif;");
+    expect(transformation).toContain(
+      '"/marketing/restaurant-transformation.webp"',
+    );
+  });
 });
