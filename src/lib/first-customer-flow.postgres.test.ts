@@ -151,12 +151,14 @@ describe.skipIf(!enabled)(
             constraintName: string;
             constraintType: string;
             validated: boolean;
+            definition: string;
           }>
         >`
           SELECT
             conname AS "constraintName",
-            contype AS "constraintType",
-            convalidated AS "validated"
+            contype::text AS "constraintType",
+            convalidated AS "validated",
+            pg_get_constraintdef(oid) AS "definition"
           FROM pg_constraint
           WHERE conname = 'ClaimInvitation_operator_approval_evidence_check'
             AND conrelid = '"ClaimInvitation"'::regclass
@@ -166,8 +168,27 @@ describe.skipIf(!enabled)(
           constraintName: "ClaimInvitation_operator_approval_evidence_check",
           constraintType: "c",
           validated: true,
+          definition: expect.stringContaining('"approvalEvidenceRef"'),
         },
       ]);
+      const constraintDefinition = (
+        await db.$queryRaw<Array<{ definition: string }>>`
+          SELECT pg_get_constraintdef(oid) AS "definition"
+          FROM pg_constraint
+          WHERE conname = 'ClaimInvitation_operator_approval_evidence_check'
+            AND conrelid = '"ClaimInvitation"'::regclass
+        `
+      )[0]!.definition;
+      for (const requiredColumn of [
+        '"proofMethod"',
+        '"acceptedAt"',
+        '"revokedAt"',
+        '"approvalEvidenceRef"',
+        '"approvedBy"',
+        '"approvedAt"',
+      ]) {
+        expect(constraintDefinition).toContain(requiredColumn);
+      }
 
       const rejectedOldBinaryInsert = await db.$executeRaw`
           INSERT INTO "ClaimInvitation" (
