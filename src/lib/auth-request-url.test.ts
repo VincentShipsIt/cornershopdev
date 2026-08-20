@@ -72,6 +72,36 @@ describe("auth request origin", () => {
     ).toBe("http://localhost:4444");
   });
 
+  it("keeps the exact configured loopback origin only in guarded E2E mode", () => {
+    const localRequest = request(
+      { host: "127.0.0.1:3100" },
+      "http://127.0.0.1:3100/api/auth/checkout",
+    );
+    const productionHarness = {
+      NODE_ENV: "production",
+      CORNERSHOP_ENV: "test",
+      FIRST_CUSTOMER_E2E: "1",
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3100",
+      PLATFORM_HOSTNAMES: "127.0.0.1",
+    };
+
+    expect(resolveAuthRequestOrigin(localRequest, productionHarness)).toBe(
+      "http://127.0.0.1:3100",
+    );
+    expect(
+      resolveAuthRequestOrigin(localRequest, {
+        ...productionHarness,
+        FIRST_CUSTOMER_E2E: undefined,
+      }),
+    ).toBe("https://127.0.0.1");
+    expect(
+      resolveAuthRequestOrigin(localRequest, {
+        ...productionHarness,
+        NEXT_PUBLIC_APP_URL: "http://localhost:3100",
+      }),
+    ).toBe("https://127.0.0.1");
+  });
+
   it("rebuilds internal mutation origins without forwarding external navigation metadata", () => {
     const headers = internalAuthMutationHeaders(
       request(

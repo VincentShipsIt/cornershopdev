@@ -1,10 +1,12 @@
 import { betterAuthAllowedHosts } from "@/lib/better-auth-config";
+import { firstCustomerTestModeEnabled } from "@/lib/first-customer-test-mode";
 import { requestHostname } from "@/lib/request-hostname";
 
 type AuthRequestEnvironment = Record<string, string | undefined>;
 type AuthRequest = Pick<Request, "headers" | "url">;
 
 const FACTORY_ORIGIN = "https://cornershop.dev";
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
 function firstHeaderValue(value: string | null): string {
   return value?.split(",")[0]?.trim() ?? "";
@@ -42,6 +44,15 @@ export function resolveAuthRequestOrigin(
   }
 
   if (environment.NODE_ENV === "production") {
+    const configuredOrigin = fallbackOrigin(environment);
+    const configuredUrl = new URL(configuredOrigin);
+    if (
+      firstCustomerTestModeEnabled(environment) &&
+      LOOPBACK_HOSTNAMES.has(hostname) &&
+      configuredUrl.hostname === hostname
+    ) {
+      return configuredOrigin;
+    }
     return `https://${hostname}`;
   }
 
