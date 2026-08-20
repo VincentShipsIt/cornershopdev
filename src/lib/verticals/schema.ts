@@ -192,11 +192,11 @@ export const businessHoursSchema = z
   .default([]);
 
 /**
- * A storefront navigation target is either an HTTPS URL or an unambiguous
- * same-origin path, query, or fragment. Protocol-relative and backslash forms
- * are excluded because browsers can reinterpret them as external authorities.
+ * The bounded, same-origin meaning of a reconstructed source link. Its
+ * authenticated absolute destination is stored separately, so this field can
+ * never be reinterpreted as an external authority by a renderer.
  */
-export const safeStorefrontHrefSchema = z
+export const sourceNavigationIntentSchema = z
   .string()
   .trim()
   .min(1)
@@ -210,28 +210,11 @@ export const safeStorefrontHrefSchema = z
       });
       return;
     }
-    if (/^(?:\/(?!\/)|\?|#)/.test(value)) {
-      return;
-    }
-
-    try {
-      const url = new URL(value);
-      if (url.protocol !== "https:") {
-        context.addIssue({
-          code: "custom",
-          message: "External navigation links must use HTTPS",
-        });
-      }
-      if (url.username || url.password) {
-        context.addIssue({
-          code: "custom",
-          message: "Navigation links cannot contain credentials",
-        });
-      }
-    } catch {
+    if (!/^(?:\/(?!\/)|\?|#)/.test(value)) {
       context.addIssue({
         code: "custom",
-        message: "Navigation links must be internal or use HTTPS",
+        message:
+          "Source navigation intent must be an internal path, query, or fragment",
       });
     }
   });
@@ -242,7 +225,8 @@ export const sourceDataSchema = z
       .array(
         z.object({
           label: z.string().trim().min(1).max(60),
-          url: safeStorefrontHrefSchema,
+          url: sourceNavigationIntentSchema,
+          destinationUrl: safeExternalHttpsUrlSchema.nullable().default(null),
         }),
       )
       .max(12)
@@ -334,7 +318,7 @@ export const baseSiteDraftSchema = z
     translations: z.array(baseSiteTranslationSchema).max(8).default([]),
     catalogSections: z.array(catalogSectionSchema).min(1).max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 type TranslationParityDraft = {
   defaultLocale: string;
@@ -411,6 +395,56 @@ export function assertTranslationParity(
       });
     }
   });
+}
+
+type SourceNavigationDraft = {
+  sourceUrl: string | null;
+  sourceData: {
+    navigation: Array<{
+      url: string;
+      destinationUrl: string | null;
+    }>;
+  };
+};
+
+export function assertSourceNavigationDestinations(
+  draft: SourceNavigationDraft,
+  context: z.RefinementCtx,
+): void {
+  let source: URL | null = null;
+  try {
+    source = draft.sourceUrl ? new URL(draft.sourceUrl) : null;
+  } catch {
+    source = null;
+  }
+
+  draft.sourceData.navigation.forEach((navigation, index) => {
+    if (!navigation.destinationUrl) return;
+    const destination = new URL(navigation.destinationUrl);
+    const expectedDestination = source
+      ? new URL(navigation.url, source).toString()
+      : null;
+    if (
+      !source ||
+      destination.origin !== source.origin ||
+      destination.toString() !== expectedDestination
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceData", "navigation", index, "destinationUrl"],
+        message:
+          "Source navigation destinations must match the authenticated source origin and intent",
+      });
+    }
+  });
+}
+
+export function assertSiteDraftInvariants(
+  draft: TranslationParityDraft & SourceNavigationDraft,
+  context: z.RefinementCtx,
+): void {
+  assertTranslationParity(draft, context);
+  assertSourceNavigationDestinations(draft, context);
 }
 
 export type SiteLocale = z.infer<typeof localeSchema>;

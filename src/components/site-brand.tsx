@@ -47,17 +47,28 @@ export function SourceNavigation({
         className,
       )}
     >
-      {navigation.map((link) => (
-        <a
-          key={link.url}
-          href={link.url}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
-        >
-          {link.label}
-        </a>
-      ))}
+      {navigation.map((link) =>
+        link.destinationUrl ? (
+          <a
+            key={link.url}
+            href={link.destinationUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+          >
+            {link.label}
+          </a>
+        ) : (
+          <span
+            key={link.url}
+            aria-disabled="true"
+            data-source-navigation-intent={link.url}
+            className="shrink-0 opacity-50"
+          >
+            {link.label}
+          </span>
+        ),
+      )}
     </nav>
   );
 }

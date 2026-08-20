@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  assertSiteDraftInvariants,
+  assertSourceNavigationDestinations,
   assertTranslationParity,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
@@ -176,7 +178,7 @@ export const restaurantSiteDraftSchema = z
       .min(1)
       .max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 export const restaurantDraftSchema = z
   .object({
@@ -187,6 +189,7 @@ export const restaurantDraftSchema = z
     menuSections: z.array(menuSectionSchema).min(1).max(12),
   })
   .superRefine((draft, context) => {
+    assertSourceNavigationDestinations(draft, context);
     assertTranslationParity(
       {
         defaultLocale: draft.defaultLocale,

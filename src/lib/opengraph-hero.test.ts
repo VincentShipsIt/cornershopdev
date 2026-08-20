@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import sharp from "sharp";
 import { loadPublicHeroImageDataUrl } from "@/lib/opengraph-hero";
 
 const opengraphRoute = await Bun.file(
@@ -7,14 +8,31 @@ const opengraphRoute = await Bun.file(
 
 describe("Open Graph remote hero boundary", () => {
   it("routes the metadata image through the bounded public-image fetcher", async () => {
+    const validPng = new Uint8Array(
+      await Bun.file(
+        new URL(
+          "../../public/brand/cornershopdev/favicon-32.png",
+          import.meta.url,
+        ),
+      ).arrayBuffer(),
+    );
     const fetchImage = mock(async () => ({
-      data: new TextEncoder().encode("public image"),
+      data: validPng,
       mediaType: "image/png",
     }));
 
-    await expect(
-      loadPublicHeroImageDataUrl("https://images.example/hero.png", fetchImage),
-    ).resolves.toBe("data:image/png;base64,cHVibGljIGltYWdl");
+    const result = await loadPublicHeroImageDataUrl(
+      "https://images.example/hero.png",
+      fetchImage,
+    );
+    expect(result).not.toBeNull();
+    expect(result!).toStartWith("data:image/jpeg;base64,");
+    const normalized = Buffer.from(result!.split(",")[1]!, "base64");
+    await expect(sharp(normalized).metadata()).resolves.toMatchObject({
+      format: "jpeg",
+      width: 1_200,
+      height: 630,
+    });
     expect(fetchImage).toHaveBeenCalledTimes(1);
     expect(opengraphRoute).toContain("loadPublicHeroImageDataUrl");
     expect(opengraphRoute).not.toMatch(/\bfetch\s*\(/);
@@ -65,6 +83,18 @@ describe("Open Graph remote hero boundary", () => {
         async () => ({
           data: new TextEncoder().encode("<svg></svg>"),
           mediaType: "image/svg+xml",
+        }),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("falls back when a PNG content type carries malformed bytes", async () => {
+    await expect(
+      loadPublicHeroImageDataUrl(
+        "https://images.example/malformed.png",
+        async () => ({
+          data: new TextEncoder().encode("not actually a PNG"),
+          mediaType: "image/png",
         }),
       ),
     ).resolves.toBeNull();

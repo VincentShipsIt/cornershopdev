@@ -16,7 +16,11 @@ export type SitePaletteView = {
 };
 
 export type SiteSourceDataView = {
-  navigation: Array<{ label: string; url: string }>;
+  navigation: Array<{
+    label: string;
+    url: string;
+    destinationUrl: string | null;
+  }>;
   brandAssets: Array<{
     type: "logo" | "favicon" | "hero" | "content";
     url: string;

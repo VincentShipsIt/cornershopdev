@@ -51,6 +51,7 @@ export type ExtractedBrandAsset = {
 export type ExtractedNavigationLink = {
   label: string;
   url: string;
+  destinationUrl: string | null;
 };
 
 export type ExtractedCatalogItem = {
@@ -770,7 +771,12 @@ function extractNavigation(
           const href = `${url.pathname}${url.search}${url.hash}`;
           if (href.length > 2_048) continue;
           if (links.some((link) => link.url === href || link.label === label)) continue;
-          links.push({ label, url: href });
+          links.push({
+            label,
+            url: href,
+            destinationUrl:
+              homepageUrl.protocol === "https:" ? url.toString() : null,
+          });
           if (links.length >= MAX_NAVIGATION_LINKS) return links;
         } catch {
           // Malformed navigation does not invalidate other source evidence.
@@ -1106,8 +1112,12 @@ function cleanText(value: string): string {
 
 function decodeHtml(value: string): string {
   return value
-    .replace(/&#(\d+);/g, (_match, decimal: string) => String.fromCodePoint(Number(decimal)))
-    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, decimal: string) =>
+      decodeNumericHtmlEntity(decimal, 10),
+    )
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) =>
+      decodeNumericHtmlEntity(hex, 16),
+    )
     .replaceAll("&amp;", "&")
     .replaceAll("&quot;", '"')
     .replaceAll("&#39;", "'")
@@ -1117,6 +1127,19 @@ function decodeHtml(value: string): string {
     .replaceAll("&nbsp;", " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function decodeNumericHtmlEntity(value: string, radix: 10 | 16): string {
+  const codePoint = Number.parseInt(value, radix);
+  if (
+    !Number.isSafeInteger(codePoint) ||
+    codePoint <= 0 ||
+    codePoint > 0x10ffff ||
+    (codePoint >= 0xd800 && codePoint <= 0xdfff)
+  ) {
+    return "\uFFFD";
+  }
+  return String.fromCodePoint(codePoint);
 }
 
 function boundedText(value: string, length: number): string {

@@ -55,10 +55,15 @@ describe("deterministic source reconstruction", () => {
         { days: "Tuesday, Wednesday, Thursday", hours: "12:00–22:30" },
       ],
       navigation: [
-        { label: "La carte", url: "/menu" },
+        {
+          label: "La carte",
+          url: "/menu",
+          destinationUrl: "https://maisonsafran.example/menu",
+        },
         {
           label: "Notre histoire",
           url: "/a-propos",
+          destinationUrl: "https://maisonsafran.example/a-propos",
         },
       ],
     });
@@ -109,8 +114,48 @@ describe("deterministic source reconstruction", () => {
       {
         label: "Lunch menu",
         url: "/menu?service=lunch#specials",
+        destinationUrl: null,
       },
     ]);
+  });
+
+  it("replaces out-of-range numeric entities without failing no-model import", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    const sourceUrl = new URL("https://malformed-entities.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `
+          <html lang="en">
+            <head>
+              <meta name="description" content="A cafe with malformed &#x110000; and &#999999999999999999999; entities.">
+            </head>
+            <body><h1>Entity Cafe</h1></body>
+          </html>
+        `,
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.description).toBe(
+      "A cafe with malformed � and � entities.",
+    );
+    await expect(
+      generateSiteDraft(
+        {
+          source: sourceUrl.toString(),
+          sourceUrl: sourceUrl.toString(),
+          pageText: reconstructed.description,
+          links: [],
+          ...reconstructed,
+        },
+        restaurantConfig,
+      ),
+    ).resolves.toMatchObject({
+      description: "A cafe with malformed � and � entities.",
+    });
   });
 
   it.each([500, 501, 100_000])(

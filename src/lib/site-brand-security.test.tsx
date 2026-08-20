@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { SiteRenderer } from "@/components/site-renderer";
 import { SiteBrand, SourceNavigation } from "@/components/site-brand";
+import { restaurantConfig } from "@/lib/verticals/restaurant/config";
+import {
+  restaurantSiteDraftSchema,
+  sampleSiteDraft,
+} from "@/lib/verticals/restaurant/schema";
 import {
   siteImageUrlSchema,
   sourceDataSchema,
@@ -8,22 +14,90 @@ import {
 
 describe("source navigation security", () => {
   it.each([
-    "https://source.example/menu",
     "/menu",
     "/menu?service=dinner#starters",
     "?service=dinner",
     "#starters",
-  ])("accepts and renders safe storefront href %s", (url) => {
+  ])("accepts safe storefront intent %s", (url) => {
     const sourceData = sourceDataSchema.parse({
       navigation: [{ label: "Menu", url }],
     });
 
+    expect(sourceData.navigation[0]).toEqual({
+      label: "Menu",
+      url,
+      destinationUrl: null,
+    });
+  });
+
+  it.each([false, true])(
+    "renders the authenticated source destination on %s surfaces",
+    (analyticsEnabled) => {
+      const draft = restaurantSiteDraftSchema.parse({
+        ...sampleSiteDraft,
+        sourceUrl: "https://source.example/",
+        sourceData: {
+          navigation: [
+            {
+              label: "Menu",
+              url: "/menu",
+              destinationUrl: "https://source.example/menu",
+            },
+          ],
+        },
+      });
+
+      const markup = renderToStaticMarkup(
+        <SiteRenderer
+          draft={draft}
+          vertical={restaurantConfig.id}
+          analyticsEnabled={analyticsEnabled}
+        />,
+      );
+
+      expect(markup).toContain('href="https://source.example/menu"');
+      expect(markup).not.toContain('href="/menu"');
+    },
+  );
+
+  it("preserves HTTP-only source intent without a public downgrade link", () => {
+    const draft = restaurantSiteDraftSchema.parse({
+      ...sampleSiteDraft,
+      sourceUrl: "http://source.example/",
+      sourceData: {
+        navigation: [
+          { label: "Menu", url: "/menu", destinationUrl: null },
+        ],
+      },
+    });
+
     const markup = renderToStaticMarkup(
-      <SourceNavigation draft={{ sourceData }} />,
+      <SourceNavigation draft={draft} />,
     );
 
-    expect(markup).toContain(`href="${url.replaceAll("&", "&amp;")}"`);
+    expect(markup).toContain('data-source-navigation-intent="/menu"');
+    expect(markup).not.toContain('href="/menu"');
+    expect(markup).not.toContain('href="http://source.example/menu"');
   });
+
+  it.each([
+    ["https://attacker.example/menu", "/menu"],
+    ["https://source.example/other", "/menu"],
+    ["http://source.example/menu", "/menu"],
+  ])(
+    "rejects destination %s that does not authenticate intent %s",
+    (destinationUrl, url) => {
+      expect(
+        restaurantSiteDraftSchema.safeParse({
+          ...sampleSiteDraft,
+          sourceUrl: "https://source.example/",
+          sourceData: {
+            navigation: [{ label: "Menu", url, destinationUrl }],
+          },
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each([
     "javascript:alert(1)",
@@ -34,6 +108,7 @@ describe("source navigation security", () => {
     "https:\\attacker.example/menu",
     "https://exa\nmple.com/menu",
     "http://source.example/menu",
+    "https://source.example/menu",
     "mailto:owner@source.example",
     "menu",
   ])("rejects unsafe storefront href %s before rendering", (url) => {

@@ -45,7 +45,11 @@ export type PersistableSiteDraft = {
     accentForeground?: string;
   };
   sourceData?: {
-    navigation: Array<{ label: string; url: string }>;
+    navigation: Array<{
+      label: string;
+      url: string;
+      destinationUrl: string | null;
+    }>;
     brandAssets: Array<{
       type: "logo" | "favicon" | "hero" | "content";
       url: string;
