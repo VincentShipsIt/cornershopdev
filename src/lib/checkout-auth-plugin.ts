@@ -138,8 +138,7 @@ export function checkoutAuthPlugin(): BetterAuthPlugin {
           });
 
           const url = "/dashboard?checkout=success";
-          if (ctx.body.poll) return ctx.json({ ready: true, url });
-          throw ctx.redirect(new URL(url, ctx.context.baseURL).toString());
+          return ctx.json({ ready: true, url });
         },
       ),
     },

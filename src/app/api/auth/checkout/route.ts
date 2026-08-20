@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import {
+  authMutationRedirectResponse,
   authRequestUrl,
   internalAuthMutationHeaders,
 } from "@/lib/auth-request-url";
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
     );
   }
 
-  return auth.handler(
+  const bootstrap = await auth.handler(
     new Request(authRequestUrl("/api/auth/checkout/bootstrap", request), {
       method: "POST",
       headers: internalAuthMutationHeaders(request),
@@ -114,5 +115,10 @@ export async function GET(request: Request) {
       }),
       redirect: "manual",
     }),
+  );
+  if (poll || !bootstrap.ok) return bootstrap;
+  return authMutationRedirectResponse(
+    bootstrap,
+    authRequestUrl("/dashboard?checkout=success", request),
   );
 }

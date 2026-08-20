@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  authMutationRedirectResponse,
   internalAuthMutationHeaders,
   resolveAuthRequestOrigin,
 } from "@/lib/auth-request-url";
@@ -91,5 +92,26 @@ describe("auth request origin", () => {
     );
     expect(headers.get("user-agent")).toBe("browser-test");
     expect(headers.has("referer")).toBe(false);
+  });
+
+  it("preserves auth cookies on a server-owned redirect destination", () => {
+    const authHeaders = new Headers();
+    authHeaders.append("set-cookie", "session=fresh; HttpOnly; Path=/");
+    authHeaders.append("set-cookie", "checkout=; Max-Age=0; Path=/");
+    const response = authMutationRedirectResponse(
+      new Response('{"ready":true}', {
+        headers: authHeaders,
+      }),
+      new URL("http://127.0.0.1:3100/dashboard?checkout=success"),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "http://127.0.0.1:3100/dashboard?checkout=success",
+    );
+    expect(response.headers.getSetCookie()).toEqual([
+      "session=fresh; HttpOnly; Path=/",
+      "checkout=; Max-Age=0; Path=/",
+    ]);
   });
 });

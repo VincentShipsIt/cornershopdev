@@ -96,3 +96,15 @@ export function internalAuthMutationHeaders(request: AuthRequest): Headers {
   if (userAgent) headers.set("user-agent", userAgent);
   return headers;
 }
+
+/** Preserves Better Auth cookie mutations while redirecting to a safe URL. */
+export function authMutationRedirectResponse(
+  response: Response,
+  destination: URL,
+): Response {
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.delete("content-type");
+  headers.set("location", destination.toString());
+  return new Response(null, { status: 303, headers });
+}
