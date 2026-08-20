@@ -5,7 +5,7 @@ import {
   hasRequiredResendDomains,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
-  OUTREACH_MIGRATION,
+  OUTREACH_MIGRATIONS,
 } from "@/lib/outreach-readiness";
 
 let environment: "preview" | "production" | "invalid" = "invalid";
@@ -22,8 +22,7 @@ try {
     webhookRegistered,
     inboundWebhookRegistered,
     senderAndReplyDomainsReady,
-  ] =
-    configuration.ready
+  ] = configuration.ready
     ? await Promise.all([
         checkDatabase(process.env.DATABASE_URL!),
         checkReadOnlyConnection(process.env.WORKFLOW_POSTGRES_URL!),
@@ -57,8 +56,8 @@ try {
         ready,
         checks: {
           environment: configuration.checks,
-          migration: {
-            name: OUTREACH_MIGRATION,
+          migrations: {
+            names: OUTREACH_MIGRATIONS,
             applied: database.migrationApplied,
             schemaReady: database.schemaReady,
           },
@@ -115,13 +114,13 @@ async function checkDatabase(databaseUrl: string): Promise<{
       schemaReady: boolean;
     }>(
       `SELECT
-         EXISTS (
-           SELECT 1
+         (
+           SELECT count(*)::int
            FROM "_prisma_migrations"
-           WHERE "migration_name" = $1
+           WHERE "migration_name" = ANY($1::text[])
              AND "finished_at" IS NOT NULL
              AND "rolled_back_at" IS NULL
-         ) AS "migrationApplied",
+         ) = $2 AS "migrationApplied",
          (
            to_regclass('"OutreachDispatch"') IS NOT NULL
            AND to_regclass('"OutreachProviderEvent"') IS NOT NULL
@@ -131,6 +130,13 @@ async function checkDatabase(databaseUrl: string): Promise<{
            AND to_regclass('"OutreachDispatch_idempotencyKey_key"') IS NOT NULL
            AND to_regclass('"OutreachDispatch_workflowRunId_key"') IS NOT NULL
            AND to_regclass('"ClaimInvitation_outreachKey_key"') IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM information_schema.columns
+             WHERE table_schema = current_schema()
+               AND table_name = 'Site'
+               AND column_name = 'leadContactEmail'
+               AND is_nullable = 'YES'
+           )
            AND EXISTS (
              SELECT 1 FROM information_schema.columns
              WHERE table_schema = current_schema()
@@ -186,13 +192,15 @@ async function checkDatabase(databaseUrl: string): Promise<{
                AND contype = 'f'
            )
          ) AS "schemaReady"`,
-      [OUTREACH_MIGRATION],
+      [[...OUTREACH_MIGRATIONS], OUTREACH_MIGRATIONS.length],
     );
     await client.query("ROLLBACK");
-    return result.rows[0] ?? {
-      migrationApplied: false,
-      schemaReady: false,
-    };
+    return (
+      result.rows[0] ?? {
+        migrationApplied: false,
+        schemaReady: false,
+      }
+    );
   } finally {
     await client.end().catch(() => undefined);
   }
@@ -240,9 +248,7 @@ function parseEnvironment(args: string[]): "preview" | "production" {
     args[0] !== "--environment" ||
     (args[1] !== "preview" && args[1] !== "production")
   ) {
-    throw new Error(
-      "Use --environment preview or --environment production.",
-    );
+    throw new Error("Use --environment preview or --environment production.");
   }
   return args[1];
 }

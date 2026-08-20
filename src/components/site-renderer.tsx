@@ -1,16 +1,23 @@
 import {
   ArrowUpRight,
   CalendarDays,
+  Mail,
   MapPin,
+  MessageCircle,
+  Phone,
+  ShieldCheck,
   ShoppingBag,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { BookingEmbed } from "@/components/booking-embed";
 import { BookingRequestForm } from "@/components/booking-request-form";
+import { FoodRetailStructuredData } from "@/components/food-retail-structured-data";
+import { LocalServiceStructuredData } from "@/components/local-service-structured-data";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { RestaurantStructuredData } from "@/components/restaurant-themes/shared";
 import { SiteAnalytics } from "@/components/site-analytics";
+import { SiteBrand, SourceNavigation } from "@/components/site-brand";
 import { Vertical } from "@/generated/prisma/enums";
 import { resolveBookingEmbed } from "@/lib/booking-embed";
 import {
@@ -60,6 +67,14 @@ export function SiteRenderer({
 }: SiteRendererProps) {
   const config = resolveVerticalConfig(vertical);
   const dictionary = getSiteDictionary(config, locale);
+  const allowedIntegrationTypes = new Set(config.integrationTypes);
+  const integrations = draft.integrations.filter((integration) =>
+    allowedIntegrationTypes.has(integration.type),
+  );
+  const integrationSafeDraft =
+    integrations.length === draft.integrations.length
+      ? draft
+      : { ...draft, integrations };
 
   if (vertical === Vertical.RESTAURANT) {
     const selection = parseRestaurantThemeSelection(
@@ -68,7 +83,7 @@ export function SiteRenderer({
     if (selection) {
       return (
         <RestaurantThemeRenderer
-          draft={draft}
+          draft={integrationSafeDraft}
           selection={selection}
           locale={locale}
           localeBasePath={localeBasePath}
@@ -81,14 +96,20 @@ export function SiteRenderer({
     }
   }
 
-  const booking = draft.integrations.find(
+  const booking = integrations.find(
     (integration) =>
       integration.enabled && integration.type === "booking",
   );
-  const ordering = draft.integrations.find(
+  const ordering = integrations.find(
     (integration) =>
       integration.enabled &&
       ["ordering", "delivery"].includes(integration.type),
+  );
+  const quote = integrations.find(
+    (integration) => integration.enabled && integration.type === "quote",
+  );
+  const contact = integrations.find(
+    (integration) => integration.enabled && integration.type === "contact",
   );
   const resolvedTemplate = config.templates.resolve(draft.attributes);
   const template = theme
@@ -96,21 +117,38 @@ export function SiteRenderer({
     : resolvedTemplate;
   const capabilities = config.rendererCapabilities(draft.attributes);
   const bookingEmbed = booking ? resolveBookingEmbed(vertical, booking) : null;
-  // A site with no booking tool at all always gets the form — otherwise its only
-  // "book" affordance would be a phone number. A site that *has* one gets the form
-  // only if its vertical asks for it, because a second, slower way to book next to
-  // a live widget is a worse offer, not a better one.
-  const showRequestForm = !booking || capabilities.showBookingRequestForm;
+  // Appointment-oriented verticals decide whether a missing or present booking
+  // tool needs the shared request form. Retail verticals select `never`, so a
+  // missing order link cannot silently turn into restaurant lead capture.
+  const showRequestForm =
+    capabilities.bookingRequestMode === "always" ||
+    (capabilities.bookingRequestMode === "when-missing" && !booking);
   // A booking provider we cannot embed contributes nothing here: the header CTA and
   // the contact column already link out to it. Rendering an empty section for that
   // case would change every existing restaurant site for no gain.
   const showBookingSection = Boolean(bookingEmbed) || showRequestForm;
+  const actions = { booking, ordering, quote, contact };
+  const actionPriority = {
+    booking: ["booking", "ordering"],
+    ordering: ["ordering", "booking"],
+    quote: ["quote", "contact", "booking", "ordering"],
+    contact: ["contact", "quote", "booking", "ordering"],
+  } as const;
+  const [primaryAction, secondaryAction] = actionPriority[
+    capabilities.primaryAction
+  ].flatMap((type) => (actions[type] ? [actions[type]] : []));
+  const fulfillmentNote =
+    config.presentation.fulfillmentNote?.(draft.attributes, locale) ?? null;
+  const businessDetails =
+    config.presentation.businessDetails?.(draft.attributes, locale) ?? null;
   const copy = getTemplateCopy(template, locale);
   const picturedItems = draft.catalogSections
     .flatMap((section) => section.items)
     .filter(
       (item): item is typeof item & { imageUrl: string } =>
-        item.available && Boolean(item.imageUrl),
+        (config.presentation.isItemVisible?.(item) ??
+          item.available !== false) &&
+        Boolean(item.imageUrl),
     )
     .slice(0, 4);
   const immersiveHero = template.heroLayout === "immersive";
@@ -143,6 +181,7 @@ export function SiteRenderer({
           "--site-bg": draft.palette.background,
           "--site-fg": draft.palette.foreground,
           "--site-accent": draft.palette.accent,
+          "--site-accent-fg": draft.palette.accentForeground ?? "#ffffff",
           background: "var(--site-bg)",
           color: "var(--site-fg)",
         } as React.CSSProperties
@@ -152,6 +191,12 @@ export function SiteRenderer({
       {vertical === Vertical.RESTAURANT ? (
         <RestaurantStructuredData draft={draft} enabled={analyticsEnabled} />
       ) : null}
+      {vertical === Vertical.FOOD_RETAIL ? (
+        <FoodRetailStructuredData draft={draft} enabled={analyticsEnabled} />
+      ) : null}
+      {vertical === Vertical.LOCAL_SERVICE ? (
+        <LocalServiceStructuredData draft={draft} enabled={analyticsEnabled} />
+      ) : null}
       <header
         className={cn(
           "z-20 grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 p-4 sm:flex sm:justify-between sm:gap-4 sm:p-5 md:p-8",
@@ -160,14 +205,14 @@ export function SiteRenderer({
             : "relative border-b border-current/10",
         )}
       >
-        <span
+        <SiteBrand
+          draft={draft}
+          href="#content"
           className={cn(
             "min-w-0 break-words text-lg leading-tight sm:flex-1 sm:text-xl md:text-2xl",
             template.brandClassName,
           )}
-        >
-          {draft.name}
-        </span>
+        />
         <div className="contents sm:flex sm:shrink-0 sm:items-center sm:gap-2">
           {localeBasePath && availableLocales.length > 1 ? (
             <nav
@@ -207,9 +252,9 @@ export function SiteRenderer({
               ))}
             </nav>
           ) : null}
-          {ordering ? (
+          {secondaryAction ? (
             <a
-              href={localizeIntegrationUrl(ordering.url, locale)}
+              href={localizeIntegrationUrl(secondaryAction.url, locale)}
               data-analytics-cta
               target="_blank"
               rel="noreferrer"
@@ -221,29 +266,31 @@ export function SiteRenderer({
                   : "border-current/20",
               )}
             >
-              {ordering.label}
+              {secondaryAction.label}
             </a>
           ) : null}
-          {booking ? (
+          {primaryAction ? (
             <a
-              href={localizeIntegrationUrl(booking.url, locale)}
+              href={localizeIntegrationUrl(primaryAction.url, locale)}
               data-analytics-cta
               target="_blank"
               rel="noreferrer"
               className={cn(
-                "col-span-2 row-start-2 inline-flex min-h-11 items-center justify-center px-4 py-2 text-center text-xs font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 sm:col-auto sm:row-auto sm:min-h-0 sm:whitespace-nowrap",
+                "col-span-2 row-start-2 inline-flex min-h-11 items-center justify-center px-4 py-2 text-center text-xs font-bold text-[var(--site-accent-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 sm:col-auto sm:row-auto sm:min-h-0 sm:whitespace-nowrap",
                 template.id === "bold" ? "rounded-none" : "rounded-full",
               )}
               style={{ background: "var(--site-accent)" }}
             >
-              {booking.label}
+              {primaryAction.label}
             </a>
           ) : null}
         </div>
       </header>
+      <SourceNavigation draft={draft} />
 
       {template.heroLayout === "split" ? (
         <section
+          id="content"
           className={cn(
             "grid overflow-hidden lg:grid-cols-[0.9fr_1.1fr]",
             embedded ? "min-h-[520px]" : "min-h-[78svh]",
@@ -277,7 +324,7 @@ export function SiteRenderer({
           />
         </section>
       ) : template.heroLayout === "card" ? (
-        <section className="p-4 pt-1 md:p-8 md:pt-2">
+        <section id="content" className="p-4 pt-1 md:p-8 md:pt-2">
           <div
             className={cn(
               "relative flex items-end overflow-hidden rounded-[2rem]",
@@ -295,6 +342,7 @@ export function SiteRenderer({
         </section>
       ) : (
         <section
+          id="content"
           className={cn(
             "relative flex items-end overflow-hidden",
             embedded ? "min-h-[520px]" : "min-h-[82svh]",
@@ -371,6 +419,85 @@ export function SiteRenderer({
         </section>
       ) : null}
 
+      {capabilities.showGallery && businessDetails?.projects.length ? (
+        <section className="mx-auto max-w-7xl px-6 py-14 md:px-10 md:py-20">
+          <p
+            className="text-xs font-bold uppercase tracking-[0.18em]"
+            style={{ color: "var(--site-accent)" }}
+          >
+            {dictionary.projectsHeading ?? copy.featuredHeading}
+          </p>
+          <h2 className="mt-3 max-w-3xl break-words text-4xl font-bold tracking-[-0.04em] md:text-6xl">
+            {copy.featuredSubheading}
+          </h2>
+          <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {businessDetails.projects.map((project) => (
+              <article
+                key={`${project.title}-${project.location}`}
+                className="overflow-hidden rounded-[1.25rem] border border-current/10"
+              >
+                {project.imageUrl ? (
+                  <div className="relative aspect-[4/3] overflow-hidden bg-black/5">
+                    {project.imageUrl.startsWith("/") ? (
+                      <Image
+                        src={project.imageUrl}
+                        alt={project.title}
+                        fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div
+                        role="img"
+                        aria-label={project.title}
+                        className="absolute inset-0 bg-cover bg-center"
+                        style={{ backgroundImage: `url("${project.imageUrl}")` }}
+                      />
+                    )}
+                  </div>
+                ) : null}
+                <div className="p-5">
+                  <h3 className="text-lg font-bold">{project.title}</h3>
+                  {project.location ? (
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] opacity-60">
+                      {project.location}
+                    </p>
+                  ) : null}
+                  {project.description ? (
+                    <p className="mt-3 text-sm leading-6 opacity-75">
+                      {project.description}
+                    </p>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {businessDetails &&
+      (businessDetails.serviceAreas.length > 0 ||
+        businessDetails.credentials.length > 0 ||
+        businessDetails.trustSignals.length > 0) ? (
+        <section className="mx-auto grid max-w-7xl gap-5 px-6 py-14 md:px-10 md:py-20 lg:grid-cols-3">
+          <BusinessDetailCard
+            heading={dictionary.serviceAreasHeading ?? "Service areas"}
+            items={businessDetails.serviceAreas}
+            icon={<MapPin className="size-5" />}
+          />
+          <BusinessDetailCard
+            heading={dictionary.credentialsHeading ?? "Credentials"}
+            items={businessDetails.credentials}
+            icon={<ShieldCheck className="size-5" />}
+          />
+          <BusinessDetailCard
+            heading={dictionary.trustHeading ?? "Trust signals"}
+            items={businessDetails.trustSignals}
+            icon={<ShieldCheck className="size-5" />}
+          />
+        </section>
+      ) : null}
+
       <section className="mx-auto grid max-w-7xl gap-12 px-6 py-16 md:px-10 md:py-24 lg:grid-cols-[0.68fr_1.32fr]">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
@@ -380,10 +507,71 @@ export function SiteRenderer({
             {copy.catalogHeading}
           </h2>
           <div className="mt-8 flex flex-col gap-3 text-sm opacity-75">
-            <span className="flex items-start gap-2">
-              <MapPin className="mt-0.5 size-4 shrink-0" />
-              {draft.address}
-            </span>
+            {draft.address ? (
+              <span className="flex items-start gap-2">
+                <MapPin className="mt-0.5 size-4 shrink-0" />
+                {draft.address}
+              </span>
+            ) : null}
+            {businessDetails?.availability ? (
+              <span className="flex items-center gap-2 font-semibold opacity-100">
+                <MessageCircle className="size-4" />
+                {businessDetails.availability}
+              </span>
+            ) : null}
+            {fulfillmentNote ? (
+              <span className="flex items-start gap-2">
+                <ShoppingBag className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  <strong>{dictionary.pickupHeading}: </strong>
+                  {fulfillmentNote}
+                </span>
+              </span>
+            ) : null}
+            {draft.phone ? (
+              <a
+                href={`tel:${draft.phone}`}
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
+                <Phone className="size-4" />
+                {draft.phone}
+              </a>
+            ) : null}
+            {draft.email ? (
+              <a
+                href={`mailto:${draft.email}`}
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
+                <Mail className="size-4" />
+                {draft.email}
+              </a>
+            ) : null}
+            {quote ? (
+              <a
+                href={localizeIntegrationUrl(quote.url, locale)}
+                data-analytics-cta
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
+                <MessageCircle className="size-4" />
+                {quote.label}
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            ) : null}
+            {contact ? (
+              <a
+                href={localizeIntegrationUrl(contact.url, locale)}
+                data-analytics-cta
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
+                <MessageCircle className="size-4" />
+                {contact.label}
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            ) : null}
             {booking ? (
               <a
                 href={localizeIntegrationUrl(booking.url, locale)}
@@ -439,38 +627,48 @@ export function SiteRenderer({
                 ) : null}
               </div>
               <div className="space-y-6">
-                {section.items.filter((item) => item.available).map((item) => (
-                  <div
-                    key={item.name}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="min-w-0 break-words font-medium">
-                          {item.name}
-                        </h4>
-                        {/* The vertical turns its own item attributes into plain
-                            strings, so the renderer never learns what they mean. */}
-                        {(
-                          config.presentation.itemBadges?.(item.attributes) ?? []
-                        ).map((label: string) => (
-                          <span
-                            key={label}
-                            className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
-                          >
-                            {label}
-                          </span>
-                        ))}
+                {section.items
+                  .filter(
+                    (item) =>
+                      config.presentation.isItemVisible?.(item) ??
+                      item.available !== false,
+                  )
+                  .map((item) => (
+                    <div
+                      key={item.name}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="min-w-0 break-words font-medium">
+                            {item.name}
+                          </h4>
+                          {/* The vertical turns its own item attributes into plain
+                              strings, so the renderer never learns what they mean. */}
+                          {(
+                            config.presentation.itemBadges?.(
+                              item.attributes,
+                              locale,
+                              item.available,
+                            ) ?? []
+                          ).map((label: string) => (
+                            <span
+                              key={label}
+                              className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-1 max-w-xl text-sm leading-6 opacity-75">
+                          {item.description}
+                        </p>
                       </div>
-                      <p className="mt-1 max-w-xl text-sm leading-6 opacity-75">
-                        {item.description}
-                      </p>
+                      <span className="whitespace-nowrap font-mono text-sm">
+                        {formatPrice(item.price, item.currency, locale)}
+                      </span>
                     </div>
-                    <span className="whitespace-nowrap font-mono text-sm">
-                      {formatPrice(item.price, item.currency, locale)}
-                    </span>
-                  </div>
-                ))}
+                  ))}
               </div>
             </section>
           ))}
@@ -529,9 +727,7 @@ export function SiteRenderer({
       ) : null}
 
       <footer className="grid gap-5 border-t border-current/15 px-6 py-8 text-sm opacity-75 sm:grid-cols-3 sm:items-start md:px-10">
-        <span>
-          {draft.name} · {draft.address}
-        </span>
+        <span>{[draft.name, draft.address].filter(Boolean).join(" · ")}</span>
         {draft.businessHours.length > 0 ? (
           <dl className="grid gap-1">
             {draft.businessHours.map((row) => (
@@ -550,6 +746,31 @@ export function SiteRenderer({
         <span className="sm:text-right">{dictionary.seasonalNotice}</span>
       </footer>
     </article>
+  );
+}
+
+function BusinessDetailCard({
+  heading,
+  items,
+  icon,
+}: {
+  heading: string;
+  items: string[];
+  icon: React.ReactNode;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded-[1.25rem] border border-current/10 p-6">
+      <div className="flex items-center gap-3">
+        {icon}
+        <h2 className="text-lg font-bold">{heading}</h2>
+      </div>
+      <ul className="mt-5 space-y-3 text-sm leading-6 opacity-75">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

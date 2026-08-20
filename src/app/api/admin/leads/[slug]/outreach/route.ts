@@ -138,7 +138,7 @@ export async function POST(
       where: { slug },
       select: {
         id: true,
-        email: true,
+        leadContactEmail: true,
         status: true,
         vertical: true,
         attributes: true,
@@ -168,21 +168,24 @@ export async function POST(
     if (
       !isVerticalOutreachConfigured(site.vertical) ||
       !mutableLeadStatuses.has(site.status) ||
-      !site.email
+      !site.leadContactEmail
     ) {
       return NextResponse.json(
         { error: "This lead is not eligible for outreach." },
         { status: 409 },
       );
     }
-    const eligibility = evaluateLeadOutreachEligibility(site.attributes);
+    const eligibility = evaluateLeadOutreachEligibility(
+      site.attributes,
+      site.leadContactEmail,
+    );
     if (!eligibility.allowed) {
       return NextResponse.json(
         { error: eligibility.message, reason: eligibility.reason },
         { status: 409 },
       );
     }
-    const recipient = site.email.trim().toLowerCase();
+    const recipient = site.leadContactEmail.trim().toLowerCase();
     const reviewedAt = site.auditEvents[0]?.createdAt ?? null;
     if (!reviewedAt || !isOperatorReviewCurrent(reviewedAt, site.updatedAt)) {
       return NextResponse.json(
@@ -350,7 +353,7 @@ async function sendOperatorThreadReply(input: {
     where: { slug: input.slug },
     select: {
       id: true,
-      email: true,
+      leadContactEmail: true,
       vertical: true,
       status: true,
     },
@@ -358,7 +361,7 @@ async function sendOperatorThreadReply(input: {
   if (!site) {
     return NextResponse.json({ error: "Lead not found." }, { status: 404 });
   }
-  if (!isVerticalOutreachConfigured(site.vertical) || !site.email) {
+  if (!isVerticalOutreachConfigured(site.vertical) || !site.leadContactEmail) {
     return NextResponse.json(
       { error: "This lead is not eligible for outreach." },
       { status: 409 },

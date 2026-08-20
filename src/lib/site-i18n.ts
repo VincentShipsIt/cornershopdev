@@ -42,6 +42,7 @@ const sharedSiteDictionary = {
     bookingRequestError: "Your request could not be sent. Try again.",
     bookingRequestPreviewNotice: "This is a preview — requests are not sent.",
     bookingEmbedPreviewNotice: "Booking widget shown on the live site.",
+    pickupHeading: "Pickup",
   },
   fr: {
     bookingRequestName: "Votre nom",
@@ -60,6 +61,7 @@ const sharedSiteDictionary = {
       "Ceci est un aperçu — les demandes ne sont pas envoyées.",
     bookingEmbedPreviewNotice:
       "Widget de réservation affiché sur le site en ligne.",
+    pickupHeading: "Retrait",
   },
 } satisfies Record<string, Record<string, string>>;
 

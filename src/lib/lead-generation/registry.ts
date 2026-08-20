@@ -1,11 +1,13 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { beautyLeadDiscovery } from "@/lib/lead-generation/beauty";
+import { foodRetailLeadDiscovery } from "@/lib/lead-generation/food-retail";
+import { localServiceLeadDiscovery } from "@/lib/lead-generation/local-service";
 import { restaurantLeadDiscovery } from "@/lib/lead-generation/restaurant";
 import type {
   LeadCategoryFit,
   LeadDiscoveryAdapter,
 } from "@/lib/lead-generation/types";
-import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import { isVerticalClaimEnabled } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 /**
@@ -16,6 +18,8 @@ import type { VerticalId } from "@/lib/verticals/types";
 const leadDiscoveryRegistry = {
   [Vertical.RESTAURANT]: restaurantLeadDiscovery,
   [Vertical.BEAUTY]: beautyLeadDiscovery,
+  [Vertical.LOCAL_SERVICE]: localServiceLeadDiscovery,
+  [Vertical.FOOD_RETAIL]: foodRetailLeadDiscovery,
 } satisfies Record<VerticalId, LeadDiscoveryAdapter>;
 
 export function resolveLeadDiscoveryAdapter(
@@ -28,8 +32,7 @@ export function isVerticalOutreachConfigured(vertical: string): boolean {
   if (!Object.prototype.hasOwnProperty.call(leadDiscoveryRegistry, vertical)) {
     return false;
   }
-  const marketing = resolveVerticalConfig(vertical as VerticalId).marketing;
-  return Boolean(marketing.domain && marketing.email);
+  return isVerticalClaimEnabled(vertical as VerticalId);
 }
 
 export function listOutreachVerticals(): VerticalId[] {

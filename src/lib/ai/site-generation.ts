@@ -1,10 +1,13 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, Output } from "ai";
+import { normalizeAccountEmail } from "@/lib/account-email";
 import type { ExtractedSite } from "@/lib/importer";
-import { slugify } from "@/lib/restaurant";
+import { slugify } from "@/lib/site-draft";
 import type { RestaurantDraft } from "@/lib/restaurant";
 import { applyRegeneratedRestaurantTranslation } from "@/lib/restaurant-menu-editor";
+import { repairPalette } from "@/lib/source-reconstruction";
 import { restaurantTranslationCandidateSchema } from "@/lib/verticals/restaurant/schema";
+import { supportedCurrencySchema } from "@/lib/verticals/schema";
 import type {
   VerticalConfig,
   VerticalTemplateDefinition,
@@ -20,7 +23,10 @@ type SiteDraftShape<
   description: string;
   address: string;
   phone: string;
+  email: string;
   sourceUrl: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
   heroImageUrl: string | null;
   heroOriginalImageUrl?: string | null;
   heroImageProvenance?: "official" | "owner" | "permissioned-ugc" | null;
@@ -28,6 +34,12 @@ type SiteDraftShape<
     background: string;
     foreground: string;
     accent: string;
+    accentForeground: string;
+  };
+  sourceData: {
+    navigation: NonNullable<ExtractedSite["navigation"]>;
+    brandAssets: NonNullable<ExtractedSite["brandAssets"]>;
+    evidence: NonNullable<ExtractedSite["evidence"]>;
   };
   attributes: TAttributes;
   autoEnhanceImages: boolean;
@@ -38,6 +50,7 @@ type SiteDraftShape<
   }>;
   catalogSections: Array<{
     items: Array<{
+      available: boolean | null;
       attributes: TItemAttributes;
       imageUrl: string | null;
       originalImageUrl?: string | null;
@@ -47,15 +60,16 @@ type SiteDraftShape<
   integrations: ExtractedSite["links"];
 };
 
-type PromptVerticalConfig = Pick<
-  VerticalConfig,
-  "prompt" | "vocabulary"
->;
+type PromptVerticalConfig = Pick<VerticalConfig, "prompt" | "vocabulary">;
 
 type ImagePromptVerticalConfig = Pick<VerticalConfig, "imageEnhancement">;
 
+export type SiteDraftGenerationDependencies = {
+  generateText?: typeof generateText;
+};
+
 export const SHARED_SKELETON = `Rules:
-- Never invent booking, ordering, delivery, address, phone, opening-hour, availability, allergen, service, or price facts.
+- Never invent booking, ordering, delivery, address, phone, email, opening-hour, availability, allergen, service, or price facts.
 - Existing booking, ordering, and delivery systems must remain external links; do not rename their providers.
 - Preserve all factual catalog entries and prices that can be recovered.
 - Put only explicitly stated opening times in businessHours; use [] when none are stated.
@@ -74,6 +88,44 @@ export const SHARED_SKELETON = `Rules:
  */
 export function aiIsConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY);
+}
+
+export function selectSourceBackedEmail(
+  reconstructedEmail: string | undefined,
+  modelEmail: string | undefined,
+  pageText: string,
+): string {
+  const reconstructed = normalizedEmail(reconstructedEmail);
+  if (reconstructed) return reconstructed;
+  const candidate = normalizedEmail(modelEmail);
+  if (!candidate) return "";
+
+  const sourceEmails = new Set(
+    Array.from(
+      pageText.matchAll(
+        /(?<![a-z0-9.!#$%&'*+/=?^_`{|}~@-])[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?![a-z0-9@-])/gi,
+      ),
+      (match) => normalizedEmail(match[0]),
+    ).filter((email): email is string => Boolean(email)),
+  );
+  return sourceEmails.has(candidate) ? candidate : "";
+}
+
+function normalizedEmail(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return normalizeAccountEmail(value);
+  } catch {
+    return null;
+  }
+}
+
+export function selectCatalogSource<T>(
+  hasReconstructedCatalog: boolean,
+  reconstruct: () => T,
+  modelCatalog: () => T,
+): T {
+  return hasReconstructedCatalog ? reconstruct() : modelCatalog();
 }
 
 function getOpenRouter() {
@@ -172,8 +224,7 @@ ${JSON.stringify(source)}`,
  */
 function getImageModel() {
   return getOpenRouter().chat(
-    process.env.OPENROUTER_IMAGE_MODEL ??
-      "google/gemini-3.1-flash-image",
+    process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-3.1-flash-image",
     {
       extraBody: {
         modalities: ["image", "text"],
@@ -194,39 +245,93 @@ export function deterministicDraft<
   vertical: VerticalConfig<TAttributes, TItemAttributes, TTemplate, TDraft>,
 ): TDraft {
   const name = source.name || source.source;
-  const verticalName = vertical.id.toLowerCase();
+  const locale = source.sourceLocale ?? "en";
+  const localeLanguage = locale.toLowerCase().split("-")[0];
+  const deterministicCopy =
+    vertical.deterministicCopy?.[locale] ??
+    vertical.deterministicCopy?.[localeLanguage] ??
+    vertical.deterministicCopy?.en;
+  const verticalName = vertical.id.toLowerCase().replaceAll("_", " ");
+  const catalogName =
+    deterministicCopy?.catalogName ?? vertical.vocabulary.catalog;
   const description =
-    source.description ||
-    `A private first look created from the ${verticalName} information currently available.`;
+    source.description.length >= 20
+      ? source.description
+      : (deterministicCopy?.description ??
+        `A private preview reconstructed from the source information currently available.`);
+  const fallbackPalette = {
+    ...vertical.presentation.fallbackPalette,
+    accentForeground: "#ffffff",
+  };
+  const palette = source.palette ?? repairPalette({}, fallbackPalette);
+  const catalogSections = source.catalogSections?.length
+    ? source.catalogSections.map((section) => ({
+        name: section.name === "Catalog" ? catalogName : section.name,
+        description: section.description,
+        items: section.items.map((item) => {
+          const currency = supportedCurrencySchema.safeParse(item.currency);
+          const sourceBackedPrice =
+            item.price !== null && currency.success ? item.price : null;
+          const deterministicItem = {
+            ...item,
+            price: sourceBackedPrice,
+            currency: currency.success ? currency.data : null,
+          };
+          return {
+            name: item.name,
+            description: item.description,
+            price: sourceBackedPrice,
+            // Unpriced rows retain the shared draft schema's inert display
+            // default, but no amount can acquire a source-unknown currency.
+            currency: currency.success ? currency.data : undefined,
+            available: item.availability,
+            attributes:
+              vertical.deterministicItemAttributes?.(deterministicItem) ??
+              vertical.itemAttributeDefaults,
+            imageUrl: item.imageUrl,
+            originalImageUrl: item.imageUrl,
+            imageProvenance: item.imageUrl ? "official" : null,
+          };
+        }),
+      }))
+    : [
+        {
+          name: catalogName,
+          description:
+            deterministicCopy?.emptyCatalogDescription ??
+            `${catalogName} details were not present in deterministic source markup.`,
+          items: [],
+        },
+      ];
   return vertical.draftSchema.parse({
     slug: slugify(name) || `${verticalName}-preview`,
     name,
-    eyebrow: `Private ${verticalName} preview`,
+    eyebrow: deterministicCopy?.eyebrow ?? `Private ${verticalName} preview`,
     description,
     address: source.address,
     phone: source.phone,
+    email: source.email ?? "",
     sourceUrl: source.sourceUrl,
+    logoUrl: source.logoUrl ?? null,
+    faviconUrl: source.faviconUrl ?? null,
     heroImageUrl: source.heroImageUrl,
     heroOriginalImageUrl: source.heroImageUrl,
     heroImageProvenance: source.heroImageUrl ? "official" : null,
-    palette: {
-      background: "#f4efe5",
-      foreground: "#1d241f",
-      accent: "#a5482d",
+    palette,
+    sourceData: {
+      navigation: source.navigation ?? [],
+      brandAssets: source.brandAssets ?? [],
+      evidence: source.evidence ?? [],
     },
     attributes:
-      vertical.deterministicAttributes ?? vertical.attributeDefaults,
+      vertical.deterministicAttributesFromSource?.(source) ??
+      vertical.deterministicAttributes ??
+      vertical.attributeDefaults,
     autoEnhanceImages: false,
-    defaultLocale: source.sourceLocale ?? "en",
-    businessHours: [],
+    defaultLocale: locale,
+    businessHours: source.businessHours ?? [],
     translations: [],
-    catalogSections: [
-      {
-        name: vertical.vocabulary.catalog,
-        description: `${vertical.vocabulary.catalog} details were not available for automatic structuring.`,
-        items: [],
-      },
-    ],
+    catalogSections,
     integrations: source.links,
   });
 }
@@ -254,7 +359,13 @@ ${JSON.stringify({
   address: source.address,
   phone: source.phone,
   sourceLocale: source.sourceLocale,
+  businessTypes: source.businessTypes,
   links: source.links,
+  businessHours: source.businessHours,
+  email: source.email,
+  navigation: source.navigation,
+  catalogSections: source.catalogSections,
+  evidence: source.evidence,
 })}
 
 Website text collected from the homepage and relevant same-origin pages:
@@ -269,10 +380,17 @@ export async function generateSiteDraft<
 >(
   source: ExtractedSite,
   vertical: VerticalConfig<TAttributes, TItemAttributes, TTemplate, TDraft>,
+  dependencies: SiteDraftGenerationDependencies = {},
 ): Promise<TDraft> {
-  if (!aiIsConfigured()) return deterministicDraft(source, vertical);
+  if (
+    vertical.draftGenerationStrategy === "deterministic-only" ||
+    !aiIsConfigured()
+  ) {
+    return deterministicDraft(source, vertical);
+  }
 
-  const { output } = await generateText({
+  const runGenerateText = dependencies.generateText ?? generateText;
+  const { output } = await runGenerateText({
     model: getTextModel(),
     output: Output.object({
       schema: vertical.draftSchema,
@@ -289,37 +407,80 @@ export async function generateSiteDraft<
   const normalizedAttributes = vertical.normalizeGeneratedAttributes
     ? vertical.normalizeGeneratedAttributes(attributes, template)
     : attributes;
-  return vertical.draftSchema.parse({
+  const deterministic = deterministicDraft(source, vertical);
+  const generated = {
     ...output,
     slug: slugify(output.name),
     sourceUrl: source.sourceUrl,
+    email: selectSourceBackedEmail(source.email, output.email, source.pageText),
+    logoUrl: source.logoUrl ?? null,
+    faviconUrl: source.faviconUrl ?? null,
     heroImageUrl: source.heroImageUrl,
     heroOriginalImageUrl: source.heroImageUrl,
     heroImageProvenance: source.heroImageUrl ? "official" : null,
     attributes: normalizedAttributes,
+    palette: repairPalette(source.palette ?? output.palette, {
+      ...vertical.presentation.fallbackPalette,
+      accentForeground: "#ffffff",
+    }),
+    sourceData: {
+      navigation: source.navigation ?? [],
+      brandAssets: source.brandAssets ?? [],
+      evidence: source.evidence ?? [],
+    },
+    businessHours:
+      source.businessHours && source.businessHours.length > 0
+        ? source.businessHours
+        : output.businessHours,
     autoEnhanceImages: true,
-    catalogSections: output.catalogSections.map((section) => ({
-      ...section,
-      items: section.items.map((item) => ({
-        ...item,
-        imageUrl: null,
-        originalImageUrl: null,
-        imageProvenance: null,
+    catalogSections: selectCatalogSource(
+      Boolean(source.catalogSections && source.catalogSections.length > 0),
+      () => deterministic.catalogSections,
+      () =>
+        output.catalogSections.map((section) => ({
+          ...section,
+          items: section.items.map((item) => ({
+            ...item,
+            ...(vertical.normalizeGeneratedItem?.(item) ?? item),
+            imageUrl: null,
+            originalImageUrl: null,
+            imageProvenance: null,
+          })),
+        })),
+    ),
+    integrations: source.links.length > 0 ? source.links : output.integrations,
+    translations: normalizeGeneratedTranslationOverlays(
+      output.translations.map((translation) => ({
+        ...translation,
+        integrationLabels:
+          source.links.length > 0
+            ? source.links.map(
+                (link, index) =>
+                  translation.integrationLabels[index] ?? link.label,
+              )
+            : translation.integrationLabels,
       })),
-    })),
-    integrations:
-      source.links.length > 0 ? source.links : output.integrations,
-    translations: output.translations.map((translation) => ({
-      ...translation,
-      integrationLabels:
-        source.links.length > 0
-          ? source.links.map(
-              (link, index) =>
-                translation.integrationLabels[index] ?? link.label,
-            )
-          : translation.integrationLabels,
-    })),
-  });
+      vertical,
+    ),
+  } as TDraft;
+  return vertical.draftSchema.parse(
+    vertical.bindGeneratedDraftToEvidence
+      ? vertical.bindGeneratedDraftToEvidence({ generated, deterministic })
+      : generated,
+  );
+}
+
+export function normalizeGeneratedTranslationOverlays<
+  TTranslation extends { integrationLabels: string[] },
+>(
+  translations: TTranslation[],
+  vertical: Pick<VerticalConfig, "generatedTranslationStatus">,
+): TTranslation[] {
+  if (!vertical.generatedTranslationStatus) return translations;
+  return translations.map((translation) => ({
+    ...translation,
+    status: vertical.generatedTranslationStatus,
+  }));
 }
 
 export type SiteImageEnhancementRequest = {

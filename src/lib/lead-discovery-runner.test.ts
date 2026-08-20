@@ -81,15 +81,19 @@ describe("lead discovery command", () => {
 
   it("executes through authenticated ingest with preview and evidence metadata", async () => {
     const requests: Array<Record<string, unknown>> = [];
-    const fetchImpl = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return Response.json({
-        ok: true,
-        created: true,
-        previewGenerated: true,
-        siteSlug: "studio-iris",
-      });
-    });
+    const fetchImpl = mock(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        );
+        return Response.json({
+          ok: true,
+          created: true,
+          previewGenerated: true,
+          siteSlug: "studio-iris",
+        });
+      },
+    );
     const result = await runLeadDiscovery(
       {
         vertical: "BEAUTY",
@@ -125,22 +129,172 @@ describe("lead discovery command", () => {
     });
   });
 
-  it("parses every registered vertical slug and rejects an unconfigured one", () => {
-    expect(
-      parseLeadDiscoveryArguments([
-        "--vertical",
-        "beauty",
-        "--city",
-        "Valletta",
-      ]).vertical,
-    ).toBe("BEAUTY");
+  it.each([
+    {
+      vertical: "FOOD_RETAIL" as const,
+      adapterId: "food-retail-local-v1",
+      query:
+        "bakeries, pastry shops, butchers, delis, cheesemongers and grocers in Valletta",
+      name: "Le Fournil",
+      category: "bakery",
+      catalog: "products",
+      conversion: "Pre-order for pickup",
+      schemaType: "Bakery",
+    },
+    {
+      vertical: "LOCAL_SERVICE" as const,
+      adapterId: "local-service-local-v1",
+      query:
+        "plumbers, electricians, builders, repair services and artisans in Valletta",
+      name: "Harbour Electrics",
+      category: "electrician",
+      catalog: "services",
+      conversion: "Request a quote on WhatsApp",
+      schemaType: "Electrician",
+    },
+  ])(
+    "dry-runs and executes $vertical through its niche adapter",
+    async ({
+      vertical,
+      adapterId,
+      query,
+      name,
+      category,
+      catalog,
+      conversion,
+      schemaType,
+    }) => {
+      const sourceUrl = `https://${name.toLowerCase().replaceAll(" ", "-")}.example/`;
+      const discoverVertical = mock(
+        async (): Promise<PlaceDiscoveryResult> => ({
+          provider: "google_places",
+          fallbackReason: null,
+          places: [
+            {
+              ...beautyDiscovery.places[0]!,
+              name,
+              websiteUrl: sourceUrl,
+              placeId: `${vertical.toLowerCase()}-1`,
+              categories: [category],
+            },
+          ],
+        }),
+      );
+      const fetchVerticalHomepage = mock(async () =>
+        parseHomepageSignals(
+          `<html><head>
+            <meta name="viewport" content="width=device-width">
+            <meta name="description" content="Source-backed local business.">
+            <title>${name}</title>
+            <script type="application/ld+json">{"@type":"${schemaType}"}</script>
+          </head><body>
+            <a href="/${catalog}">${catalog}</a>
+            <a href="/contact">${conversion}</a>
+          </body></html>`,
+          new URL(sourceUrl),
+          null,
+          vertical,
+        ),
+      );
+      const requests: Array<Record<string, unknown>> = [];
+      const fetchImpl = mock(
+        async (_input: RequestInfo | URL, init?: RequestInit) => {
+          requests.push(
+            JSON.parse(String(init?.body)) as Record<string, unknown>,
+          );
+          return Response.json({
+            ok: true,
+            created: true,
+            previewGenerated: true,
+            siteSlug: name.toLowerCase().replaceAll(" ", "-"),
+          });
+        },
+      );
+
+      const dryRun = await runLeadDiscovery(
+        {
+          vertical,
+          city: "Valletta",
+          limit: 10,
+          apiUrl: "https://cornershop.dev",
+          execute: false,
+        },
+        {
+          discoverPlaces: discoverVertical,
+          fetchHomepage: fetchVerticalHomepage,
+          fetchImpl,
+          env: {},
+        },
+      );
+      expect(dryRun).toMatchObject({
+        preflight: "dry-run",
+        vertical,
+        adapterId,
+        query,
+        candidateCount: 1,
+        candidates: [
+          expect.objectContaining({
+            name,
+            categoryFit: "matched",
+            previewAction: "generate",
+          }),
+        ],
+      });
+      expect(fetchImpl).not.toHaveBeenCalled();
+
+      const executed = await runLeadDiscovery(
+        {
+          vertical,
+          city: "Valletta",
+          limit: 10,
+          apiUrl: "https://cornershop.dev",
+          execute: true,
+        },
+        {
+          discoverPlaces: discoverVertical,
+          fetchHomepage: fetchVerticalHomepage,
+          fetchImpl,
+          env: { OPERATOR_LEAD_INGEST_TOKEN: "test-ingest-token" },
+        },
+      );
+      expect(executed).toMatchObject({
+        preflight: "executed",
+        ingested: 1,
+        failed: 0,
+      });
+      expect(requests[0]).toMatchObject({
+        vertical,
+        categories: [category],
+        eligibility: "UNKNOWN",
+        eligibilityEvidence: {
+          discovery_adapter: adapterId,
+          category_fit: "matched",
+          listing_categories: category,
+        },
+        generatePreview: true,
+      });
+    },
+  );
+
+  it("parses every registered vertical slug and rejects an unknown one", () => {
+    for (const [slug, vertical] of [
+      ["restaurant", "RESTAURANT"],
+      ["beauty", "BEAUTY"],
+      ["food_retail", "FOOD_RETAIL"],
+      ["local_service", "LOCAL_SERVICE"],
+    ] as const) {
+      expect(
+        parseLeadDiscoveryArguments(["--vertical", slug, "--city", "Valletta"])
+          .vertical,
+      ).toBe(vertical);
+    }
     expect(() =>
       parseLeadDiscoveryArguments([
         "--vertical",
-        "food_retail",
+        "accountant",
         "--city",
         "Valletta",
       ]),
-    ).toThrow("No discovery adapter is configured");
+    ).toThrow("No discovery adapter is configured for accountant");
   });
 });

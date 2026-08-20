@@ -1,3 +1,4 @@
+import { Vertical } from "@/generated/prisma/enums";
 import type { LeadDiscoveryAdapter } from "@/lib/lead-generation/types";
 
 /**
@@ -6,7 +7,7 @@ import type { LeadDiscoveryAdapter } from "@/lib/lead-generation/types";
  * its bounded taxonomy lives in the text query and category evidence instead.
  */
 export const foodRetailLeadDiscovery = {
-  vertical: "FOOD_RETAIL",
+  vertical: Vertical.FOOD_RETAIL,
   adapterId: "food-retail-local-v1",
   placeSearch: {
     googleQuery: (city) =>
@@ -37,6 +38,4 @@ export const foodRetailLeadDiscovery = {
     audienceNoun: "shoppers",
     photoSubjects: "shopfront, counter, and source-backed product",
   },
-} satisfies Omit<LeadDiscoveryAdapter, "vertical"> & {
-  vertical: "FOOD_RETAIL";
-};
+} satisfies LeadDiscoveryAdapter;

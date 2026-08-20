@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  assertSiteDraftInvariants,
+  assertSourceNavigationDestinations,
   assertTranslationParity,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
@@ -56,6 +58,9 @@ export const menuSectionSchema = catalogSectionSchema.extend({
 });
 
 export const restaurantIntegrationSchema = integrationSchema
+  .extend({
+    type: z.enum(["booking", "ordering", "delivery", "social"]),
+  })
   .superRefine((integration, context) => {
     const provider = findRestaurantProviderByUrl(integration.url);
     if (provider && provider.type !== integration.type) {
@@ -176,7 +181,7 @@ export const restaurantSiteDraftSchema = z
       .min(1)
       .max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 export const restaurantDraftSchema = z
   .object({
@@ -187,6 +192,7 @@ export const restaurantDraftSchema = z
     menuSections: z.array(menuSectionSchema).min(1).max(12),
   })
   .superRefine((draft, context) => {
+    assertSourceNavigationDestinations(draft, context);
     assertTranslationParity(
       {
         defaultLocale: draft.defaultLocale,
@@ -331,11 +337,15 @@ export function toRestaurantDraft(
     themeSelection: draft.attributes.themeSelection,
     address: draft.address,
     phone: draft.phone,
+    email: draft.email,
     sourceUrl: draft.sourceUrl,
+    logoUrl: draft.logoUrl,
+    faviconUrl: draft.faviconUrl,
     heroImageUrl: draft.heroImageUrl,
     heroOriginalImageUrl: draft.heroOriginalImageUrl,
     heroImageProvenance: draft.heroImageProvenance,
     palette: draft.palette,
+    sourceData: draft.sourceData,
     showMenuImages: draft.attributes.showMenuImages,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
@@ -392,11 +402,15 @@ export function fromRestaurantDraft(
     },
     address: draft.address,
     phone: draft.phone,
+    email: draft.email,
     sourceUrl: draft.sourceUrl,
+    logoUrl: draft.logoUrl,
+    faviconUrl: draft.faviconUrl,
     heroImageUrl: draft.heroImageUrl,
     heroOriginalImageUrl: draft.heroOriginalImageUrl,
     heroImageProvenance: draft.heroImageProvenance,
     palette: draft.palette,
+    sourceData: draft.sourceData,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
     businessHours: draft.businessHours,
@@ -442,19 +456,9 @@ export function fromRestaurantDraft(
   });
 }
 
-export function slugify(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 72);
-}
-
 // Price formatting is pure Intl and belongs to no vertical; it lives in the
 // shared draft module so the renderer can reach it without importing a vertical.
-export { formatPrice } from "@/lib/site-draft";
+export { formatPrice, slugify } from "@/lib/site-draft";
 
 export function getRestaurantLocales(draft: RestaurantDraft): string[] {
   return [

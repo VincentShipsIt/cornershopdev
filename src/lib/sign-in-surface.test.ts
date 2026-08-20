@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { FACTORY_BRAND } from "@/lib/brand";
-import { signInSurface } from "@/lib/sign-in-surface";
+import {
+  signInErrorMessage,
+  signInSurface,
+} from "@/lib/sign-in-surface";
 import { beautyMarketing } from "@/lib/verticals/beauty/marketing";
 import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 
@@ -40,5 +43,21 @@ describe("sign-in surface", () => {
         createHref: "/create?vertical=beauty",
       },
     });
+  });
+});
+
+describe("sign-in error states", () => {
+  it("explains one-time invalid links without exposing account state", () => {
+    expect(signInErrorMessage("INVALID_TOKEN")).toContain(
+      "invalid, expired, or already used",
+    );
+    expect(signInErrorMessage("invalid-link")).toContain("Request a new one");
+  });
+
+  it("keeps unknown authentication failures generic", () => {
+    expect(signInErrorMessage("unexpected")).toBe(
+      "Sign-in could not be completed. Request a new secure link below.",
+    );
+    expect(signInErrorMessage(undefined)).toBeNull();
   });
 });

@@ -9,14 +9,18 @@ import {
 } from "@/lib/billing-access";
 import {
   publishSiteDraft,
+  SitePublicationCapabilityError,
   SitePublicationStateError,
   SitePublicationTranslationError,
 } from "@/lib/site-publication";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
 import { isSameOriginMutation } from "@/lib/request-origin";
+import { DraftRevisionConflictError } from "@/lib/site-persistence";
+import { publicationCapabilityFailureResponse } from "@/lib/site-publication-capability";
 
 const publishRequestSchema = z.object({
   changeSummary: z.string().trim().min(3).max(280),
+  expectedRevision: z.number().int().min(0),
 });
 
 export async function POST(
@@ -29,6 +33,10 @@ export async function POST(
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
+  const capabilityFailure = publicationCapabilityFailureResponse(
+    access.site.vertical,
+  );
+  if (capabilityFailure) return capabilityFailure;
   const billing = await getSiteBillingAccess(access.site.id);
   if (!billing.ok) return billingAccessFailureResponse(billing);
 
@@ -37,7 +45,11 @@ export async function POST(
   );
   if (!parsed.success) {
     return Response.json(
-      { error: "Describe the changes in 3 to 280 characters" },
+      {
+        error:
+          "Describe the changes in 3 to 280 characters and reload the current draft revision before publishing.",
+        code: "DRAFT_REVISION_REQUIRED",
+      },
       { status: 400 },
     );
   }
@@ -49,6 +61,7 @@ export async function POST(
       vertical: access.site.vertical,
       actor: access.user,
       changeSummary: parsed.data.changeSummary,
+      expectedRevision: parsed.data.expectedRevision,
     });
     return Response.json({ ok: true, published });
   } catch (error) {
@@ -74,11 +87,24 @@ export async function POST(
         { status: 422 },
       );
     }
-    if (error instanceof SitePublicationStateError) {
+    if (
+      error instanceof SitePublicationCapabilityError ||
+      error instanceof SitePublicationStateError
+    ) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof SitePublicationTranslationError) {
       return Response.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof DraftRevisionConflictError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: "DRAFT_REVISION_CONFLICT",
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 },
+      );
     }
 
     console.error("[site-publish] failed", {

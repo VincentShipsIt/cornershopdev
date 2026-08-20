@@ -22,7 +22,7 @@ const hasRequiredResendDomainsActual =
   outreachReadiness.hasRequiredResendDomains;
 
 export const outreachReadinessTestModule = {
-  OUTREACH_MIGRATION: outreachReadiness.OUTREACH_MIGRATION,
+  OUTREACH_MIGRATIONS: outreachReadiness.OUTREACH_MIGRATIONS,
   RESTOFRONT_OUTREACH_FROM: outreachReadiness.RESTOFRONT_OUTREACH_FROM,
   RESTOFRONT_OUTREACH_REPLY_TO: outreachReadiness.RESTOFRONT_OUTREACH_REPLY_TO,
   REQUIRED_RESEND_WEBHOOK_EVENTS: [

@@ -1,3 +1,4 @@
+import { Vertical } from "@/generated/prisma/enums";
 import type { LeadDiscoveryAdapter } from "@/lib/lead-generation/types";
 
 /**
@@ -6,7 +7,7 @@ import type { LeadDiscoveryAdapter } from "@/lib/lead-generation/types";
  * type represents plumbers, electricians, builders, repairs, and artisans.
  */
 export const localServiceLeadDiscovery = {
-  vertical: "LOCAL_SERVICE",
+  vertical: Vertical.LOCAL_SERVICE,
   adapterId: "local-service-local-v1",
   placeSearch: {
     googleQuery: (city) =>
@@ -40,6 +41,4 @@ export const localServiceLeadDiscovery = {
     audienceNoun: "customers",
     photoSubjects: "team, workshop, and completed project evidence",
   },
-} satisfies Omit<LeadDiscoveryAdapter, "vertical"> & {
-  vertical: "LOCAL_SERVICE";
-};
+} satisfies LeadDiscoveryAdapter;

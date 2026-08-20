@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   liveSiteCanonicalPath,
+  PUBLIC_SITE_VERSION_HEADER,
   previewCacheTagFor,
 } from "@/lib/site-surface";
 
@@ -31,5 +32,9 @@ describe("previewCacheTagFor", () => {
     expect(
       liveSiteCanonicalPath("https://chez-lea.restofront.com", "fr", "en"),
     ).toBe("https://chez-lea.restofront.com/fr");
+  });
+
+  it("uses a non-secret response header for live version evidence", () => {
+    expect(PUBLIC_SITE_VERSION_HEADER).toBe("x-cornershop-site-version");
   });
 });

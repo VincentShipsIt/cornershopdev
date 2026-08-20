@@ -30,6 +30,7 @@ import {
 import { isInitialOutreachDispatchRetryable } from "@/lib/outreach-dispatch";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import { GLOBAL_OUTREACH_PAUSE_KEY } from "@/lib/outreach-pause";
+import { isClaimInvitationDeliveryRetryable } from "@/lib/claim-delivery-policy";
 
 export type OperatorSiteRow = {
   id: string;
@@ -53,6 +54,23 @@ export type OperatorSiteRow = {
   invitation: {
     id: string;
     email: string;
+    proofMethod: "DOMAIN_EMAIL" | "OPERATOR_APPROVAL";
+    approvalEvidenceRef: string | null;
+    approvedBy: string | null;
+    approvedAt: Date | null;
+    deliveryStatus:
+      | "PENDING"
+      | "SENT"
+      | "DELIVERED"
+      | "BOUNCED"
+      | "SUPPRESSED"
+      | "FAILED";
+    deliveryAttempts: number;
+    retryCount: number;
+    retryable: boolean;
+    deliveryFailureCode: string | null;
+    deliveredAt: Date | null;
+    lastDeliveryAttemptAt: Date | null;
     state: OperatorInvitationState;
     expiresAt: Date;
     createdAt: Date;
@@ -160,7 +178,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         vertical: true,
         status: true,
         createdAt: true,
-        email: true,
+        leadContactEmail: true,
         updatedAt: true,
         description: true,
         address: true,
@@ -240,6 +258,16 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           select: {
             id: true,
             email: true,
+            proofMethod: true,
+            approvalEvidenceRef: true,
+            approvedBy: true,
+            approvedAt: true,
+            deliveryStatus: true,
+            deliveryAttempts: true,
+            retryCount: true,
+            deliveryFailureCode: true,
+            deliveredAt: true,
+            lastDeliveryAttemptAt: true,
             expiresAt: true,
             verifiedAt: true,
             acceptedAt: true,
@@ -376,7 +404,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         vertical: site.vertical,
         status: site.status,
         createdAt: site.createdAt,
-        contactEmail: site.email,
+        contactEmail: site.leadContactEmail,
         ownerCount,
         subscriptionStatus: site.subscription?.status ?? null,
         latestImportStatus: site.importJobs[0]?.status ?? null,
@@ -399,6 +427,19 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
           ? {
               id: invitationRecord.id,
               email: invitationRecord.email,
+              proofMethod: invitationRecord.proofMethod,
+              approvalEvidenceRef: invitationRecord.approvalEvidenceRef,
+              approvedBy: invitationRecord.approvedBy,
+              approvedAt: invitationRecord.approvedAt,
+              deliveryStatus: invitationRecord.deliveryStatus,
+              deliveryAttempts: invitationRecord.deliveryAttempts,
+              retryCount: invitationRecord.retryCount,
+              retryable:
+                isClaimInvitationDeliveryRetryable(invitationRecord),
+              deliveryFailureCode: invitationRecord.deliveryFailureCode,
+              deliveredAt: invitationRecord.deliveredAt,
+              lastDeliveryAttemptAt:
+                invitationRecord.lastDeliveryAttemptAt,
               state: invitationState,
               expiresAt: invitationRecord.expiresAt,
               createdAt: invitationRecord.createdAt,

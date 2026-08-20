@@ -8,6 +8,7 @@ import {
 import { getDb } from "@/lib/db";
 import { mutableLeadStatuses } from "@/lib/lead-status";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import type { OutreachTemplateId } from "@/lib/outreach-templates";
 import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
@@ -226,12 +227,16 @@ async function emit(event: LeadOutreachEvent): Promise<void> {
  * two never drift.
  */
 export function isLeadEligibleForOutreach(
-  site: { status: string; email: string | null } | null,
+  site: { status: string; leadContactEmail: string | null } | null,
   paused: boolean,
   latestOutreachStatus: string | null = null,
   hasInboundReply = false,
 ): boolean {
-  if (!site || !mutableLeadStatuses.has(site.status) || !site.email) {
+  if (
+    !site ||
+    !mutableLeadStatuses.has(site.status) ||
+    !site.leadContactEmail
+  ) {
     return false;
   }
   if (paused || hasInboundReply) return false;
@@ -249,12 +254,7 @@ async function loadEligibleLead(
   stage: OutreachStage,
 ): Promise<{ slug: string; email: string } | null> {
   "use step";
-  return readEligibleLead(
-    siteId,
-    expectedRecipient,
-    expectedReviewedAt,
-    stage,
-  );
+  return readEligibleLead(siteId, expectedRecipient, expectedReviewedAt, stage);
 }
 
 async function readEligibleLead(
@@ -269,7 +269,8 @@ async function readEligibleLead(
       where: { id: siteId },
       select: {
         slug: true,
-        email: true,
+        leadContactEmail: true,
+        attributes: true,
         status: true,
         vertical: true,
         updatedAt: true,
@@ -302,7 +303,8 @@ async function readEligibleLead(
   const latestPreviewReady =
     site?.outreachMessages.find(
       (message) =>
-        message.direction === "OUTBOUND" && message.template === "preview_ready",
+        message.direction === "OUTBOUND" &&
+        message.template === "preview_ready",
     )?.status ?? null;
   if (
     !isLeadEligibleForOutreach(
@@ -311,23 +313,19 @@ async function readEligibleLead(
       stage === "follow_up_1" ? latestPreviewReady : null,
       hasInboundReply,
     ) ||
-    !isReviewedLead(
-      site,
-      paused,
-      expectedRecipient,
-      expectedReviewedAt,
-    )
+    !isReviewedLead(site, paused, expectedRecipient, expectedReviewedAt)
   ) {
     return null;
   }
   // Non-null by construction: `isLeadEligibleForOutreach` only returns true
-  // when `site` and `site.email` are both non-null.
+  // when `site` and `site.leadContactEmail` are both non-null.
   return { slug: site!.slug, email: expectedRecipient.trim().toLowerCase() };
 }
 
 export function isReviewedLead(
   site: {
-    email: string | null;
+    leadContactEmail: string | null;
+    attributes: unknown;
     status: string;
     vertical: string;
     updatedAt: Date;
@@ -340,13 +338,15 @@ export function isReviewedLead(
   const latestReview = site?.auditEvents[0]?.createdAt ?? null;
   return Boolean(
     site &&
-      !paused &&
-      isVerticalOutreachConfigured(site.vertical) &&
-      mutableLeadStatuses.has(site.status) &&
-      site.email?.trim().toLowerCase() ===
-        expectedRecipient.trim().toLowerCase() &&
-      latestReview?.toISOString() === expectedReviewedAt &&
-      isOperatorReviewCurrent(latestReview, site.updatedAt),
+    !paused &&
+    isVerticalOutreachConfigured(site.vertical) &&
+    evaluateLeadOutreachEligibility(site.attributes, site.leadContactEmail)
+      .allowed &&
+    mutableLeadStatuses.has(site.status) &&
+    site.leadContactEmail?.trim().toLowerCase() ===
+      expectedRecipient.trim().toLowerCase() &&
+    latestReview?.toISOString() === expectedReviewedAt &&
+    isOperatorReviewCurrent(latestReview, site.updatedAt),
   );
 }
 
@@ -458,9 +458,8 @@ async function finishInitialDispatch(
   error?: string,
 ): Promise<void> {
   "use step";
-  const { markInitialOutreachDispatchFinished } = await import(
-    "@/lib/outreach-dispatch"
-  );
+  const { markInitialOutreachDispatchFinished } =
+    await import("@/lib/outreach-dispatch");
   await markInitialOutreachDispatchFinished({
     dispatchId,
     siteId,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { resolveAuthRequestOrigin } from "@/lib/auth-request-url";
+import {
+  authMutationRedirectResponse,
+  internalAuthMutationHeaders,
+  resolveAuthRequestOrigin,
+} from "@/lib/auth-request-url";
 
 function request(headers: Record<string, string>, url = "http://0.0.0.0:3000") {
   return new Request(url, { headers });
@@ -66,5 +70,78 @@ describe("auth request origin", () => {
         },
       ),
     ).toBe("http://localhost:4444");
+  });
+
+  it("keeps the exact configured loopback origin only in guarded E2E mode", () => {
+    const localRequest = request(
+      { host: "127.0.0.1:3100" },
+      "http://127.0.0.1:3100/api/auth/checkout",
+    );
+    const productionHarness = {
+      NODE_ENV: "production",
+      CORNERSHOP_ENV: "test",
+      FIRST_CUSTOMER_E2E: "1",
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3100",
+      PLATFORM_HOSTNAMES: "127.0.0.1",
+    };
+
+    expect(resolveAuthRequestOrigin(localRequest, productionHarness)).toBe(
+      "http://127.0.0.1:3100",
+    );
+    expect(
+      resolveAuthRequestOrigin(localRequest, {
+        ...productionHarness,
+        FIRST_CUSTOMER_E2E: undefined,
+      }),
+    ).toBe("https://127.0.0.1");
+    expect(
+      resolveAuthRequestOrigin(localRequest, {
+        ...productionHarness,
+        NEXT_PUBLIC_APP_URL: "http://localhost:3100",
+      }),
+    ).toBe("https://127.0.0.1");
+  });
+
+  it("rebuilds internal mutation origins without forwarding external navigation metadata", () => {
+    const headers = internalAuthMutationHeaders(
+      request(
+        {
+          host: "127.0.0.1:3100",
+          origin: "https://checkout.stripe.com",
+          referer: "https://checkout.stripe.com/pay/test",
+          cookie: "cornershopdev.checkout_return=return-token",
+          "user-agent": "browser-test",
+        },
+        "http://127.0.0.1:3100/api/auth/checkout",
+      ),
+    );
+
+    expect(headers.get("origin")).toBe("http://127.0.0.1:3100");
+    expect(headers.get("cookie")).toBe(
+      "cornershopdev.checkout_return=return-token",
+    );
+    expect(headers.get("user-agent")).toBe("browser-test");
+    expect(headers.has("referer")).toBe(false);
+  });
+
+  it("preserves auth cookies on a server-owned redirect destination", () => {
+    const authHeaders = new Headers();
+    authHeaders.append("set-cookie", "session=fresh; HttpOnly; Path=/");
+    authHeaders.append("set-cookie", "checkout=; Max-Age=0; Path=/");
+    const response = authMutationRedirectResponse(
+      new Response('{"ready":true}', {
+        headers: authHeaders,
+      }),
+      new URL("http://127.0.0.1:3100/dashboard?checkout=success"),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "http://127.0.0.1:3100/dashboard?checkout=success",
+    );
+    expect(response.headers.getSetCookie()).toEqual([
+      "session=fresh; HttpOnly; Path=/",
+      "checkout=; Max-Age=0; Path=/",
+    ]);
   });
 });

@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { SiteStatus } from "@/generated/prisma/enums";
 import { normalizeAccountEmail } from "@/lib/account-email";
+import { reconcileSiteSubscriptionLifecycle } from "@/lib/subscription-site-lifecycle";
 
 export const CLAIMABLE_STATUSES: SiteStatus[] = [
   SiteStatus.PROSPECT,
@@ -25,6 +27,22 @@ export function isClaimable(site: {
 
 export function unclaimedWhere(slug: string): Prisma.SiteWhereInput {
   return { slug, organizationId: null, status: { in: CLAIMABLE_STATUSES } };
+}
+
+export function hasValidClaimApprovalEvidence(invitation: {
+  proofMethod: "DOMAIN_EMAIL" | "OPERATOR_APPROVAL";
+  approvalEvidenceRef: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  acceptedAt: Date | null;
+}): boolean {
+  return (
+    invitation.proofMethod !== "OPERATOR_APPROVAL" ||
+    invitation.acceptedAt !== null ||
+    (Boolean(invitation.approvalEvidenceRef?.trim()) &&
+      Boolean(invitation.approvedBy?.trim()) &&
+      invitation.approvedAt !== null)
+  );
 }
 
 function rejectClaim(
@@ -54,12 +72,17 @@ export type CompletedCheckout = {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   stripeEventCreatedAt: Date;
+  stripeEventId: string;
 };
 
 export type ClaimedSiteAccess = {
   userId: string;
   organizationId: string;
 };
+
+export function claimedSiteOrganizationId(siteId: string): string {
+  return `claim_org_${createHash("sha256").update(siteId).digest("hex").slice(0, 24)}`;
+}
 
 /**
  * Accepts one invitation, assigns its site, and records the site-specific
@@ -78,6 +101,9 @@ export async function claimSite(
       id: true,
       email: true,
       proofMethod: true,
+      approvalEvidenceRef: true,
+      approvedBy: true,
+      approvedAt: true,
       expiresAt: true,
       acceptedAt: true,
       revokedAt: true,
@@ -101,6 +127,9 @@ export async function claimSite(
     invitation.revokedAt
   ) {
     throw rejectClaim(checkout, "invitation binding mismatch");
+  }
+  if (!hasValidClaimApprovalEvidence(invitation)) {
+    throw rejectClaim(checkout, "operator approval evidence missing");
   }
   if (invitation.acceptedAt) {
     return resolveAcceptedClaim(tx, checkout, email);
@@ -129,19 +158,25 @@ export async function claimSite(
     update: {},
     create: { email, name: accountName(email) },
   });
-  const membership = await tx.membership.findFirst({
-    where: { userId: user.id },
+  const organizationId = claimedSiteOrganizationId(invitation.siteId);
+  await tx.organization.upsert({
+    where: { id: organizationId },
+    update: {},
+    create: {
+      id: organizationId,
+      name: checkout.siteSlug,
+    },
   });
-  const organizationId =
-    membership?.organizationId ??
-    (
-      await tx.organization.create({
-        data: {
-          name: checkout.siteSlug,
-          memberships: { create: { userId: user.id, role: "owner" } },
-        },
-      })
-    ).id;
+  await tx.membership.upsert({
+    where: {
+      userId_organizationId: {
+        userId: user.id,
+        organizationId,
+      },
+    },
+    update: { role: "owner" },
+    create: { userId: user.id, organizationId, role: "owner" },
+  });
 
   const claimed = await tx.site.updateMany({
     where: unclaimedWhere(checkout.siteSlug),
@@ -159,6 +194,7 @@ export async function claimSite(
       metadata: {
         invitationId: invitation.id,
         proofMethod: invitation.proofMethod,
+        organizationId,
       },
       siteId: invitation.siteId,
     },
@@ -203,6 +239,7 @@ async function resolveAcceptedClaim(
     where: {
       userId: user.id,
       organizationId: accepted.site.organizationId,
+      role: "owner",
     },
   });
   if (!membership) throw rejectClaim(checkout, "accepted owner mismatch");
@@ -231,16 +268,22 @@ async function upsertSubscription(
 ): Promise<void> {
   const existing = await tx.subscription.findUnique({
     where: { siteId },
-    select: { lastStripeEventAt: true },
+    select: { lastStripeEventAt: true, status: true },
   });
+  let effectiveStatus = existing?.status ?? checkout.subscriptionStatus;
   if (
     existing?.lastStripeEventAt &&
     existing.lastStripeEventAt > checkout.stripeEventCreatedAt
   ) {
+    await reconcileSiteSubscriptionLifecycle(tx, {
+      siteId,
+      subscriptionStatus: effectiveStatus,
+      stripeEventId: checkout.stripeEventId,
+    });
     return;
   }
 
-  await tx.subscription.upsert({
+  const stored = await tx.subscription.upsert({
     where: { siteId },
     update: {
       stripeCustomerId: checkout.stripeCustomerId,
@@ -263,5 +306,12 @@ async function upsertSubscription(
       siteId,
       organizationId,
     },
+    select: { status: true },
+  });
+  effectiveStatus = stored.status;
+  await reconcileSiteSubscriptionLifecycle(tx, {
+    siteId,
+    subscriptionStatus: effectiveStatus,
+    stripeEventId: checkout.stripeEventId,
   });
 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { OperatorSiteRow } from "@/lib/operator-dashboard";
+import { evaluateElectronicOutreachEligibility } from "@/lib/electronic-outreach-eligibility";
 
 type Props = Pick<
   OperatorSiteRow,
@@ -41,7 +42,8 @@ export function OperatorOutreachPanel({
     () =>
       [...outreachMessages].sort(
         (left, right) =>
-          new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+          new Date(left.createdAt).getTime() -
+          new Date(right.createdAt).getTime(),
       ),
     [outreachMessages],
   );
@@ -89,7 +91,9 @@ export function OperatorOutreachPanel({
       router.refresh();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Outreach could not be queued.",
+        caught instanceof Error
+          ? caught.message
+          : "Outreach could not be queued.",
       );
     } finally {
       setPending(false);
@@ -150,9 +154,14 @@ export function OperatorOutreachPanel({
           siteSlug: slug,
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "Lead outreach control could not be saved.");
+        throw new Error(
+          payload.error ?? "Lead outreach control could not be saved.",
+        );
       }
       router.refresh();
     } catch (caught) {
@@ -169,11 +178,12 @@ export function OperatorOutreachPanel({
   const retryableInitial =
     initial?.status === "FAILED" && initial.retryable === true;
   const retryableDispatch = outreachDispatch?.retryable === true;
-  const missingEligibilityEvidence = ["contact_basis", "evidence_source"].filter(
-    (key) => !eligibility.evidence[key]?.trim(),
-  );
-  const eligibilityReady =
-    eligibility.state === "ELIGIBLE" && missingEligibilityEvidence.length === 0;
+  const eligibilityDecision = evaluateElectronicOutreachEligibility({
+    state: eligibility.state,
+    evidence: eligibility.evidence,
+    expectedRecipient: contactEmail,
+  });
+  const eligibilityReady = eligibilityDecision.allowed;
   const disabled =
     pending ||
     outreachPaused ||
@@ -185,27 +195,23 @@ export function OperatorOutreachPanel({
     (Boolean(outreachDispatch) && !retryableDispatch);
   const label = retryableInitial
     ? "Retry initial"
-      : initial
+    : initial
       ? `Initial ${humanize(initial.status)}`
       : outreachPaused
         ? "Outreach paused"
         : leadOutreachPaused
           ? "Lead paused"
-        : eligibility.state === "INELIGIBLE"
-          ? "Lead ineligible"
-          : eligibility.state !== "ELIGIBLE"
-            ? "Eligibility required"
-            : missingEligibilityEvidence.length > 0
-              ? "Evidence required"
-        : !reviewedAt
-          ? "Review first"
-          : !contactEmail
-            ? "Email required"
-            : retryableDispatch
-              ? "Retry initial"
-              : outreachDispatch
-                ? `Initial ${humanize(outreachDispatch.status)}`
-                : "Send initial";
+          : !eligibilityReady
+            ? "Consent evidence required"
+            : !reviewedAt
+              ? "Review first"
+              : !contactEmail
+                ? "Email required"
+                : retryableDispatch
+                  ? "Retry initial"
+                  : outreachDispatch
+                    ? `Initial ${humanize(outreachDispatch.status)}`
+                    : "Send initial";
 
   return (
     <div className="min-w-72 space-y-2">
@@ -215,11 +221,9 @@ export function OperatorOutreachPanel({
       </p>
       {!eligibilityReady ? (
         <p className="text-[11px] text-destructive">
-          {eligibility.state === "INELIGIBLE"
-            ? "Outreach blocked: this lead is explicitly ineligible."
-            : eligibility.state !== "ELIGIBLE"
-              ? "Outreach blocked until eligibility is recorded."
-              : `Outreach blocked until eligibility evidence includes ${missingEligibilityEvidence.join(" and ")}.`}
+          {eligibilityDecision.allowed
+            ? null
+            : `Outreach blocked: ${eligibilityDecision.message}`}
         </p>
       ) : null}
       <Button
@@ -245,9 +249,7 @@ export function OperatorOutreachPanel({
             : "Pause lead"}
       </Button>
       <div aria-live="polite">
-        {error ? (
-          <p className="text-[11px] text-destructive">{error}</p>
-        ) : null}
+        {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
       </div>
       {!initial && outreachDispatch ? (
         <div className="rounded-md border px-2 py-1.5">
@@ -329,7 +331,11 @@ export function OperatorOutreachPanel({
             disabled={replyPending || !replyBody.trim()}
             onClick={() => void sendReply()}
           >
-            {replyPending ? <LoaderCircle className="animate-spin" /> : <Send />}
+            {replyPending ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <Send />
+            )}
             {replyPending ? "Sending…" : "Send reply"}
           </Button>
         </div>
@@ -352,12 +358,10 @@ function formatDate(value: Date): string {
   }).format(new Date(value));
 }
 
-function statusVariant(status: string): "secondary" | "outline" | "destructive" {
-  if (
-    status === "DELIVERED" ||
-    status === "SENT" ||
-    status === "RECEIVED"
-  ) {
+function statusVariant(
+  status: string,
+): "secondary" | "outline" | "destructive" {
+  if (status === "DELIVERED" || status === "SENT" || status === "RECEIVED") {
     return "secondary";
   }
   if (status === "FAILED" || status === "BOUNCED" || status === "COMPLAINED") {

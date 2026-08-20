@@ -114,4 +114,49 @@ describe("place discovery", () => {
       categories: ["beauty_salon"],
     });
   });
+
+  it.each([
+    [
+      "FOOD_RETAIL" as const,
+      "bakeries, pastry shops, butchers, delis, cheesemongers and grocers in Valletta",
+      "Valletta Bakery",
+      "bakery",
+    ],
+    [
+      "LOCAL_SERVICE" as const,
+      "plumbers, electricians, builders, repair services and artisans in Valletta",
+      "Valletta Electrics",
+      "electrician",
+    ],
+  ])(
+    "uses the bounded %s taxonomy without a misleading Google includedType",
+    async (vertical, textQuery, name, category) => {
+      const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(input)).toContain("places.googleapis.com");
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body.textQuery).toBe(textQuery);
+        expect(body).not.toHaveProperty("includedType");
+        return Response.json({
+          places: [
+            {
+              id: `${vertical.toLowerCase()}-1`,
+              displayName: { text: name },
+              formattedAddress: "12 Republic Street, Valletta, Malta",
+              types: [category, "point_of_interest"],
+            },
+          ],
+        });
+      };
+
+      const result = await discoverLocalPlaces({
+        vertical,
+        city: "Valletta",
+        limit: 5,
+        googlePlacesApiKey: "test-key",
+        fetchImpl,
+      });
+
+      expect(result.places[0]).toMatchObject({ name, categories: [category] });
+    },
+  );
 });

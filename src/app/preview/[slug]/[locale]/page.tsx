@@ -40,6 +40,7 @@ export async function generateMetadata({
       description: draft.description,
       slug: site.draft.slug,
       defaultLocale: site.draft.defaultLocale,
+      faviconUrl: site.draft.faviconUrl,
     },
     {
       isLiveSurface,

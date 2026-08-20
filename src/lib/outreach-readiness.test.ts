@@ -4,6 +4,7 @@ import {
   hasRequiredResendDomains,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
+  OUTREACH_MIGRATIONS,
   REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
   REQUIRED_RESEND_WEBHOOK_EVENTS,
 } from "@/lib/outreach-readiness";
@@ -23,6 +24,13 @@ const configuredEnvironment = {
 };
 
 describe("outreach environment readiness", () => {
+  it("preflights both mailbox delivery and private-contact migrations", () => {
+    expect(OUTREACH_MIGRATIONS).toEqual([
+      "20260819120000_outreach_inbound_mailbox",
+      "20260820200000_site_contact_privacy_and_catalog_availability",
+    ]);
+  });
+
   it("accepts the registered Restofront identity and complete runtime contract", () => {
     expect(evaluateOutreachEnvironment(configuredEnvironment)).toEqual({
       ready: true,

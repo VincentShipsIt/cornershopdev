@@ -118,11 +118,16 @@ export async function sendLeadEmail(
   const db = getDb();
   const site = await db.site.findUnique({
     where: { id: input.siteId },
-    select: { slug: true, name: true, vertical: true, email: true },
+    select: {
+      slug: true,
+      name: true,
+      vertical: true,
+      leadContactEmail: true,
+    },
   });
   if (!site) throw new OutreachError("Site not found.", 404);
 
-  const to = input.to ?? site.email;
+  const to = input.to ?? site.leadContactEmail;
   if (!to) {
     throw new OutreachError(
       "No contact email on file for this site.",
@@ -417,14 +422,14 @@ async function sendOperatorReply(input: {
       slug: true,
       name: true,
       vertical: true,
-      email: true,
+      leadContactEmail: true,
     },
   });
   if (!site) throw new OutreachError("Site not found.", 404);
   if (!isVerticalOutreachConfigured(site.vertical)) {
     throw new OutreachError("This lead is not eligible for outreach.", 409);
   }
-  const to = site.email;
+  const to = site.leadContactEmail;
   if (!to) {
     throw new OutreachError("No contact email on file for this site.", 400);
   }
@@ -865,7 +870,7 @@ async function assertReviewedLeadDelivery(
     transaction.site.findUnique({
       where: { id: input.siteId },
       select: {
-        email: true,
+        leadContactEmail: true,
         status: true,
         vertical: true,
         attributes: true,
@@ -890,14 +895,17 @@ async function assertReviewedLeadDelivery(
       select: { key: true, value: true },
     }),
   ]);
-  const eligibility = evaluateLeadOutreachEligibility(site?.attributes);
+  const eligibility = evaluateLeadOutreachEligibility(
+    site?.attributes,
+    site?.leadContactEmail ?? input.expectedRecipient,
+  );
   if (
     !site ||
     isOutreachPaused(pauseSettings, input.siteId) ||
     !isVerticalOutreachConfigured(site.vertical) ||
     !mutableLeadStatuses.has(site.status) ||
-    !site.email ||
-    normalizeAccountEmail(site.email) !==
+    !site.leadContactEmail ||
+    normalizeAccountEmail(site.leadContactEmail) !==
       normalizeAccountEmail(input.expectedRecipient) ||
     site.auditEvents[0]?.createdAt.toISOString() !== input.expectedReviewedAt ||
     !isOperatorReviewCurrent(
@@ -941,7 +949,7 @@ async function assertConfiguredOutreachSite(
   const [site, pauseSettings] = await Promise.all([
     transaction.site.findUnique({
       where: { id: input.siteId },
-      select: { vertical: true, email: true },
+      select: { vertical: true, leadContactEmail: true },
     }),
     transaction.operatorSetting.findMany({
       where: {
@@ -959,8 +967,8 @@ async function assertConfiguredOutreachSite(
     !site ||
     isOutreachPaused(pauseSettings, input.siteId) ||
     !isVerticalOutreachConfigured(site.vertical) ||
-    !site.email ||
-    normalizeAccountEmail(site.email) !==
+    !site.leadContactEmail ||
+    normalizeAccountEmail(site.leadContactEmail) !==
       normalizeAccountEmail(input.expectedRecipient)
   ) {
     throw new OutreachError(

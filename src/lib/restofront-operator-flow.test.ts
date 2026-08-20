@@ -78,6 +78,9 @@ type ClaimInvitation = {
   tokenHash: string;
   outreachKey: string | null;
   proofMethod: string;
+  approvalEvidenceRef: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
   expiresAt: Date;
   verifiedAt: Date | null;
   acceptedAt: Date | null;
@@ -101,20 +104,22 @@ const site = {
   name: "Chez Léa",
   vertical: "RESTAURANT" as const,
   sourceUrl: "https://chez-lea.test/",
-  email: "Legacy.Owner@Chez-Lea.TEST" as string | null,
+  email: "bonjour@chez-lea.test" as string | null,
+  leadContactEmail: "Legacy.Owner@Chez-Lea.TEST" as string | null,
   status: "PROSPECT" as
-    | "PROSPECT"
-    | "PREVIEW_READY"
-    | "CLAIMED"
-    | "LIVE"
-    | "PAUSED",
+    "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED",
   organizationId: null,
   attributes: {
     leadEligibility: {
       state: "ELIGIBLE",
       evidence: {
-        contact_basis: "Operator-recorded basis",
-        evidence_source: "Consent record reviewed 2026-08-20",
+        channel_basis: "VERIFIED_WRITTEN_CONSENT",
+        recipient: "Legacy.Owner@Chez-Lea.TEST",
+        controller: "Corner Shop Labs Ltd",
+        channel: "EMAIL",
+        purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+        evidence_timestamp: "2026-08-20T09:00:00+02:00",
+        evidence_source: "consent:owner-record-1234",
       },
       updatedAt: "2026-08-19T08:00:00.000Z",
       updatedBy: "operator:operator_1",
@@ -134,12 +139,13 @@ function siteRecord() {
       (event) =>
         event.siteId === site.id && event.type === "site.review.completed",
     )
-    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    .sort(
+      (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+    );
   return {
     ...site,
     auditEvents: reviews,
-    outreachMessages:
-      message?.template === "preview_ready" ? [message] : [],
+    outreachMessages: message?.template === "preview_ready" ? [message] : [],
   };
 }
 
@@ -167,19 +173,34 @@ const fakeModels = {
     },
     updateMany: async (input: {
       where: { id: string; status?: { in: string[] } };
-      data: { status?: typeof site.status; email?: string };
+      data: {
+        status?: typeof site.status;
+        leadContactEmail?: string;
+      };
     }) => {
       if (
         input.where.id !== site.id ||
-        (input.where.status &&
-          !input.where.status.in.includes(site.status))
+        (input.where.status && !input.where.status.in.includes(site.status))
       ) {
         return { count: 0 };
       }
       if (input.data.status) site.status = input.data.status;
-      if (input.data.email) site.email = input.data.email;
+      if (input.data.leadContactEmail) {
+        site.leadContactEmail = input.data.leadContactEmail;
+      }
       site.updatedAt = tick();
       return { count: 1 };
+    },
+    update: async (input: {
+      where: { id: string };
+      data: { attributes?: unknown };
+    }) => {
+      if (input.where.id !== site.id) throw new Error("site missing");
+      if (input.data.attributes) {
+        site.attributes = input.data.attributes as typeof site.attributes;
+      }
+      site.updatedAt = tick();
+      return siteRecord();
     },
   },
   auditEvent: {
@@ -312,7 +333,8 @@ const fakeModels = {
         | "updatedAt"
       >;
     }) => {
-      if (message?.idempotencyKey === input.where.idempotencyKey) return message;
+      if (message?.idempotencyKey === input.where.idempotencyKey)
+        return message;
       const createdAt = tick();
       message = {
         ...input.create,
@@ -322,8 +344,7 @@ const fakeModels = {
         providerEventAt: null,
         providerAttemptedAt: null,
         deliveryLeaseId: input.create.deliveryLeaseId ?? null,
-        deliveryLeaseExpiresAt:
-          input.create.deliveryLeaseExpiresAt ?? null,
+        deliveryLeaseExpiresAt: input.create.deliveryLeaseExpiresAt ?? null,
         inReplyTo: input.create.inReplyTo ?? null,
         threadKey: input.create.threadKey ?? null,
         createdByActor: input.create.createdByActor ?? null,
@@ -473,11 +494,7 @@ const fakeModels = {
     create: async (input: {
       data: Omit<
         ClaimInvitation,
-        | "id"
-        | "verifiedAt"
-        | "acceptedAt"
-        | "revokedAt"
-        | "checkoutSessionId"
+        "id" | "verifiedAt" | "acceptedAt" | "revokedAt" | "checkoutSessionId"
       >;
     }) => {
       invitation = {
@@ -551,32 +568,28 @@ mock.module("@/lib/resend", () => ({
     vertical === "RESTAURANT" ? "vincent@restofront.com" : undefined,
 }));
 
-const { POST: createOrReopenLead } = await import(
-  "@/app/api/admin/leads/batch/route"
-);
-const { POST: completeReview } = await import(
-  "@/app/api/admin/sites/[slug]/review/route"
-);
-const { GET: getOutreach, POST: queueOutreach } = await import(
-  "@/app/api/admin/leads/[slug]/outreach/route"
-);
-const { POST: setOutreachPause } = await import(
-  "@/app/api/admin/outreach/pause/route"
-);
-const {
-  markInitialOutreachDispatchFinished,
-  reserveInitialOutreachDispatch,
-} = await import("@/lib/outreach-dispatch");
+const { POST: createOrReopenLead } =
+  await import("@/app/api/admin/leads/batch/route");
+const { POST: completeReview } =
+  await import("@/app/api/admin/sites/[slug]/review/route");
+const { GET: getOutreach, POST: queueOutreach } =
+  await import("@/app/api/admin/leads/[slug]/outreach/route");
+const { POST: setOutreachPause } =
+  await import("@/app/api/admin/outreach/pause/route");
+const { markInitialOutreachDispatchFinished, reserveInitialOutreachDispatch } =
+  await import("@/lib/outreach-dispatch");
 const { issueClaimInvitation } = await import("@/lib/claim-invitations");
-const { recordResendOutreachEvent } = await import(
-  "@/lib/outreach-event-recorder"
-);
+const { recordResendOutreachEvent } =
+  await import("@/lib/outreach-event-recorder");
 const { listOutreachMessages, sendLeadEmail } = await import("@/lib/outreach");
 
 describe("mocked Restofront operator delivery flow", () => {
   beforeEach(() => {
     clock = new Date("2026-08-19T08:00:00.000Z").getTime();
-    site.email = "Legacy.Owner@Chez-Lea.TEST";
+    site.email = "bonjour@chez-lea.test";
+    site.leadContactEmail = "Legacy.Owner@Chez-Lea.TEST";
+    site.attributes.leadEligibility.evidence.recipient =
+      "Legacy.Owner@Chez-Lea.TEST";
     site.status = "PROSPECT";
     site.updatedAt = new Date(clock);
     dispatch = null;
@@ -612,15 +625,38 @@ describe("mocked Restofront operator delivery flow", () => {
     );
     expect(intakeResponse.status).toBe(200);
     expect(site.status).toBe("PREVIEW_READY");
-    expect(site.email).toBe("owner@chez-lea.test");
+    expect(site.email).toBe("bonjour@chez-lea.test");
+    expect(site.leadContactEmail).toBe("owner@chez-lea.test");
     expect(providerSend).not.toHaveBeenCalled();
 
     // A separate read sees the same private preview identity and contact.
-    expect(await fakeModels.site.findUnique({ where: { slug: site.slug } })).toMatchObject({
+    expect(
+      await fakeModels.site.findUnique({ where: { slug: site.slug } }),
+    ).toMatchObject({
       slug: "chez-lea",
       status: "PREVIEW_READY",
-      email: "owner@chez-lea.test",
+      email: "bonjour@chez-lea.test",
+      leadContactEmail: "owner@chez-lea.test",
     });
+
+    const eligibilityResponse = await completeReview(
+      sameOriginRequest(`/api/admin/sites/${site.slug}/review`, {
+        action: "set_eligibility",
+        eligibility: "ELIGIBLE",
+        eligibilityEvidence: {
+          channel_basis: "VERIFIED_WRITTEN_CONSENT",
+          recipient: "owner@chez-lea.test",
+          controller: "Corner Shop Labs Ltd",
+          channel: "EMAIL",
+          purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+          evidence_timestamp: "2026-08-20T09:00:00+02:00",
+          evidence_source: "consent:owner-record-1234",
+        },
+        note: null,
+      }),
+      siteContext(completeReview),
+    );
+    expect(eligibilityResponse.status).toBe(200);
 
     const reviewResponse = await completeReview(
       sameOriginRequest(`/api/admin/sites/${site.slug}/review`, {
@@ -669,7 +705,7 @@ describe("mocked Restofront operator delivery flow", () => {
 
     const issued = await issueClaimInvitation({
       siteSlug: site.slug,
-      email: site.email!,
+      email: site.leadContactEmail!,
       proofMethod: "OPERATOR_APPROVAL",
       actor: "operator:operator_1",
       outreachKey: `lead-outreach:${site.id}:preview_ready`,
@@ -681,11 +717,31 @@ describe("mocked Restofront operator delivery flow", () => {
         stage: "preview_ready",
       },
     });
+    const replayedInvitation = await issueClaimInvitation({
+      siteSlug: site.slug,
+      email: site.leadContactEmail!,
+      proofMethod: "OPERATOR_APPROVAL",
+      actor: "operator:operator_1",
+      outreachKey: `lead-outreach:${site.id}:preview_ready`,
+      outreachDispatch: {
+        id: dispatch!.id,
+        attempt: dispatch!.attempt,
+        recipient: dispatch!.recipient,
+        reviewedAt: reviewPayload.createdAt,
+        stage: "preview_ready",
+      },
+    });
+    expect(replayedInvitation.id).toBe(issued.id);
+    expect(invitation).toMatchObject({
+      approvalEvidenceRef: `outreach-dispatch:${dispatch!.id}`,
+      approvedBy: "operator:operator_1",
+      approvedAt: expect.any(Date),
+    });
     const sent = await sendLeadEmail({
       siteId: site.id,
       template: "preview_ready",
       claimUrl: `https://cornershop.dev/claim/${site.slug}#claim_token=${issued.token}`,
-      to: site.email!,
+      to: site.leadContactEmail!,
       actor: "operator:operator_1",
       expectedReviewedAt: reviewPayload.createdAt,
       claimInvitationId: issued.id,
@@ -727,12 +783,19 @@ describe("mocked Restofront operator delivery flow", () => {
     expect(delivery).toEqual({ handled: true, updated: 1 });
 
     const mailboxResponse = await getOutreach(
-      new Request(`https://cornershop.dev/api/admin/leads/${site.slug}/outreach`),
+      new Request(
+        `https://cornershop.dev/api/admin/leads/${site.slug}/outreach`,
+      ),
       siteContext(getOutreach),
     );
     expect(mailboxResponse.status).toBe(200);
     expect(await mailboxResponse.json()).toMatchObject({
-      messages: [{ status: "DELIVERED" }],
+      messages: [
+        {
+          status: "DELIVERED",
+          toAddress: "owner@chez-lea.test",
+        },
+      ],
     });
     expect((await listOutreachMessages(site.id))[0]).toMatchObject({
       status: "DELIVERED",
@@ -748,7 +811,7 @@ describe("mocked Restofront operator delivery flow", () => {
     await expect(
       issueClaimInvitation({
         siteSlug: site.slug,
-        email: site.email!,
+        email: site.leadContactEmail!,
         proofMethod: "OPERATOR_APPROVAL",
         actor: "operator:operator_1",
         outreachKey: `lead-outreach:${site.id}:follow_up_1`,
@@ -785,6 +848,8 @@ describe("mocked Restofront operator delivery flow", () => {
   });
 
   it("replays an ambiguous stale reservation but increments a definite failure", async () => {
+    site.leadContactEmail = "owner@chez-lea.test";
+    site.attributes.leadEligibility.evidence.recipient = "owner@chez-lea.test";
     dispatch = {
       id: "dispatch_stale",
       idempotencyKey: `lead-outreach:${site.id}:preview_ready`,

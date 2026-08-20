@@ -1,0 +1,51 @@
+.factoryShell {
+  --background: #050505;
+  --foreground: #f7f7f4;
+  --card: #0d0d0d;
+  --card-foreground: #f7f7f4;
+  --popover: #0d0d0d;
+  --popover-foreground: #f7f7f4;
+  --primary: #ff775f;
+  --primary-foreground: #050505;
+  --secondary: #161616;
+  --secondary-foreground: #f7f7f4;
+  --muted: #121212;
+  --muted-foreground: #a3a3a3;
+  --accent: #123e31;
+  --accent-foreground: #c8f5df;
+  --border: rgb(255 255 255 / 0.11);
+  --input: rgb(255 255 255 / 0.14);
+  --ring: #ff775f;
+  --factory-bg: #050505;
+  --factory-line: rgb(255 255 255 / 0.07);
+  background: var(--factory-bg);
+  color: #f7f7f4;
+  color-scheme: dark;
+  isolation: isolate;
+}
+
+.factoryShell ::selection {
+  background: #ff775f;
+  color: #050505;
+}
+
+.factoryGrid {
+  position: relative;
+  background-color: #050505;
+  background-image:
+    linear-gradient(to right, var(--factory-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--factory-line) 1px, transparent 1px);
+  background-position: center;
+  background-size: 48px 48px;
+}
+
+.factoryGrid::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% 18%, rgb(241 90 61 / 0.11), transparent 28rem),
+    radial-gradient(circle at 78% 42%, rgb(13 74 57 / 0.2), transparent 30rem);
+  content: "";
+  pointer-events: none;
+}

@@ -7,6 +7,10 @@ import {
   localSeoAuditResultSchema,
   type LocalSeoAuditResult,
 } from "@/lib/local-seo-audit";
+import {
+  evaluateElectronicOutreachEligibility,
+  type OutreachEligibilityReason,
+} from "@/lib/electronic-outreach-eligibility";
 
 export const LEAD_DISCOVERY_ATTRIBUTE_KEY = "leadDiscovery";
 export const LOCAL_SEO_AUDIT_ATTRIBUTE_KEY = "localSeoAudit";
@@ -18,10 +22,7 @@ export const leadEligibilityStateSchema = z.enum([
   "INELIGIBLE",
 ]);
 export const leadEligibilityEvidenceSchema = z
-  .record(
-    z.string().trim().min(1).max(80),
-    z.string().trim().min(1).max(500),
-  )
+  .record(z.string().trim().min(1).max(80), z.string().trim().min(1).max(500))
   .refine((record) => Object.keys(record).length <= 20, {
     message: "At most 20 eligibility evidence fields are allowed",
   });
@@ -66,14 +67,9 @@ export type LeadOutreachEligibilityDecision =
   | { allowed: true; record: LeadEligibilityRecord }
   | {
       allowed: false;
-      reason: "unknown" | "ineligible" | "evidence_required";
+      reason: OutreachEligibilityReason;
       message: string;
     };
-
-export const REQUIRED_OUTREACH_ELIGIBILITY_EVIDENCE_KEYS = [
-  "contact_basis",
-  "evidence_source",
-] as const;
 
 export type OperatorLocalSeoAuditView = {
   score: number;
@@ -183,38 +179,21 @@ export function parseLeadEligibility(
 /**
  * Outreach is an operator decision, not an inference from discovery data.
  * Category matches and public listings may be retained as evidence, but they
- * cannot authorize contact on their own: the operator must explicitly record
- * both the contact basis they are relying on and where that evidence came from.
+ * cannot authorize contact on their own. Electronic outreach requires a
+ * verified channel-specific record bound to the exact private recipient.
  */
 export function evaluateLeadOutreachEligibility(
   attributes: unknown,
+  expectedRecipient: string | null,
 ): LeadOutreachEligibilityDecision {
   const record = parseLeadEligibility(attributes);
-  if (!record || record.state === "UNKNOWN") {
-    return {
-      allowed: false,
-      reason: "unknown",
-      message:
-        "Set outreach eligibility to eligible and record the contact basis and evidence source.",
-    };
-  }
-  if (record.state === "INELIGIBLE") {
-    return {
-      allowed: false,
-      reason: "ineligible",
-      message: "This lead is explicitly ineligible for outreach.",
-    };
-  }
-  const missing = REQUIRED_OUTREACH_ELIGIBILITY_EVIDENCE_KEYS.filter(
-    (key) => !record.evidence[key]?.trim(),
-  );
-  if (missing.length > 0) {
-    return {
-      allowed: false,
-      reason: "evidence_required",
-      message: `Eligibility evidence must include ${missing.join(" and ")}.`,
-    };
-  }
+  const decision = evaluateElectronicOutreachEligibility({
+    state: record?.state ?? "UNKNOWN",
+    evidence: record?.evidence ?? {},
+    expectedRecipient,
+  });
+  if (!decision.allowed) return decision;
+  if (!record) throw new Error("Eligible outreach record was not parsed");
   return { allowed: true, record };
 }
 

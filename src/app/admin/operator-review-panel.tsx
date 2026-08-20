@@ -67,7 +67,9 @@ export function OperatorReviewPanel({
     try {
       evidence = parseEvidenceFields(eligibilityEvidence);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Check the evidence fields.");
+      setError(
+        caught instanceof Error ? caught.message : "Check the evidence fields.",
+      );
       return;
     }
     setPendingAction("set_eligibility");
@@ -85,14 +87,19 @@ export function OperatorReviewPanel({
           }),
         },
       );
-      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? "Eligibility could not be saved.");
       }
       router.refresh();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Eligibility could not be saved.",
+        caught instanceof Error
+          ? caught.message
+          : "Eligibility could not be saved.",
       );
     } finally {
       setPendingAction(null);
@@ -133,7 +140,10 @@ export function OperatorReviewPanel({
         className="min-h-16 text-xs"
       />
       <div className="grid gap-1.5 rounded-md border p-2">
-        <label htmlFor={`eligibility-${slug}`} className="text-[11px] font-medium">
+        <label
+          htmlFor={`eligibility-${slug}`}
+          className="text-[11px] font-medium"
+        >
           Operator eligibility
         </label>
         <select
@@ -155,7 +165,7 @@ export function OperatorReviewPanel({
           value={eligibilityEvidence}
           onChange={(event) => setEligibilityEvidence(event.target.value)}
           placeholder={
-            "contact_basis=operator-recorded basis\nevidence_source=source or record reviewed"
+            "channel_basis=VERIFIED_WRITTEN_CONSENT\nrecipient=owner@example.com\ncontroller=Corner Shop Labs Ltd\nchannel=EMAIL\npurpose=CLAIM_INVITATION_AND_FOLLOW_UP\nevidence_timestamp=2026-08-21T09:00:00+02:00\nevidence_source=consent:record-1234"
           }
           maxLength={4_000}
           rows={3}

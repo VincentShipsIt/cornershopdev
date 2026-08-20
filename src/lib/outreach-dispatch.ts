@@ -3,6 +3,7 @@ import "server-only";
 import type { OutreachStatus } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
+import type { OutreachEligibilityReason } from "@/lib/electronic-outreach-eligibility";
 import { lockOutreachSite } from "@/lib/outreach-lock";
 
 const INITIAL_TEMPLATE = "preview_ready";
@@ -18,7 +19,7 @@ export type InitialOutreachDispatch = {
 export class OutreachDispatchAuthorizationError extends Error {
   constructor(
     message: string,
-    public readonly reason: "unknown" | "ineligible" | "evidence_required",
+    public readonly reason: OutreachEligibilityReason,
   ) {
     super(message);
     this.name = "OutreachDispatchAuthorizationError";
@@ -60,13 +61,23 @@ export async function reserveInitialOutreachDispatch(input: {
     await lockOutreachSite(tx, input.siteId);
     const site = await tx.site.findUnique({
       where: { id: input.siteId },
-      select: { attributes: true },
+      select: { attributes: true, leadContactEmail: true },
     });
-    const eligibility = evaluateLeadOutreachEligibility(site?.attributes);
-    if (!eligibility.allowed) {
+    const eligibility = evaluateLeadOutreachEligibility(
+      site?.attributes,
+      site?.leadContactEmail ?? null,
+    );
+    if (
+      !site?.leadContactEmail ||
+      site.leadContactEmail.trim().toLowerCase() !==
+        input.recipient.trim().toLowerCase() ||
+      !eligibility.allowed
+    ) {
       throw new OutreachDispatchAuthorizationError(
-        eligibility.message,
-        eligibility.reason,
+        eligibility.allowed
+          ? "The private lead contact changed before outreach was queued."
+          : eligibility.message,
+        eligibility.allowed ? "recipient_mismatch" : eligibility.reason,
       );
     }
 
@@ -124,9 +135,7 @@ export async function reserveInitialOutreachDispatch(input: {
           // A definite failure gets a fresh provider idempotency slot. A
           // stale no-run reservation is ambiguous, so replay the same logical
           // attempt and converge on its existing provider key instead.
-          attempt: retryingFailure
-            ? { increment: 1 }
-            : dispatch.attempt,
+          attempt: retryingFailure ? { increment: 1 } : dispatch.attempt,
         },
       });
       if (reclaimed.count !== 1) {
@@ -219,9 +228,7 @@ export async function markInitialOutreachDispatchFinished(input: {
       where: {
         id: input.dispatchId,
         status:
-          input.status === "SENT"
-            ? { in: ["QUEUED", "FAILED"] }
-            : "QUEUED",
+          input.status === "SENT" ? { in: ["QUEUED", "FAILED"] } : "QUEUED",
         attempt: input.attempt,
       },
       data: {

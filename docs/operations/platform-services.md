@@ -10,15 +10,15 @@ Never copy production database or AWS credentials into pull-request builds.
 CI uses non-connecting placeholders; runtime credentials are loaded from
 encrypted SSM parameters on the EC2 host.
 
-| Service | Production isolation | Runtime variables |
-| --- | --- | --- |
-| PostgreSQL | Dedicated database and login on the existing private RDS instance | `DATABASE_URL` |
-| Workflow | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency | `WORKFLOW_*` |
-| Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
-| Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
-| Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
-| Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
-| Niche outreach | Explicit operator send, Workflow follow-up, signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
+| Service         | Production isolation                                                                  | Runtime variables                                       |
+| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| PostgreSQL      | Dedicated database and login on the existing private RDS instance                     | `DATABASE_URL`                                          |
+| Workflow        | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency              | `WORKFLOW_*`                                            |
+| Redis           | Dedicated container and persistent Docker volume, not published to the host           | `REDIS_URL`                                             |
+| Images          | Private versioned S3 bucket served through CloudFront OAC                             | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL`         |
+| Billing         | Stripe Checkout, signed webhooks, and Customer Portal                                 | `STRIPE_*`, `CLAIM_TOKEN_SECRET`                        |
+| Operator alerts | Durable PostgreSQL outbox delivered through Resend                                    | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY`               |
+| Niche outreach  | Explicit operator send, Workflow follow-up, signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -33,11 +33,11 @@ Inject `PRODUCTION_DATABASE_URL` and `PREVIEW_DATABASE_URL` into that process
 from the approved secret stores; do not put either value in shell history. The
 command first compares normalized host, port, database, and schema identifiers,
 then opens read-only transactions and compares the observed server/database
-identities. It rejects credential-only differences, local hosts, malformed
-values, matching configuration, matching observed identities, and unreachable
-targets. Attach its hash-only JSON output to the release record; never attach
-the input URLs. This proves database identity separation, not provider backup
-policy.
+identities. It rejects credential-only differences, IPv4 and bracketed or
+unbracketed IPv6 loopback hosts, malformed values, matching configuration,
+matching observed identities, and unreachable targets. Attach its hash-only
+JSON output to the release record; never attach the input URLs. This proves
+database identity separation, not provider backup policy.
 
 After configuring production, redeploy it and request `/api/health/ready`. The
 route returns `200` only when the runtime services and billing configuration are
@@ -87,9 +87,17 @@ bun run leads:discover -- --vertical beauty --city Valletta
 through the vertical's real import/generation pipeline and persist a private
 preview; place-only candidates remain prospects until an operator supplies a
 source. Execute never sends outreach. It records the adapter/query/categories,
-an operator-owned `UNKNOWN | ELIGIBLE | INELIGIBLE` field, and free-form evidence
-fields. These are operational evidence, not legal conclusions; the operator can
-edit them and must still review the current preview before delivery.
+an operator-owned `UNKNOWN | ELIGIBLE | INELIGIBLE` field and evidence fields.
+These are operational evidence, not legal conclusions. Electronic outreach is
+fail-closed unless `channel_basis` is `VERIFIED_WRITTEN_CONSENT` or
+`VERIFIED_SOFT_OPT_IN` and the record binds the exact private recipient,
+controller, `EMAIL` channel, `CLAIM_INVITATION_AND_FOLLOW_UP` purpose,
+offset-aware timestamp, and a private `crm:`, `consent:`, `ticket:`, or `dms:`
+evidence reference. Soft opt-in also requires customer/sale evidence and proof
+that an opt-out was offered at collection. Public listings, generic corporate
+or value-first rationales, and a bare `ELIGIBLE` flag do not authorize email.
+The operator can edit the record and must still review the current preview
+before delivery.
 
 Store `RESEND_WEBHOOK_SECRET` as a SecureString at
 `/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register
@@ -122,8 +130,9 @@ docker run --rm \
 ```
 
 The command opens read-only PostgreSQL transactions to verify the outreach
-migration, required tables/columns/indexes, application database, and Workflow
-database; lists Resend delivery/inbound webhook metadata and domain
+migrations, required tables/columns/indexes (including the private
+`leadContactEmail` boundary), application database, and Workflow database;
+lists Resend delivery/inbound webhook metadata and domain
 capabilities; and validates every launched niche's configured sender and
 reply-to identity. It performs no database writes, configuration changes, or
 email sends. Output contains only check names, booleans, public endpoints,
@@ -146,7 +155,9 @@ The command writes separate `original-hero` and enhanced `hero` fixtures through
 exact SHA-256 content, and deletes both in a `finally` cleanup. Output contains
 only fixture labels, digests, cleanup status, environment, and timestamp—never
 bucket names, keys, URLs, credentials, or provider error bodies. A run without
-`--execute` performs no write. Do not claim the production round trip until the
+`--execute` performs no write. When verification and cleanup both fail, the
+output retains the primary write/read or content-mismatch failure and reports
+`cleanup: failed` separately. Do not claim the production round trip until the
 real command succeeds and cleanup is recorded as `completed`.
 
 ## Runtime operator alerts
@@ -155,21 +166,36 @@ Checkout webhook infrastructure failures, persisted-draft or server publication
 failures, and failed public `/api/health/live` checks create a durable
 `OperatorAlert`. The fingerprint deduplicates each incident for 15 minutes.
 Delivery uses the configured factory sender and `OPERATOR_ALERT_EMAILS`, leases
-each row against concurrent workers, and stops after three attempts (one, five,
-and fifteen-minute retry spacing). Recipient addresses and provider responses
-are absent from alert rows, readiness responses, and command output.
+each row against concurrent workers, and stops after three total attempts:
+immediate delivery, retries after one and five minutes, then terminal exhaustion
+after the third failure. A database or delivery exception for one row is counted
+as pending and does not prevent later alerts in the same batch from running.
+Recipient addresses and provider responses are absent from alert rows,
+readiness responses, and command output.
+
+Stripe webhook failure responses schedule their operator alert with Next.js
+`after`, which sends the response without waiting for Resend while extending the
+request lifecycle until alert capture settles. Do not replace this with a
+floating promise; it may be dropped after the response completes.
 
 Production deploys install a local systemd timer named
 `cornershopdev-public-health.timer`. Every two minutes it starts the exact
-deployed image with the encrypted environment file, retries due alerts, and
-checks the public HTTPS endpoint. This uses the existing host and providers; it
-creates no separate billable monitoring service.
+deployed image with the encrypted environment file and checks the public HTTPS
+endpoint. Alert draining is deliberately isolated in
+`cornershopdev-operator-alerts.timer`, which runs every minute and processes at
+most five rows per invocation. Five worst-case five-second delivery timeouts
+consume 25 seconds inside its 45-second service limit; a saturated alert queue
+therefore cannot delay or terminate the independent public health check. Both
+timers use the existing host and providers; they create no separate billable
+monitoring service.
 
 Useful commands:
 
 ```bash
 systemctl status cornershopdev-public-health.timer
 journalctl -u cornershopdev-public-health.service --since '30 minutes ago'
+systemctl status cornershopdev-operator-alerts.timer
+journalctl -u cornershopdev-operator-alerts.service --since '30 minutes ago'
 docker exec api-cornershop-dev bun run operator:dispatch-alerts
 ```
 
@@ -204,6 +230,7 @@ Production.
 
    Resolve any returned rows before deploying; the migration itself also fails
    closed on this condition.
+
 4. Check migration state with `bun run db:migrate:status`.
 5. Apply pending migrations with `bun run db:migrate:deploy`.
 6. Redeploy the application and confirm `/api/health/ready` returns `200`.
@@ -322,6 +349,13 @@ deployment bucket, and assumes the repository-scoped AWS OIDC role. Merging to
 the scoped IAM policy, SSM parameters, host bootstrap, and DNS prerequisites are
 reviewed and ready. The role may upload only Cornershopdev artifacts and send only
 `AWS-RunShellScript` commands to the production instance.
+
+The candidate image installs dependencies and runs migrations/operator commands
+with Bun 1.3.14, but both the Next.js production build and standalone web server
+run on the fully pinned Node.js 24.19.0 LTS Alpine image. CI starts the exact
+candidate image, confirms both runtime versions and the Node PID 1 executable,
+then exercises public, sign-in, Better Auth session, and unauthenticated
+dashboard responses before a release can use that image.
 
 The host deployment script:
 

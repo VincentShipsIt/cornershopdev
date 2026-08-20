@@ -13,6 +13,15 @@ import {
 import { auditLocalSeo } from "@/lib/local-seo-audit";
 
 describe("operator lead attributes", () => {
+  const writtenConsentEvidence = {
+    channel_basis: "VERIFIED_WRITTEN_CONSENT",
+    recipient: "owner@example.test",
+    controller: "Corner Shop Labs Ltd",
+    channel: "EMAIL",
+    purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+    evidence_timestamp: "2026-08-20T09:00:00+02:00",
+    evidence_source: "consent:owner-record-1234",
+  };
   it("merges discovery and audit onto the existing attributes bag", () => {
     const discovery = createLeadDiscoveryRecord({
       city: "Lyon",
@@ -102,17 +111,23 @@ describe("operator lead attributes", () => {
       }),
     );
 
-    expect(evaluateLeadOutreachEligibility(unknown)).toMatchObject({
+    expect(
+      evaluateLeadOutreachEligibility(unknown, "owner@example.test"),
+    ).toMatchObject({
       allowed: false,
       reason: "unknown",
     });
-    expect(evaluateLeadOutreachEligibility(ineligible)).toMatchObject({
+    expect(
+      evaluateLeadOutreachEligibility(ineligible, "owner@example.test"),
+    ).toMatchObject({
       allowed: false,
       reason: "ineligible",
     });
-    expect(evaluateLeadOutreachEligibility(discoveryOnly)).toMatchObject({
+    expect(
+      evaluateLeadOutreachEligibility(discoveryOnly, "owner@example.test"),
+    ).toMatchObject({
       allowed: false,
-      reason: "evidence_required",
+      reason: "channel_basis_required",
     });
     expect(
       evaluateLeadOutreachEligibility(
@@ -120,13 +135,11 @@ describe("operator lead attributes", () => {
           {},
           createLeadEligibilityRecord({
             state: "ELIGIBLE",
-            evidence: {
-              contact_basis: "Operator-recorded basis",
-              evidence_source: "Consent record reviewed 2026-08-20",
-            },
+            evidence: writtenConsentEvidence,
             updatedBy: "operator:one",
           }),
         ),
+        "owner@example.test",
       ),
     ).toMatchObject({ allowed: true });
   });
@@ -141,7 +154,9 @@ describe("operator lead attributes", () => {
     ];
 
     expect(
-      [...rows].sort(compareOperatorSitesByDiscoveryScore).map((row) => row.discovery?.score ?? null),
+      [...rows]
+        .sort(compareOperatorSitesByDiscoveryScore)
+        .map((row) => row.discovery?.score ?? null),
     ).toEqual([20, 80, null]);
   });
 });

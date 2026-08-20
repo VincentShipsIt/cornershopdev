@@ -16,6 +16,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
+import { factoryFontVariables } from "@/components/fonts/factory-font-scope";
 import { FACTORY_BRAND } from "@/lib/brand";
 import { factoryProductCatalog } from "@/lib/factory-products";
 import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
@@ -89,7 +90,9 @@ export default function Home() {
   const primaryNiche = products.launched[0] ?? products.next;
 
   return (
-    <div className={`${styles.factoryShell} min-h-screen`}>
+    <div
+      className={`${factoryFontVariables} ${styles.factoryShell} min-h-screen font-sans`}
+    >
       <SiteHeader
         brand={FACTORY_BRAND}
         inverse
@@ -101,6 +104,7 @@ export default function Home() {
         ]}
         createHref="/create"
         ctaLabel="Build a site"
+        fontVariables={factoryFontVariables}
       />
 
       <main>

@@ -244,7 +244,7 @@ export async function matchInboundOutreachThread(
   const byContact = await db.site.findMany({
     where: {
       vertical: { in: recipientVerticals },
-      email: from,
+      leadContactEmail: from,
     },
     orderBy: { updatedAt: "desc" },
     take: 2,

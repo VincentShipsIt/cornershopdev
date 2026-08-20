@@ -3,8 +3,10 @@ import { listOutreachVerticals } from "@/lib/lead-generation/registry";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
-export const OUTREACH_MIGRATION =
-  "20260819120000_outreach_inbound_mailbox";
+export const OUTREACH_MIGRATIONS = [
+  "20260819120000_outreach_inbound_mailbox",
+  "20260820200000_site_contact_privacy_and_catalog_availability",
+] as const;
 export const RESTOFRONT_OUTREACH_FROM =
   "Vincent from Restofrontapp <vincent@send.restofront.com>";
 export const RESTOFRONT_OUTREACH_REPLY_TO = "vincent@restofront.com";
@@ -114,9 +116,7 @@ export function evaluateOutreachEnvironment(
     replyTo: "VERTICAL_MARKETING_EMAIL_REPLY_TO",
   } satisfies Record<keyof typeof checks, string>;
   const missingOrInvalid = Object.entries(checks).flatMap(([name, ready]) =>
-    ready
-      ? []
-      : [variableByCheck[name as keyof typeof variableByCheck]],
+    ready ? [] : [variableByCheck[name as keyof typeof variableByCheck]],
   );
 
   return {

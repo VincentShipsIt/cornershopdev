@@ -1,5 +1,6 @@
 export const LIVE_SITE_SLUG_HEADER = "x-cornershop-live-site-slug";
 export const LIVE_SITE_VERSION_HEADER = "x-cornershop-live-site-version";
+export const PUBLIC_SITE_VERSION_HEADER = "x-cornershop-site-version";
 
 export function liveSiteVersionId(
   headers: Pick<Headers, "get">,

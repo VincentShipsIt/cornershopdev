@@ -21,8 +21,13 @@ let reviewed = true;
 let vertical = "RESTAURANT";
 let eligibilityState: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE" = "ELIGIBLE";
 let eligibilityEvidence: Record<string, string> = {
-  contact_basis: "Operator-recorded basis",
-  evidence_source: "Consent record reviewed 2026-08-20",
+  channel_basis: "VERIFIED_WRITTEN_CONSENT",
+  recipient: "owner@example.test",
+  controller: "Corner Shop Labs Ltd",
+  channel: "EMAIL",
+  purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+  evidence_timestamp: "2026-08-20T09:00:00+02:00",
+  evidence_source: "consent:owner-record-1234",
 };
 let revokeEligibilityAfterFirstRead = false;
 let siteReadCount = 0;
@@ -110,7 +115,8 @@ function siteRecord() {
       : eligibilityState;
   return {
     id: "site_1",
-    email: "owner@example.test",
+    email: "bonjour@example.test",
+    leadContactEmail: "owner@example.test",
     status: "PREVIEW_READY",
     vertical,
     attributes: {
@@ -287,10 +293,11 @@ mock.module("@/lib/db", () => ({
           },
           operatorSetting: {
             upsert: async ({ where, update, create }) => {
-              const next =
-                (where.key === "outreach.paused" ? paused : leadPaused)
-                  ? update.value
-                  : create.value;
+              const next = (
+                where.key === "outreach.paused" ? paused : leadPaused
+              )
+                ? update.value
+                : create.value;
               if (where.key === "outreach.paused") paused = next;
               else leadPaused = next;
               return { value: next };
@@ -314,12 +321,9 @@ mock.module("@/lib/db", () => ({
   }),
 }));
 
-const { POST } = await import(
-  "@/app/api/admin/leads/[slug]/outreach/route"
-);
-const { POST: POSTPause } = await import(
-  "@/app/api/admin/outreach/pause/route"
-);
+const { POST } = await import("@/app/api/admin/leads/[slug]/outreach/route");
+const { POST: POSTPause } =
+  await import("@/app/api/admin/outreach/pause/route");
 
 describe("explicit operator outreach action", () => {
   beforeEach(() => {
@@ -327,8 +331,13 @@ describe("explicit operator outreach action", () => {
     vertical = "RESTAURANT";
     eligibilityState = "ELIGIBLE";
     eligibilityEvidence = {
-      contact_basis: "Operator-recorded basis",
-      evidence_source: "Consent record reviewed 2026-08-20",
+      channel_basis: "VERIFIED_WRITTEN_CONSENT",
+      recipient: "owner@example.test",
+      controller: "Corner Shop Labs Ltd",
+      channel: "EMAIL",
+      purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+      evidence_timestamp: "2026-08-20T09:00:00+02:00",
+      evidence_source: "consent:owner-record-1234",
     };
     revokeEligibilityAfterFirstRead = false;
     siteReadCount = 0;
@@ -433,10 +442,7 @@ describe("explicit operator outreach action", () => {
       status: "QUEUED",
       workflowRunId: "wrun_existing",
     };
-    const response = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+    const response = await POST(request("https://cornershop.dev"), context());
     const payload = (await response.json()) as Record<string, unknown>;
 
     expect(response.status).toBe(200);
@@ -463,16 +469,16 @@ describe("explicit operator outreach action", () => {
     ]);
   });
 
-  it("never dispatches the gated Beauty vertical", async () => {
-    vertical = "BEAUTY";
-    const response = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+  it.each(["BEAUTY", "FOOD_RETAIL", "LOCAL_SERVICE"])(
+    "never dispatches the private %s vertical",
+    async (privateVertical) => {
+      vertical = privateVertical;
+      const response = await POST(request("https://cornershop.dev"), context());
 
-    expect(response.status).toBe(409);
-    expect(workflowStart).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(409);
+      expect(workflowStart).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects unknown and explicitly ineligible leads before reserving", async () => {
     eligibilityState = "UNKNOWN";
@@ -485,10 +491,7 @@ describe("explicit operator outreach action", () => {
       contact_basis: "Operator marked contact ineligible",
       evidence_source: "Manual review",
     };
-    const ineligible = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+    const ineligible = await POST(request("https://cornershop.dev"), context());
     const ineligiblePayload = (await ineligible.json()) as Record<
       string,
       unknown
@@ -501,6 +504,54 @@ describe("explicit operator outreach action", () => {
     expect(workflowStart).not.toHaveBeenCalled();
     expect(dispatchRow).toBeNull();
   });
+
+  it.each([
+    {
+      label: "generic corporate eligibility",
+      evidence: { contact_basis: "generic corporate" },
+      reason: "channel_basis_required",
+    },
+    {
+      label: "public-source evidence",
+      evidence: {
+        channel_basis: "VERIFIED_WRITTEN_CONSENT",
+        recipient: "owner@example.test",
+        controller: "Corner Shop Labs Ltd",
+        channel: "EMAIL",
+        purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+        evidence_timestamp: "2026-08-20T09:00:00+02:00",
+        evidence_source: "https://directory.example.test/owner",
+      },
+      reason: "evidence_required",
+    },
+    {
+      label: "soft opt-in without collection opt-out proof",
+      evidence: {
+        channel_basis: "VERIFIED_SOFT_OPT_IN",
+        recipient: "owner@example.test",
+        controller: "Corner Shop Labs Ltd",
+        channel: "EMAIL",
+        purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+        evidence_timestamp: "2026-08-20T09:00:00+02:00",
+        evidence_source: "crm:soft-opt-in-1234",
+        customer_or_sale_evidence: "crm:sale-1234",
+      },
+      reason: "evidence_required",
+    },
+  ])(
+    "rejects $label before queue authorization",
+    async ({ evidence, reason }) => {
+      eligibilityEvidence = evidence as unknown as Record<string, string>;
+
+      const response = await POST(request("https://cornershop.dev"), context());
+      const payload = (await response.json()) as Record<string, unknown>;
+
+      expect(response.status).toBe(409);
+      expect(payload).toMatchObject({ reason });
+      expect(workflowStart).not.toHaveBeenCalled();
+      expect(dispatchRow).toBeNull();
+    },
+  );
 
   it("rechecks eligibility inside the reservation transaction", async () => {
     eligibilityState = "ELIGIBLE";
@@ -537,10 +588,7 @@ describe("explicit operator outreach action", () => {
 
   it("blocks both unreviewed and globally paused sends", async () => {
     reviewed = false;
-    const unreviewed = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+    const unreviewed = await POST(request("https://cornershop.dev"), context());
     reviewed = true;
     paused = true;
     const globallyPaused = await POST(
