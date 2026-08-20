@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Vertical } from "@/generated/prisma/enums";
 import { localSeoAuditResultSchema } from "@/lib/local-seo-audit";
+import {
+  leadEligibilityEvidenceSchema,
+  leadEligibilityStateSchema,
+} from "@/lib/operator-lead-attributes";
 import { OperatorLeadError } from "@/lib/operator-leads";
 import {
   ingestOperatorProspectLead,
@@ -22,11 +26,15 @@ const requestSchema = z.object({
   websiteUrl: z.string().trim().max(500).nullable().optional(),
   rating: z.number().min(0).max(5).nullable().optional(),
   reviewCount: z.number().int().min(0).nullable().optional(),
+  categories: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
   score: z.number().int().min(0).max(100),
   reasons: z.array(z.string().trim().min(1).max(200)).max(20),
   discoveredAt: z.iso.datetime().optional(),
   sourceProvider: z.enum(["google_places", "nominatim"]).optional(),
   audit: localSeoAuditResultSchema.optional(),
+  eligibility: leadEligibilityStateSchema.default("UNKNOWN"),
+  eligibilityEvidence: leadEligibilityEvidenceSchema.default({}),
+  generatePreview: z.boolean().default(true),
 });
 
 export async function POST(request: Request) {

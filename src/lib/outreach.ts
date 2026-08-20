@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import "server-only";
 import type { OutreachMessage, Prisma } from "@/generated/prisma/client";
-import { Vertical, type OutreachStatus } from "@/generated/prisma/enums";
+import type { OutreachStatus } from "@/generated/prisma/enums";
 import { appOrigin } from "@/lib/app-origin";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { getDb } from "@/lib/db";
@@ -34,6 +34,12 @@ import {
   replySubject,
 } from "@/lib/outreach-thread";
 import { sendBoundedResendEmail } from "@/lib/resend";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 
 export class OutreachError extends Error {
   constructor(
@@ -153,7 +159,9 @@ export async function sendLeadEmail(
     html: storedEmail.html,
     actor: input.actor,
     threadKey: outreachThreadKey(input.siteId),
-    rfcMessageId: normalizeRfcMessageId(outboundRfcMessageId(messageId)),
+    rfcMessageId: normalizeRfcMessageId(
+      outboundRfcMessageId(messageId, site.vertical),
+    ),
   });
   let persistedMessageId = reservation.message.id;
   const deduplicated = reservation.deduplicated;
@@ -201,7 +209,7 @@ export async function sendLeadEmail(
         attempt: input.dispatchAuthorization.attempt,
       });
       await lockOutreachSite(transaction, input.siteId);
-      await assertReviewedRestofrontDelivery(transaction, {
+      await assertReviewedLeadDelivery(transaction, {
         siteId: input.siteId,
         expectedRecipient: to,
         expectedReviewedAt: input.expectedReviewedAt,
@@ -251,7 +259,7 @@ export async function sendLeadEmail(
           html: email.html,
           text: email.text,
           headers: {
-            "Message-ID": outboundRfcMessageId(current.id),
+            "Message-ID": outboundRfcMessageId(current.id, site.vertical),
           },
           tags: [
             { name: "category", value: "lead_outreach" },
@@ -412,7 +420,7 @@ async function sendOperatorReply(input: {
     },
   });
   if (!site) throw new OutreachError("Site not found.", 404);
-  if (site.vertical !== Vertical.RESTAURANT) {
+  if (!isVerticalOutreachConfigured(site.vertical)) {
     throw new OutreachError("This lead is not eligible for outreach.", 409);
   }
   const to = site.email;
@@ -443,7 +451,7 @@ async function sendOperatorReply(input: {
   }
   const inReplyTo =
     inReplyToRow.rfcMessageId ??
-    normalizeRfcMessageId(outboundRfcMessageId(inReplyToRow.id));
+    normalizeRfcMessageId(outboundRfcMessageId(inReplyToRow.id, site.vertical));
   const references = [
     ...new Set(
       thread
@@ -480,7 +488,9 @@ async function sendOperatorReply(input: {
     html: email.html,
     actor: input.actor,
     threadKey: outreachThreadKey(input.siteId),
-    rfcMessageId: normalizeRfcMessageId(outboundRfcMessageId(messageId)),
+    rfcMessageId: normalizeRfcMessageId(
+      outboundRfcMessageId(messageId, site.vertical),
+    ),
     inReplyTo,
   });
   if (!reservation.leaseId) {
@@ -510,6 +520,10 @@ async function sendOperatorReply(input: {
     const result = await db.$transaction(async (transaction) => {
       await lockOutreachDelivery(transaction);
       await lockOutreachSite(transaction, input.siteId);
+      await assertConfiguredOutreachSite(transaction, {
+        siteId: input.siteId,
+        expectedRecipient: to,
+      });
       await lockOutreachMessageById(transaction, reservation.message.id);
       const current = await transaction.outreachMessage.findUniqueOrThrow({
         where: { id: reservation.message.id },
@@ -537,7 +551,7 @@ async function sendOperatorReply(input: {
           html: email.html,
           text: email.text,
           headers: {
-            "Message-ID": outboundRfcMessageId(current.id),
+            "Message-ID": outboundRfcMessageId(current.id, site.vertical),
             "In-Reply-To": inReplyTo.includes("<") ? inReplyTo : `<${inReplyTo}>`,
             "References": references || (inReplyTo.includes("<") ? inReplyTo : `<${inReplyTo}>`),
           },
@@ -837,7 +851,7 @@ async function assertActiveOutreachInvitation(
   }
 }
 
-async function assertReviewedRestofrontDelivery(
+async function assertReviewedLeadDelivery(
   transaction: Prisma.TransactionClient,
   input: {
     siteId: string;
@@ -846,7 +860,7 @@ async function assertReviewedRestofrontDelivery(
     template: OutreachTemplateId;
   },
 ): Promise<void> {
-  const [site, pauseSetting] = await Promise.all([
+  const [site, pauseSettings] = await Promise.all([
     transaction.site.findUnique({
       where: { id: input.siteId },
       select: {
@@ -862,15 +876,22 @@ async function assertReviewedRestofrontDelivery(
         },
       },
     }),
-    transaction.operatorSetting.findUnique({
-      where: { key: "outreach.paused" },
-      select: { value: true },
+    transaction.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [
+            GLOBAL_OUTREACH_PAUSE_KEY,
+            siteOutreachPauseKey(input.siteId),
+          ],
+        },
+      },
+      select: { key: true, value: true },
     }),
   ]);
   if (
     !site ||
-    pauseSetting?.value === true ||
-    site.vertical !== Vertical.RESTAURANT ||
+    isOutreachPaused(pauseSettings, input.siteId) ||
+    !isVerticalOutreachConfigured(site.vertical) ||
     !mutableLeadStatuses.has(site.status) ||
     !site.email ||
     normalizeAccountEmail(site.email) !==
@@ -882,7 +903,7 @@ async function assertReviewedRestofrontDelivery(
     )
   ) {
     throw new OutreachError(
-      "The reviewed Restofront lead became ineligible before delivery.",
+      "The reviewed lead became ineligible before delivery.",
       409,
     );
   }
@@ -906,6 +927,42 @@ async function assertReviewedRestofrontDelivery(
     if (inbound) {
       throw new OutreachError("This lead already replied.", 409);
     }
+  }
+}
+
+async function assertConfiguredOutreachSite(
+  transaction: Prisma.TransactionClient,
+  input: { siteId: string; expectedRecipient: string },
+): Promise<void> {
+  const [site, pauseSettings] = await Promise.all([
+    transaction.site.findUnique({
+      where: { id: input.siteId },
+      select: { vertical: true, email: true },
+    }),
+    transaction.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [
+            GLOBAL_OUTREACH_PAUSE_KEY,
+            siteOutreachPauseKey(input.siteId),
+          ],
+        },
+      },
+      select: { key: true, value: true },
+    }),
+  ]);
+  if (
+    !site ||
+    isOutreachPaused(pauseSettings, input.siteId) ||
+    !isVerticalOutreachConfigured(site.vertical) ||
+    !site.email ||
+    normalizeAccountEmail(site.email) !==
+      normalizeAccountEmail(input.expectedRecipient)
+  ) {
+    throw new OutreachError(
+      "The outreach lead became ineligible before delivery.",
+      409,
+    );
   }
 }
 

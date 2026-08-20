@@ -49,7 +49,7 @@ export async function sendBoundedResendEmail(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "Idempotency-Key": idempotencyKey,
-        "User-Agent": "cornershopdev-restofront-outreach",
+        "User-Agent": "cornershopdev-niche-outreach",
       },
       body: JSON.stringify({
         from: email.from,

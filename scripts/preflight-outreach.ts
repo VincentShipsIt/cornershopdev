@@ -2,6 +2,7 @@ import { Client } from "pg";
 import { getResend } from "@/lib/resend";
 import {
   evaluateOutreachEnvironment,
+  hasRequiredResendDomains,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
   OUTREACH_MIGRATION,
@@ -15,7 +16,13 @@ try {
     expectedAppOrigin:
       environment === "production" ? "https://cornershop.dev" : undefined,
   });
-  const [database, workflowDatabaseReachable, webhookRegistered, inboundWebhookRegistered] =
+  const [
+    database,
+    workflowDatabaseReachable,
+    webhookRegistered,
+    inboundWebhookRegistered,
+    senderAndReplyDomainsReady,
+  ] =
     configuration.ready
     ? await Promise.all([
         checkDatabase(process.env.DATABASE_URL!),
@@ -24,9 +31,11 @@ try {
         configuration.inboundWebhookEndpoint
           ? checkInboundWebhook(configuration.inboundWebhookEndpoint)
           : Promise.resolve(false),
+        checkSenderAndReplyDomains(),
       ])
     : [
         { migrationApplied: false, schemaReady: false },
+        false,
         false,
         false,
         false,
@@ -36,7 +45,9 @@ try {
     database.migrationApplied &&
     database.schemaReady &&
     workflowDatabaseReachable &&
-    webhookRegistered;
+    webhookRegistered &&
+    inboundWebhookRegistered &&
+    senderAndReplyDomainsReady;
 
   console.log(
     JSON.stringify(
@@ -59,6 +70,10 @@ try {
           inboundWebhook: {
             endpoint: configuration.inboundWebhookEndpoint,
             registered: inboundWebhookRegistered,
+          },
+          senderAndReplyDomains: {
+            ready: senderAndReplyDomainsReady,
+            verticals: configuration.verticals,
           },
         },
         missingOrInvalid: configuration.missingOrInvalid,
@@ -111,6 +126,7 @@ async function checkDatabase(databaseUrl: string): Promise<{
            to_regclass('"OutreachDispatch"') IS NOT NULL
            AND to_regclass('"OutreachProviderEvent"') IS NOT NULL
            AND to_regclass('"OperatorAuditEvent"') IS NOT NULL
+           AND to_regclass('"OperatorSetting"') IS NOT NULL
            AND to_regclass('"OutreachMessage_idempotencyKey_key"') IS NOT NULL
            AND to_regclass('"OutreachDispatch_idempotencyKey_key"') IS NOT NULL
            AND to_regclass('"OutreachDispatch_workflowRunId_key"') IS NOT NULL
@@ -210,6 +226,12 @@ async function checkInboundWebhook(expectedEndpoint: string): Promise<boolean> {
   const result = await getResend().webhooks.list();
   if (result.error || !result.data) throw new Error("webhook list failed");
   return hasRequiredResendInboundWebhook(result.data.data, expectedEndpoint);
+}
+
+async function checkSenderAndReplyDomains(): Promise<boolean> {
+  const result = await getResend().domains.list();
+  if (result.error || !result.data) throw new Error("domain list failed");
+  return hasRequiredResendDomains(result.data.data);
 }
 
 function parseEnvironment(args: string[]): "preview" | "production" {

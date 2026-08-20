@@ -31,6 +31,7 @@ let existingDispatch: {
   workflowRunId: string | null;
 } | null = null;
 let paused = false;
+let leadPaused = false;
 const auditEvents: Array<Record<string, unknown>> = [];
 const operatorAuditEvents: Array<Record<string, unknown>> = [];
 const workflowStart = mock(async () => ({ runId: "wrun_test_1" }));
@@ -184,15 +185,27 @@ mock.module("@/lib/db", () => ({
     },
     operatorSetting: {
       findUnique: async () => (paused ? { value: true } : null),
+      findMany: async () => [
+        ...(paused ? [{ key: "outreach.paused", value: true }] : []),
+        ...(leadPaused
+          ? [{ key: "outreach.paused.site.site_1", value: true }]
+          : []),
+      ],
       upsert: async ({
+        where,
         update,
         create,
       }: {
+        where: { key: string };
         update: { value: boolean };
         create: { value: boolean };
       }) => {
-        paused = (paused ? update : create).value;
-        return { value: paused };
+        const next = (where.key === "outreach.paused" ? paused : leadPaused)
+          ? update.value
+          : create.value;
+        if (where.key === "outreach.paused") paused = next;
+        else leadPaused = next;
+        return { value: next };
       },
     },
     operatorAuditEvent: {
@@ -221,6 +234,7 @@ mock.module("@/lib/db", () => ({
             };
             operatorSetting: {
               upsert: (input: {
+                where: { key: string };
                 update: { value: boolean };
                 create: { value: boolean };
               }) => Promise<{ value: boolean }>;
@@ -244,9 +258,14 @@ mock.module("@/lib/db", () => ({
             },
           },
           operatorSetting: {
-            upsert: async ({ update, create }) => {
-              paused = (paused ? update : create).value;
-              return { value: paused };
+            upsert: async ({ where, update, create }) => {
+              const next =
+                (where.key === "outreach.paused" ? paused : leadPaused)
+                  ? update.value
+                  : create.value;
+              if (where.key === "outreach.paused") paused = next;
+              else leadPaused = next;
+              return { value: next };
             },
           },
           operatorAuditEvent: {
@@ -281,6 +300,7 @@ describe("explicit operator outreach action", () => {
     existingMessage = null;
     existingDispatch = null;
     paused = false;
+    leadPaused = false;
     dispatchRow = null;
     auditEvents.length = 0;
     operatorAuditEvents.length = 0;
@@ -305,9 +325,35 @@ describe("explicit operator outreach action", () => {
       {
         type: "outreach.paused",
         actor: "operator:operator_1",
-        metadata: { paused: true },
+        metadata: { paused: true, scope: "global", siteId: null },
       },
     ]);
+  });
+
+  it("persists a per-lead pause and blocks only that reviewed lead", async () => {
+    const pauseResponse = await POSTPause(
+      new Request("https://cornershop.dev/api/admin/outreach/pause", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://cornershop.dev",
+        },
+        body: JSON.stringify({ paused: true, siteSlug: "chez-lea" }),
+      }),
+    );
+    const sendResponse = await POST(
+      request("https://cornershop.dev"),
+      context(),
+    );
+
+    expect(pauseResponse.status).toBe(200);
+    expect(leadPaused).toBe(true);
+    expect(paused).toBe(false);
+    expect(sendResponse.status).toBe(409);
+    expect(operatorAuditEvents[0]).toMatchObject({
+      type: "outreach.paused",
+      metadata: { paused: true, scope: "lead", siteId: "site_1" },
+    });
   });
 
   it("rejects a cookie-authorized mutation without same-origin evidence", async () => {

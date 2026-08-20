@@ -82,7 +82,7 @@ describe("website quality scoring", () => {
       "Homepage is HTTP, not HTTPS",
       "Viewport looks desktop-only",
       "Homepage uses frameset or Flash",
-      "No menu link found on the homepage",
+      "No menu or carte link found on the homepage",
       "No booking or reservation link found",
       "Homepage title is missing",
       "Homepage HTML is unusually large",
@@ -112,5 +112,32 @@ describe("website quality scoring", () => {
       reasons: [],
     });
     expect(homepage.hasRestaurantJsonLd).toBe(true);
+  });
+
+  it("scores beauty catalog and booking signals with its own vocabulary", () => {
+    const homepage = parseHomepageSignals(
+      `<html><head>
+        <meta name="viewport" content="width=device-width">
+        <title>Studio Iris</title>
+        <script type="application/ld+json">{"@type":"BeautySalon"}</script>
+      </head><body>
+        <a href="/services">Treatments</a>
+        <a href="https://www.fresha.com/studio-iris">Book appointment</a>
+      </body></html>`,
+      new URL("https://studio-iris.example/"),
+      null,
+      "BEAUTY",
+    );
+
+    expect(
+      scoreWebsiteQuality({
+        vertical: "BEAUTY",
+        hasWebsite: true,
+        homepage,
+      }),
+    ).toEqual({ score: 100, reasons: [] });
+    expect(homepage.hasBusinessJsonLd).toBe(true);
+    expect(homepage.hasCatalogHint).toBe(true);
+    expect(homepage.hasConversionHint).toBe(true);
   });
 });

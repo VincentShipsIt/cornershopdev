@@ -80,4 +80,38 @@ describe("place discovery", () => {
       city: "Valletta",
     });
   });
+
+  it("uses the beauty adapter instead of restaurant search heuristics", async () => {
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain("places.googleapis.com");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        textQuery: "beauty salons and barbers in Valletta",
+        includedType: "beauty_salon",
+      });
+      return Response.json({
+        places: [
+          {
+            id: "beauty-1",
+            displayName: { text: "Studio Iris" },
+            formattedAddress: "12 Republic Street, Valletta, Malta",
+            types: ["beauty_salon", "point_of_interest"],
+          },
+        ],
+      });
+    };
+
+    const result = await discoverLocalPlaces({
+      vertical: "BEAUTY",
+      city: "Valletta",
+      limit: 5,
+      googlePlacesApiKey: "test-key",
+      fetchImpl,
+    });
+
+    expect(result.places[0]).toMatchObject({
+      name: "Studio Iris",
+      categories: ["beauty_salon"],
+    });
+  });
 });

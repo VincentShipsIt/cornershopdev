@@ -94,6 +94,8 @@ const fakeDb = {
     },
     operatorSetting: {
       findUnique: async () => (outreachPaused ? { value: true } : null),
+      findMany: async () =>
+        outreachPaused ? [{ key: "outreach.paused", value: true }] : [],
     },
     outreachMessage: {
       upsert: async (input: {
@@ -240,7 +242,7 @@ const { leadBatchRequestSchema } = await import("@/lib/operator-lead-batch");
 const { canApplyResendOutreachEvent } = await import(
   "@/lib/outreach-event-policy"
 );
-const { isReviewedRestofrontLead } = await import(
+const { isReviewedLead } = await import(
   "@/workflows/lead-outreach"
 );
 
@@ -280,7 +282,7 @@ describe("outreach delivery idempotency", () => {
 
     expect(intake.sendEmail).toBe(false);
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         site,
         false,
         persistedContactEmail,

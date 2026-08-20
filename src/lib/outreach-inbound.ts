@@ -1,9 +1,7 @@
 import "server-only";
-import { Vertical } from "@/generated/prisma/enums";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { getDb } from "@/lib/db";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
-import { RESTOFRONT_OUTREACH_REPLY_TO } from "@/lib/outreach-readiness";
 import {
   extractEmailAddress,
   extractEmailAddresses,
@@ -15,6 +13,9 @@ import {
   type InboundAddressFields,
 } from "@/lib/outreach-thread";
 import { fetchReceivedResendEmail } from "@/lib/resend-receiving";
+import { emailReplyTo } from "@/lib/resend";
+import { listOutreachVerticals } from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 export type RecordInboundOutreachResult = {
   handled: boolean;
@@ -83,7 +84,7 @@ export async function recordInboundOutreachMessage(input: {
       dedupKey: `inbound-unmatched:${input.metadata.emailId}`,
       title: "Inbound outreach reply could not be matched",
       message:
-        "A signed inbound email did not match a Restofront outreach thread. Inspect the From/To headers and mailbox.",
+        "A signed inbound email did not match a configured outreach thread. Inspect the From/To headers and mailbox.",
       context: {
         emailId: input.metadata.emailId,
         from: fields.from,
@@ -114,7 +115,7 @@ export async function recordInboundOutreachMessage(input: {
   const toAddress =
     extractEmailAddresses(fields.to)[0] ??
     extractEmailAddresses(fields.receivedFor ?? [])[0] ??
-    RESTOFRONT_OUTREACH_REPLY_TO;
+    "unmatched@cornershop.dev";
 
   try {
     const created = await db.outreachMessage.create({
@@ -156,7 +157,7 @@ export async function recordInboundOutreachMessage(input: {
     await captureOperatorAlert({
       kind: "OUTREACH_REPLY",
       dedupKey: `inbound:${input.metadata.emailId}`,
-      title: "A Restofront lead replied",
+      title: "A lead replied",
       message:
         "An inbound reply was stored on the lead thread. Follow-up campaign sends are stopped; reply from /admin.",
       context: {
@@ -218,10 +219,11 @@ export async function matchInboundOutreachThread(
     }
 
     const plusTags = tokens.filter((token) => !token.includes("@"));
-    if (plusTags.length > 0) {
+    const recipientVerticals = inboundRecipientVerticals(fields);
+    if (plusTags.length > 0 && recipientVerticals.length > 0) {
       const byPlus = await db.site.findFirst({
         where: {
-          vertical: Vertical.RESTAURANT,
+          vertical: { in: recipientVerticals },
           OR: [{ slug: { in: plusTags } }, { id: { in: plusTags } }],
         },
         orderBy: { updatedAt: "desc" },
@@ -237,37 +239,54 @@ export async function matchInboundOutreachThread(
   }
 
   const from = safeEmail(fields.from);
-  if (!from || !isRestofrontInboundRecipient(fields)) return null;
-  const byContact = await db.site.findFirst({
+  const recipientVerticals = inboundRecipientVerticals(fields);
+  if (!from || recipientVerticals.length === 0) return null;
+  const byContact = await db.site.findMany({
     where: {
-      vertical: Vertical.RESTAURANT,
+      vertical: { in: recipientVerticals },
       email: from,
     },
     orderBy: { updatedAt: "desc" },
+    take: 2,
     select: { id: true },
   });
-  if (!byContact) return null;
+  if (byContact.length !== 1) return null;
   return {
-    siteId: byContact.id,
-    threadKey: outreachThreadKey(byContact.id),
+    siteId: byContact[0]!.id,
+    threadKey: outreachThreadKey(byContact[0]!.id),
   };
 }
 
-export function isRestofrontInboundRecipient(fields: InboundAddressFields): boolean {
+export function inboundRecipientVerticals(
+  fields: InboundAddressFields,
+): VerticalId[] {
   const recipients = extractEmailAddresses([
     ...fields.to,
     ...(fields.receivedFor ?? []),
   ]);
-  const replyTo = RESTOFRONT_OUTREACH_REPLY_TO.toLowerCase();
-  const replyDomain = replyTo.slice(replyTo.indexOf("@"));
-  return recipients.some((address) => {
-    if (address === replyTo) return true;
-    const at = address.indexOf("@");
-    if (at < 0) return false;
-    const local = address.slice(0, at);
-    const domain = address.slice(at);
-    return domain === replyDomain && (local === "vincent" || local.startsWith("vincent+"));
+  return listOutreachVerticals().filter((vertical) => {
+    const replyTo = emailReplyTo(vertical)?.toLowerCase();
+    if (!replyTo) return false;
+    return recipients.some((address) => matchesReplyTo(address, replyTo));
   });
+}
+
+function matchesReplyTo(address: string, replyTo: string): boolean {
+  const replyDomain = replyTo.slice(replyTo.indexOf("@"));
+  const replyLocal = replyTo.slice(0, replyTo.indexOf("@"));
+  if (address === replyTo) return true;
+  const at = address.indexOf("@");
+  if (at < 0) return false;
+  const local = address.slice(0, at);
+  const domain = address.slice(at);
+  return domain === replyDomain && local.startsWith(`${replyLocal}+`);
+}
+
+/** @deprecated Use `inboundRecipientVerticals`. */
+export function isRestofrontInboundRecipient(
+  fields: InboundAddressFields,
+): boolean {
+  return inboundRecipientVerticals(fields).includes("RESTAURANT");
 }
 
 function safeEmail(value: string): string | null {

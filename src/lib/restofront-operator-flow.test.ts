@@ -195,6 +195,8 @@ const fakeModels = {
   },
   operatorSetting: {
     findUnique: async () => (paused ? { value: true } : null),
+    findMany: async () =>
+      paused ? [{ key: "outreach.paused", value: true }] : [],
     upsert: async (input: {
       update: { value: boolean };
       create: { value: boolean };

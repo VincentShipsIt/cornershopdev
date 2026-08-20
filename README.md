@@ -1,6 +1,10 @@
 # Cornershopdev
 
-Cornershopdev turns an existing restaurant website—or just a restaurant name—into a private, prefilled, mobile-first website preview. The restaurant keeps its existing booking, ordering, and delivery providers. It claims the finished preview, subscribes, then connects its domain.
+Cornershopdev is a multi-vertical local-business website factory. Each
+configured niche supplies its own discovery queries, catalog/conversion
+signals, content schema, preview generator, storefront identity, and provider
+adapters. A business keeps the operational tools it already uses, reviews a
+private prefilled preview, claims it, subscribes, then connects its domain.
 
 ## Product flow
 
@@ -26,10 +30,12 @@ after the session is revalidated against that site's organization membership.
 `/admin` is the platform operator console. It requires both a database
 `SUPERADMIN` role and an email listed in `SUPERADMIN_EMAILS`. It shows signups,
 subscriptions, request totals, portfolio traffic and conversion summaries, and
-bounded per-site operational rows. Restaurant contact email and outreach status
+bounded per-site operational rows. Lead contact email and outreach status
 are visible only in this dual-gated console. Lead creation never sends mail: an
-operator must review the persisted preview, confirm the initial Restofront
-email, and can pause every workflow before its next send.
+operator must review the persisted preview, confirm the exact niche-branded
+recipient, and can pause all outreach or one lead before its next send. Bounce,
+complaint, inbound-reply, recipient-change, and stale-review suppression are
+rechecked at the durable delivery boundary.
 
 ## First-party analytics
 
@@ -259,7 +265,7 @@ deduplicated outbox with bounded delivery retries. Deployment and exercise
 instructions are in
 [`docs/operations/platform-services.md`](docs/operations/platform-services.md).
 
-### Restofront outreach
+### Niche outreach
 
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
@@ -268,9 +274,11 @@ instructions are in
 
 Before release, run the read-only outreach preflight inside the reviewed
 container. It checks the committed migration, registered Restofront sender and
-reply-to, Workflow configuration, and the enabled Resend delivery webhook. It
-prints only check names, booleans, the public webhook endpoint, and timestamps;
-it never prints secret values and never sends an email.
+reply-to plus every other launched niche identity, Workflow/database
+configuration, verified Resend sending/receiving domains, and enabled delivery
+and inbound webhooks. It prints only check names, booleans, public endpoints,
+niche names, and timestamps; it never prints secret values and never sends an
+email.
 
 ```bash
 bun run operator:preflight-outreach --environment production

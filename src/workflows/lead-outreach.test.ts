@@ -4,7 +4,7 @@ mock.module("server-only", () => ({}));
 
 const {
   isLeadEligibleForOutreach,
-  isReviewedRestofrontLead,
+  isReviewedLead,
   unknownOutreachStepResult,
 } = await import("@/workflows/lead-outreach");
 
@@ -99,7 +99,7 @@ describe("isLeadEligibleForOutreach", () => {
   });
 });
 
-describe("reviewed Restofront delivery eligibility", () => {
+describe("reviewed niche delivery eligibility", () => {
   const reviewedAt = "2026-08-19T08:01:00.000Z";
   const site = {
     status: "PREVIEW_READY",
@@ -113,7 +113,7 @@ describe("reviewed Restofront delivery eligibility", () => {
 
   it("binds delivery to the current reviewed restaurant and recipient", () => {
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         site,
         false,
         "owner@example.com",
@@ -121,7 +121,7 @@ describe("reviewed Restofront delivery eligibility", () => {
       ),
     ).toBe(true);
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         { ...site, email: "changed@example.com" },
         false,
         "owner@example.com",
@@ -129,7 +129,7 @@ describe("reviewed Restofront delivery eligibility", () => {
       ),
     ).toBe(false);
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         { ...site, vertical: "BEAUTY" },
         false,
         "owner@example.com",
@@ -140,7 +140,7 @@ describe("reviewed Restofront delivery eligibility", () => {
 
   it("stops after a pause, edit, or replacement review not confirmed for this dispatch", () => {
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         site,
         true,
         "owner@example.com",
@@ -148,7 +148,7 @@ describe("reviewed Restofront delivery eligibility", () => {
       ),
     ).toBe(false);
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         {
           ...site,
           updatedAt: new Date("2026-08-19T08:02:00.000Z"),
@@ -159,7 +159,7 @@ describe("reviewed Restofront delivery eligibility", () => {
       ),
     ).toBe(false);
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         {
           ...site,
           updatedAt: new Date("2026-08-19T08:02:00.000Z"),

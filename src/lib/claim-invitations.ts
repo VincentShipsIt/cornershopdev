@@ -15,6 +15,12 @@ import {
 } from "@/lib/outreach-lock";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import type { VerticalId } from "@/lib/verticals/types";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 
 export const CLAIM_INVITATION_TTL_MS = 48 * 60 * 60_000;
 export const MIN_CLAIM_CHECKOUT_TTL_MS = 31 * 60_000;
@@ -233,14 +239,21 @@ export async function issueClaimInvitation(input: {
             throw new Error("Outreach dispatch site mismatch");
           }
           if (input.outreachDispatch) {
-            const pauseSetting = await tx.operatorSetting.findUnique({
-              where: { key: "outreach.paused" },
-              select: { value: true },
+            const pauseSettings = await tx.operatorSetting.findMany({
+              where: {
+                key: {
+                  in: [
+                    GLOBAL_OUTREACH_PAUSE_KEY,
+                    siteOutreachPauseKey(site.id),
+                  ],
+                },
+              },
+              select: { key: true, value: true },
             });
             const latestReview = site.auditEvents[0]?.createdAt ?? null;
             if (
-              pauseSetting?.value === true ||
-              site.vertical !== "RESTAURANT" ||
+              isOutreachPaused(pauseSettings, site.id) ||
+              !isVerticalOutreachConfigured(site.vertical) ||
               !site.email ||
               normalizeAccountEmail(site.email) !== email ||
               latestReview?.toISOString() !==

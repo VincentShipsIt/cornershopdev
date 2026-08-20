@@ -20,8 +20,8 @@ export function OutreachPauseControl({
     const nextPaused = !paused;
     const confirmed = window.confirm(
       nextPaused
-        ? "Pause all Restofront outreach? No new email will begin delivery while the pause is active."
-        : "Resume Restofront outreach? Waiting workflows may continue at their next delivery check.",
+        ? "Pause all niche outreach? No new email will begin delivery while the pause is active."
+        : "Resume niche outreach? Waiting workflows may continue at their next delivery check.",
     );
     if (!confirmed) return;
 

@@ -1,5 +1,7 @@
-import { Vertical } from "@/generated/prisma/enums";
 import { emailReplyTo, emailSender } from "@/lib/resend";
+import { listOutreachVerticals } from "@/lib/lead-generation/registry";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 export const OUTREACH_MIGRATION =
   "20260819120000_outreach_inbound_mailbox";
@@ -35,12 +37,24 @@ export type OutreachEnvironmentReadiness = {
   missingOrInvalid: string[];
   webhookEndpoint: string | null;
   inboundWebhookEndpoint: string | null;
+  verticals: Array<{
+    vertical: VerticalId;
+    brand: string;
+    senderConfigured: boolean;
+    replyToConfigured: boolean;
+  }>;
 };
 
 export type ResendWebhookSummary = {
   endpoint: string;
   status: "enabled" | "disabled";
   events: string[] | null;
+};
+
+export type ResendDomainSummary = {
+  name: string;
+  status: string;
+  capabilities?: { sending?: string; receiving?: string };
 };
 
 export function evaluateOutreachEnvironment(
@@ -51,6 +65,19 @@ export function evaluateOutreachEnvironment(
   const inboundWebhookEndpoint = resolveInboundWebhookEndpoint(
     env.NEXT_PUBLIC_APP_URL,
   );
+  const verticals = listOutreachVerticals().map((vertical) => {
+    const marketing = resolveVerticalConfig(vertical).marketing;
+    return {
+      vertical,
+      brand: marketing.brand.name,
+      senderConfigured:
+        Boolean(marketing.email?.from) &&
+        emailSender(vertical, env) === marketing.email?.from,
+      replyToConfigured:
+        Boolean(marketing.email?.replyTo) &&
+        emailReplyTo(vertical, env) === marketing.email?.replyTo,
+    };
+  });
   const checks = {
     database: Boolean(env.DATABASE_URL),
     resendApiKey: Boolean(env.RESEND_API_KEY),
@@ -70,10 +97,11 @@ export function evaluateOutreachEnvironment(
       (!options.expectedAppOrigin ||
         webhookEndpoint === resolveWebhookEndpoint(options.expectedAppOrigin)),
     sender:
-      emailSender(Vertical.RESTAURANT, env) === RESTOFRONT_OUTREACH_FROM,
+      verticals.length > 0 &&
+      verticals.every((vertical) => vertical.senderConfigured),
     replyTo:
-      emailReplyTo(Vertical.RESTAURANT, env) ===
-      RESTOFRONT_OUTREACH_REPLY_TO,
+      verticals.length > 0 &&
+      verticals.every((vertical) => vertical.replyToConfigured),
   };
   const variableByCheck = {
     database: "DATABASE_URL",
@@ -82,8 +110,8 @@ export function evaluateOutreachEnvironment(
     claimTokenSecret: "CLAIM_TOKEN_SECRET",
     workflow: "WORKFLOW_*",
     appOrigin: "NEXT_PUBLIC_APP_URL",
-    sender: "RESTOFRONT_SENDER_IDENTITY",
-    replyTo: "RESTOFRONT_REPLY_TO_IDENTITY",
+    sender: "VERTICAL_MARKETING_EMAIL_FROM",
+    replyTo: "VERTICAL_MARKETING_EMAIL_REPLY_TO",
   } satisfies Record<keyof typeof checks, string>;
   const missingOrInvalid = Object.entries(checks).flatMap(([name, ready]) =>
     ready
@@ -97,7 +125,39 @@ export function evaluateOutreachEnvironment(
     missingOrInvalid,
     webhookEndpoint,
     inboundWebhookEndpoint,
+    verticals,
   };
+}
+
+export function hasRequiredResendDomains(
+  domains: ResendDomainSummary[],
+): boolean {
+  return listOutreachVerticals().every((vertical) => {
+    const email = resolveVerticalConfig(vertical).marketing.email;
+    if (!email) return false;
+    const senderDomain = emailDomain(email.from);
+    const replyDomain = emailDomain(email.replyTo);
+    if (!senderDomain || !replyDomain) return false;
+    return (
+      domains.some(
+        (domain) =>
+          domain.name.toLowerCase() === senderDomain &&
+          domain.status === "verified" &&
+          domain.capabilities?.sending === "enabled",
+      ) &&
+      domains.some(
+        (domain) =>
+          domain.name.toLowerCase() === replyDomain &&
+          domain.status === "verified" &&
+          domain.capabilities?.receiving === "enabled",
+      )
+    );
+  });
+}
+
+function emailDomain(value: string): string | null {
+  const match = value.toLowerCase().match(/<?[^<>\s@]+@([^<>\s]+)>?$/);
+  return match?.[1]?.replace(/>$/, "") ?? null;
 }
 
 function isPostgresUrl(value: string | undefined): boolean {

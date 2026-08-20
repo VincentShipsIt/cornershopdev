@@ -20,6 +20,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSuperadminAccess } from "@/lib/authorization";
 import { FACTORY_BRAND } from "@/lib/brand";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  listVerticalIds,
+  resolveVerticalConfig,
+} from "@/lib/verticals/registry";
 import { getCurrentSession } from "@/lib/current-session";
 import {
   getOperatorDashboardData,
@@ -126,13 +131,19 @@ export default async function AdminPage() {
             </p>
           </CardHeader>
           <CardContent>
-            <OperatorLeadForm />
+            <OperatorLeadForm
+              verticalOptions={listVerticalIds().map((vertical) => ({
+                id: vertical,
+                label: resolveVerticalConfig(vertical).marketing.brand.name,
+                audience: resolveVerticalConfig(vertical).marketing.audience,
+              }))}
+            />
           </CardContent>
         </Card>
 
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Restofront outreach</CardTitle>
+            <CardTitle>Niche outreach</CardTitle>
           </CardHeader>
           <CardContent>
             <OutreachPauseControl initialPaused={data.outreachPaused} />
@@ -410,21 +421,24 @@ function SiteRow({
           reviewedAt={site.reviewedAt}
           notes={site.notes}
           contentReview={site.contentReview}
+          eligibility={site.eligibility}
         />
       </td>
       <td className="px-5 py-4">
-        {site.vertical === "RESTAURANT" ? (
+        {isVerticalOutreachConfigured(site.vertical) ? (
           <OperatorOutreachPanel
             slug={site.slug}
+            vertical={site.vertical}
             contactEmail={site.contactEmail}
             outreachMessages={site.outreachMessages}
             outreachDispatch={site.outreachDispatch}
             reviewedAt={site.reviewedAt}
             outreachPaused={outreachPaused}
+            leadOutreachPaused={site.outreachPaused}
           />
         ) : (
           <span className="text-xs text-muted-foreground">
-            Restofront only
+            Sender not configured
           </span>
         )}
       </td>

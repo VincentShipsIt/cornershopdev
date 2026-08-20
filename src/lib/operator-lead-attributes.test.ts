@@ -3,6 +3,7 @@ import {
   compareOperatorSitesByDiscoveryScore,
   createLeadDiscoveryRecord,
   mergeOperatorLeadAttributes,
+  parseLeadEligibility,
   parseLeadDiscovery,
   resolveProspectIngestAction,
 } from "@/lib/operator-lead-attributes";
@@ -46,6 +47,11 @@ describe("operator lead attributes", () => {
     expect(merged.cuisine).toBe("Lyonnais");
     expect(parseLeadDiscovery(merged)?.score).toBe(42);
     expect(merged.localSeoAudit).toMatchObject({ score: audit.score });
+    expect(parseLeadEligibility(merged)).toMatchObject({
+      state: "UNKNOWN",
+      evidence: {},
+      updatedBy: "system:lead-discovery",
+    });
   });
 
   it("reopens mutable leads and refuses claimed ones", () => {

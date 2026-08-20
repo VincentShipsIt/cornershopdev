@@ -3,6 +3,10 @@ import {
   type DiscoveryFetch,
   type LeadDiscoveryProvider,
 } from "@/lib/lead-discovery";
+import { Vertical } from "@/generated/prisma/enums";
+import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
 
 export type DiscoveredPlace = {
   name: string;
@@ -39,11 +43,13 @@ const GENERIC_PLACE_TYPES = new Set([
 ]);
 
 export async function discoverLocalPlaces(input: {
+  vertical?: VerticalId;
   city: string;
   limit: number;
   googlePlacesApiKey?: string | null;
   fetchImpl?: DiscoveryFetch;
 }): Promise<PlaceDiscoveryResult> {
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
   const fetchImpl = input.fetchImpl ?? fetch;
   const city = input.city.trim();
   const limit = Math.min(100, Math.max(1, input.limit));
@@ -52,6 +58,7 @@ export async function discoverLocalPlaces(input: {
   if (apiKey) {
     try {
       const places = await searchGooglePlaces({
+        vertical,
         city,
         limit,
         apiKey,
@@ -61,13 +68,23 @@ export async function discoverLocalPlaces(input: {
         return { places, provider: "google_places", fallbackReason: null };
       }
       return {
-        places: await searchNominatimPlaces({ city, limit, fetchImpl }),
+        places: await searchNominatimPlaces({
+          vertical,
+          city,
+          limit,
+          fetchImpl,
+        }),
         provider: "nominatim",
-        fallbackReason: "Google Places returned no restaurants",
+        fallbackReason: `Google Places returned no ${resolveVerticalConfig(vertical).marketing.audience}`,
       };
     } catch (error) {
       return {
-        places: await searchNominatimPlaces({ city, limit, fetchImpl }),
+        places: await searchNominatimPlaces({
+          vertical,
+          city,
+          limit,
+          fetchImpl,
+        }),
         provider: "nominatim",
         fallbackReason:
           error instanceof Error
@@ -78,26 +95,33 @@ export async function discoverLocalPlaces(input: {
   }
 
   return {
-    places: await searchNominatimPlaces({ city, limit, fetchImpl }),
+    places: await searchNominatimPlaces({
+      vertical,
+      city,
+      limit,
+      fetchImpl,
+    }),
     provider: "nominatim",
     fallbackReason: null,
   };
 }
 
 export async function searchGooglePlaces(input: {
+  vertical: VerticalId;
   city: string;
   limit: number;
   apiKey: string;
   fetchImpl: DiscoveryFetch;
 }): Promise<DiscoveredPlace[]> {
+  const adapter = resolveLeadDiscoveryAdapter(input.vertical);
   const places: DiscoveredPlace[] = [];
   let pageToken: string | null = null;
 
   while (places.length < input.limit) {
     const pageSize = Math.min(20, input.limit - places.length);
     const body: Record<string, unknown> = {
-      textQuery: `restaurants in ${input.city}`,
-      includedType: "restaurant",
+      textQuery: adapter.placeSearch.googleQuery(input.city),
+      includedType: adapter.placeSearch.googleIncludedType,
       pageSize,
       languageCode: "en",
     };
@@ -149,12 +173,14 @@ export async function searchGooglePlaces(input: {
 }
 
 export async function searchNominatimPlaces(input: {
+  vertical: VerticalId;
   city: string;
   limit: number;
   fetchImpl: DiscoveryFetch;
 }): Promise<DiscoveredPlace[]> {
+  const adapter = resolveLeadDiscoveryAdapter(input.vertical);
   const url = new URL(NOMINATIM_SEARCH_URL);
-  url.searchParams.set("q", `restaurant in ${input.city}`);
+  url.searchParams.set("q", adapter.placeSearch.nominatimQuery(input.city));
   url.searchParams.set("format", "jsonv2");
   url.searchParams.set("addressdetails", "1");
   url.searchParams.set("extratags", "1");
@@ -174,7 +200,13 @@ export async function searchNominatimPlaces(input: {
   const rows = await response.json();
   if (!Array.isArray(rows)) return [];
   return rows
-    .map((row) => parseNominatimPlace(row, input.city))
+    .map((row) =>
+      parseNominatimPlace(
+        row,
+        input.city,
+        adapter.placeSearch.fallbackCategory,
+      ),
+    )
     .filter((place): place is DiscoveredPlace => place !== null)
     .slice(0, input.limit);
 }
@@ -233,6 +265,7 @@ function parseGooglePlace(value: unknown, fallbackCity: string): DiscoveredPlace
 function parseNominatimPlace(
   value: unknown,
   fallbackCity: string,
+  fallbackCategory: string,
 ): DiscoveredPlace | null {
   const record = asRecord(value);
   if (!record) return null;
@@ -262,7 +295,7 @@ function parseNominatimPlace(
     provider: "nominatim",
     rating: null,
     reviewCount: null,
-    categories: [asString(record.type) ?? "restaurant"].filter(Boolean),
+    categories: [asString(record.type) ?? fallbackCategory].filter(Boolean),
     hours: openingHours ? [{ days: "Listed hours", hours: openingHours }] : [],
     photoCount: 0,
     photoNewestAt: null,

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 import { z } from "zod";
-import { Vertical } from "@/generated/prisma/enums";
 import { getSuperadminAccess } from "@/lib/authorization";
 import { getDb } from "@/lib/db";
 import { mutableLeadStatuses } from "@/lib/lead-status";
@@ -21,6 +20,12 @@ import {
 import { limitOperatorOutreachSend } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { leadOutreachWorkflow } from "@/workflows/lead-outreach";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 
 export const runtime = "nodejs";
 
@@ -158,7 +163,7 @@ export async function POST(
       return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
     if (
-      site.vertical !== Vertical.RESTAURANT ||
+      !isVerticalOutreachConfigured(site.vertical) ||
       !mutableLeadStatuses.has(site.status) ||
       !site.email
     ) {
@@ -204,11 +209,15 @@ export async function POST(
       );
     }
 
-    const paused = await db.operatorSetting.findUnique({
-      where: { key: "outreach.paused" },
-      select: { value: true },
+    const pauseSettings = await db.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [GLOBAL_OUTREACH_PAUSE_KEY, siteOutreachPauseKey(site.id)],
+        },
+      },
+      select: { key: true, value: true },
     });
-    if (paused?.value === true) {
+    if (isOutreachPaused(pauseSettings, site.id)) {
       return NextResponse.json(
         { error: "Outreach is paused." },
         { status: 409 },
@@ -333,7 +342,7 @@ async function sendOperatorThreadReply(input: {
   if (!site) {
     return NextResponse.json({ error: "Lead not found." }, { status: 404 });
   }
-  if (site.vertical !== Vertical.RESTAURANT || !site.email) {
+  if (!isVerticalOutreachConfigured(site.vertical) || !site.email) {
     return NextResponse.json(
       { error: "This lead is not eligible for outreach." },
       { status: 409 },

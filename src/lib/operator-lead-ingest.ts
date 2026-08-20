@@ -8,16 +8,22 @@ import {
   storedImportSource,
 } from "@/lib/import-identity";
 import {
+  createLeadEligibilityRecord,
   createLeadDiscoveryRecord,
   mergeOperatorLeadAttributes,
   resolveProspectIngestAction,
 } from "@/lib/operator-lead-attributes";
-import { OperatorLeadError } from "@/lib/operator-leads";
+import {
+  createOrReopenOperatorLead,
+  OperatorLeadError,
+} from "@/lib/operator-leads";
 import { OPERATOR_LEAD_INGEST_ACTOR } from "@/lib/operator-lead-ingest-auth";
 import type { LeadDiscoveryProvider } from "@/lib/lead-discovery";
 import type { LocalSeoAuditResult } from "@/lib/local-seo-audit";
 import { slugify } from "@/lib/verticals/restaurant/schema";
 import type { VerticalId } from "@/lib/verticals/types";
+import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
 
 export type IngestOperatorProspectInput = {
   source: string;
@@ -30,11 +36,15 @@ export type IngestOperatorProspectInput = {
   websiteUrl?: string | null;
   rating?: number | null;
   reviewCount?: number | null;
+  categories?: string[];
   score: number;
   reasons: string[];
   discoveredAt?: string;
   sourceProvider?: LeadDiscoveryProvider;
   audit?: LocalSeoAuditResult | null;
+  eligibility?: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE";
+  eligibilityEvidence?: Record<string, string>;
+  generatePreview?: boolean;
 };
 
 export type IngestOperatorProspectResult = {
@@ -42,6 +52,7 @@ export type IngestOperatorProspectResult = {
   importJobId: null;
   created: boolean;
   reopened: boolean;
+  previewGenerated: boolean;
   urls: { preview: string; claim: string };
 };
 
@@ -52,7 +63,13 @@ export async function ingestOperatorProspectLead(
   const sourceKey = normalizeImportSource(source);
   const sourceUrl = looksLikeStoredUrl(source) ? storedImportSource(source) : null;
   const vertical = input.vertical;
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const discovery = createLeadDiscoveryRecord({
+    vertical,
+    query:
+      input.sourceProvider === "google_places"
+        ? adapter.placeSearch.googleQuery(input.city)
+        : adapter.placeSearch.nominatimQuery(input.city),
     city: input.city,
     placeId: input.placeId ?? null,
     sourceProvider: input.sourceProvider ?? "nominatim",
@@ -63,8 +80,23 @@ export async function ingestOperatorProspectLead(
     rating: input.rating ?? null,
     reviewCount: input.reviewCount ?? null,
     hasWebsite: Boolean(input.websiteUrl ?? sourceUrl),
+    categories: input.categories ?? [],
+  });
+  const eligibility = createLeadEligibilityRecord({
+    state: input.eligibility,
+    evidence: input.eligibilityEvidence,
+    updatedBy: OPERATOR_LEAD_INGEST_ACTOR,
+    updatedAt: input.discoveredAt,
   });
   const db = getDb();
+  const preview =
+    input.generatePreview !== false && sourceUrl
+      ? await createOrReopenOperatorLead({
+          source: sourceUrl,
+          vertical,
+          actor: OPERATOR_LEAD_INGEST_ACTOR,
+        })
+      : null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -94,6 +126,7 @@ export async function ingestOperatorProspectLead(
           existing?.attributes,
           discovery,
           input.audit ?? null,
+          eligibility,
         ) as Prisma.InputJsonValue;
         const phone = firstNonEmpty(input.phone, existing?.phone);
         const address = firstNonEmpty(input.address, existing?.address);
@@ -120,6 +153,8 @@ export async function ingestOperatorProspectLead(
                 city: discovery.city,
                 score: discovery.score,
                 placeId: discovery.placeId,
+                adapterId: discovery.adapterId,
+                eligibility: eligibility.state,
                 previousStatus: existing.status,
               },
               siteId: existing.id,
@@ -128,8 +163,9 @@ export async function ingestOperatorProspectLead(
           return {
             siteSlug: existing.slug,
             importJobId: null,
-            created: false,
-            reopened: true,
+            created: preview?.created ?? false,
+            reopened: preview?.reopened ?? true,
+            previewGenerated: Boolean(preview),
             urls: buildImportUrls(existing.slug),
           };
         }
@@ -139,7 +175,7 @@ export async function ingestOperatorProspectLead(
           data: {
             slug,
             name: input.name,
-            eyebrow: `${input.city} prospect`,
+            eyebrow: `${input.city} ${resolveVerticalConfig(vertical).marketing.audience} prospect`,
             phone,
             address,
             sourceUrl: nextSourceUrl,
@@ -159,6 +195,8 @@ export async function ingestOperatorProspectLead(
               city: discovery.city,
               score: discovery.score,
               placeId: discovery.placeId,
+              adapterId: discovery.adapterId,
+              eligibility: eligibility.state,
             },
             siteId: created.id,
           },
@@ -168,6 +206,7 @@ export async function ingestOperatorProspectLead(
           importJobId: null,
           created: true,
           reopened: false,
+          previewGenerated: false,
           urls: buildImportUrls(created.slug),
         };
       });

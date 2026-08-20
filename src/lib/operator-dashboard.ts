@@ -21,12 +21,15 @@ import { getDb } from "@/lib/db";
 import {
   compareOperatorSitesByDiscoveryScore,
   toOperatorLeadDiscoveryView,
+  toOperatorLeadEligibilityView,
   toOperatorLocalSeoAuditView,
   type OperatorLeadDiscoveryView,
+  type OperatorLeadEligibilityView,
   type OperatorLocalSeoAuditView,
 } from "@/lib/operator-lead-attributes";
 import { isInitialOutreachDispatchRetryable } from "@/lib/outreach-dispatch";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
+import { GLOBAL_OUTREACH_PAUSE_KEY } from "@/lib/outreach-pause";
 
 export type OperatorSiteRow = {
   id: string;
@@ -75,6 +78,7 @@ export type OperatorSiteRow = {
   pendingSourceSuggestionCount: number;
   sourceMonitorLastSuccessAt: Date | null;
   discovery: OperatorLeadDiscoveryView | null;
+  eligibility: OperatorLeadEligibilityView;
   localSeoAudit: OperatorLocalSeoAuditView | null;
   outreachMessages: Array<{
     id: string;
@@ -100,6 +104,7 @@ export type OperatorSiteRow = {
     updatedAt: Date;
     retryable: boolean;
   } | null;
+  outreachPaused: boolean;
 };
 
 export type OperatorDashboardData = {
@@ -130,7 +135,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
     bookingRequestCount,
     pendingBookingRequestCount,
     sites,
-    outreachSetting,
+    outreachSettings,
   ] = await Promise.all([
     db.site.count(),
     db.site.count({
@@ -259,11 +264,23 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         },
       },
     }),
-    db.operatorSetting.findUnique({
-      where: { key: "outreach.paused" },
-      select: { value: true },
+    db.operatorSetting.findMany({
+      where: { key: { startsWith: GLOBAL_OUTREACH_PAUSE_KEY } },
+      select: { key: true, value: true },
     }),
   ]);
+  const globalOutreachPaused = outreachSettings.some(
+    (setting) =>
+      setting.key === GLOBAL_OUTREACH_PAUSE_KEY && setting.value !== false,
+  );
+  const pausedSiteIds = new Set(
+    outreachSettings.flatMap((setting) =>
+      setting.key.startsWith(`${GLOBAL_OUTREACH_PAUSE_KEY}.site.`) &&
+      setting.value !== false
+        ? [setting.key.slice(`${GLOBAL_OUTREACH_PAUSE_KEY}.site.`.length)]
+        : [],
+    ),
+  );
   const [pendingBookingRequestsBySite, analytics] = await Promise.all([
     db.bookingRequest.groupBy({
       by: ["siteId"],
@@ -282,7 +299,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
   );
 
   return {
-    outreachPaused: outreachSetting?.value === true,
+    outreachPaused: globalOutreachPaused,
     totals: {
       sites: siteCount,
       signedUpSites: signedUpSiteCount,
@@ -406,6 +423,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
         sourceMonitorLastSuccessAt:
           site.sourceMonitorState?.lastSuccessAt ?? null,
         discovery: toOperatorLeadDiscoveryView(site.attributes),
+        eligibility: toOperatorLeadEligibilityView(site.attributes),
         localSeoAudit: toOperatorLocalSeoAuditView(site.attributes),
         outreachMessages: [...site.outreachMessages]
           .reverse()
@@ -425,6 +443,7 @@ export async function getOperatorDashboardData(): Promise<OperatorDashboardData>
               ),
             }
           : null,
+        outreachPaused: pausedSiteIds.has(site.id),
       };
     }).sort(compareOperatorSitesByDiscoveryScore),
   };

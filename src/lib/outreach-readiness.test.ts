@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   evaluateOutreachEnvironment,
+  hasRequiredResendDomains,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
   REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
@@ -39,6 +40,14 @@ describe("outreach environment readiness", () => {
       webhookEndpoint: "https://cornershop.dev/api/webhooks/resend",
       inboundWebhookEndpoint:
         "https://cornershop.dev/api/webhooks/resend/inbound",
+      verticals: [
+        {
+          vertical: "RESTAURANT",
+          brand: "Restofrontapp",
+          senderConfigured: true,
+          replyToConfigured: true,
+        },
+      ],
     });
   });
 
@@ -165,6 +174,39 @@ describe("Resend webhook readiness", () => {
         ],
         expected,
       ),
+    ).toBe(false);
+  });
+});
+
+describe("Resend niche identity readiness", () => {
+  it("requires verified sending and receiving capabilities without sending mail", () => {
+    expect(
+      hasRequiredResendDomains([
+        {
+          name: "send.restofront.com",
+          status: "verified",
+          capabilities: { sending: "enabled", receiving: "disabled" },
+        },
+        {
+          name: "restofront.com",
+          status: "verified",
+          capabilities: { sending: "disabled", receiving: "enabled" },
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      hasRequiredResendDomains([
+        {
+          name: "send.restofront.com",
+          status: "verified",
+          capabilities: { sending: "enabled", receiving: "disabled" },
+        },
+        {
+          name: "restofront.com",
+          status: "pending",
+          capabilities: { sending: "disabled", receiving: "enabled" },
+        },
+      ]),
     ).toBe(false);
   });
 });

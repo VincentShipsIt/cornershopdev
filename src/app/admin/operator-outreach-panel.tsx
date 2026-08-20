@@ -12,23 +12,27 @@ import type { OperatorSiteRow } from "@/lib/operator-dashboard";
 type Props = Pick<
   OperatorSiteRow,
   | "slug"
+  | "vertical"
   | "contactEmail"
   | "outreachMessages"
   | "outreachDispatch"
   | "reviewedAt"
-> & { outreachPaused: boolean };
+> & { outreachPaused: boolean; leadOutreachPaused: boolean };
 
 export function OperatorOutreachPanel({
   slug,
+  vertical,
   contactEmail,
   outreachMessages,
   outreachDispatch,
   reviewedAt,
   outreachPaused,
+  leadOutreachPaused,
 }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [replyPending, setReplyPending] = useState(false);
+  const [pausePending, setPausePending] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const thread = useMemo(
@@ -51,7 +55,7 @@ export function OperatorOutreachPanel({
     if (!contactEmail) return;
     if (
       !window.confirm(
-        `Send the reviewed Restofront preview to ${contactEmail}? This queues one initial email and a pauseable follow-up.`,
+        `Send the reviewed ${humanize(vertical)} preview to ${contactEmail}? This queues one initial email and a pauseable follow-up.`,
       )
     ) {
       return;
@@ -132,22 +136,53 @@ export function OperatorOutreachPanel({
     }
   }
 
+  async function toggleLeadPause() {
+    setPausePending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/outreach/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paused: !leadOutreachPaused,
+          siteSlug: slug,
+        }),
+      });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Lead outreach control could not be saved.");
+      }
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Lead outreach control could not be saved.",
+      );
+    } finally {
+      setPausePending(false);
+    }
+  }
+
   const retryableInitial =
     initial?.status === "FAILED" && initial.retryable === true;
   const retryableDispatch = outreachDispatch?.retryable === true;
   const disabled =
     pending ||
     outreachPaused ||
+    leadOutreachPaused ||
     !contactEmail ||
     !reviewedAt ||
     (Boolean(initial) && !retryableInitial) ||
     (Boolean(outreachDispatch) && !retryableDispatch);
   const label = retryableInitial
     ? "Retry initial"
-    : initial
+      : initial
       ? `Initial ${humanize(initial.status)}`
       : outreachPaused
         ? "Outreach paused"
+        : leadOutreachPaused
+          ? "Lead paused"
         : !reviewedAt
           ? "Review first"
           : !contactEmail
@@ -172,6 +207,19 @@ export function OperatorOutreachPanel({
       >
         {pending ? <LoaderCircle className="animate-spin" /> : <Send />}
         {pending ? "Queueing…" : label}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={pausePending || outreachPaused}
+        onClick={() => void toggleLeadPause()}
+      >
+        {pausePending
+          ? "Saving…"
+          : leadOutreachPaused
+            ? "Resume lead"
+            : "Pause lead"}
       </Button>
       <div aria-live="polite">
         {error ? (

@@ -2,12 +2,14 @@ import {
   normalizeImportSource,
   storedImportSource,
 } from "@/lib/import-identity";
-import { restaurantLinkKeywordHints } from "@/lib/verticals/restaurant/providers";
+import { Vertical } from "@/generated/prisma/enums";
+import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 /**
  * Cheap homepage signals only. A local runner cannot afford Lighthouse or a
  * headless browser for 50 businesses: no LCP/CLS, no painted layout, and no
- * JS-rendered menu. Scoring uses the first HTML response, headers, and href
+ * JS-rendered catalog. Scoring uses the first HTML response, headers, and href
  * text.
  */
 export const LEAD_DISCOVERY_CHEAP_CHECKS = [
@@ -16,15 +18,15 @@ export const LEAD_DISCOVERY_CHEAP_CHECKS = [
   "viewport meta present",
   "viewport is not a fixed desktop width",
   "frameset or Flash markup",
-  "menu/carte href or link text",
-  "booking/reservation href, text, or known provider",
+  "vertical-specific catalog href or text",
+  "vertical-specific conversion href, text, or known provider",
   "document title",
   "html byte size and script tag count",
   "Last-Modified header when the origin sends one",
 ] as const;
 
 export const LEAD_DISCOVERY_USER_AGENT =
-  "Cornershopdev Lead Discovery/1.0 (+https://cornershop.dev; local restaurant discovery)";
+  "Cornershopdev Lead Discovery/2.0 (+https://cornershop.dev; local business discovery)";
 
 export type LeadDiscoveryProvider = "google_places" | "nominatim";
 
@@ -35,10 +37,16 @@ export type HomepageSignals = {
   hasViewport: boolean;
   isDesktopOnlyViewport: boolean;
   hasDesktopOnlyMarkup: boolean;
+  hasCatalogHint: boolean;
+  hasConversionHint: boolean;
+  hasBusinessJsonLd: boolean;
+  /** @deprecated Read `hasCatalogHint`; retained for stored/test compatibility. */
   hasMenuHint: boolean;
+  /** @deprecated Read `hasConversionHint`; retained for stored/test compatibility. */
   hasBookingHint: boolean;
   hasTitle: boolean;
   hasMetaDescription: boolean;
+  /** @deprecated Read `hasBusinessJsonLd`; retained for stored/test compatibility. */
   hasRestaurantJsonLd: boolean;
   scriptCount: number;
   htmlBytes: number;
@@ -88,9 +96,13 @@ export function buildProspectIdentity(input: {
 }
 
 export function scoreWebsiteQuality(input: {
+  vertical?: VerticalId;
   hasWebsite: boolean;
   homepage: HomepageSignals | null;
 }): SiteQualityScore {
+  const adapter = resolveLeadDiscoveryAdapter(
+    input.vertical ?? Vertical.RESTAURANT,
+  );
   const reasons: string[] = [];
   let score = 100;
 
@@ -120,13 +132,13 @@ export function scoreWebsiteQuality(input: {
     score -= 10;
     reasons.push("Homepage uses frameset or Flash");
   }
-  if (!homepage.hasMenuHint) {
+  if (!homepage.hasCatalogHint) {
     score -= 8;
-    reasons.push("No menu link found on the homepage");
+    reasons.push(`No ${adapter.homepage.catalogLabel} link found on the homepage`);
   }
-  if (!homepage.hasBookingHint) {
+  if (!homepage.hasConversionHint) {
     score -= 8;
-    reasons.push("No booking or reservation link found");
+    reasons.push(`No ${adapter.homepage.conversionLabel} link found`);
   }
   if (!homepage.hasTitle) {
     score -= 5;
@@ -155,6 +167,7 @@ export type DiscoveryFetch = (
 
 export async function fetchHomepageSignals(
   rawUrl: string,
+  vertical: VerticalId = Vertical.RESTAURANT,
   fetchImpl: DiscoveryFetch = fetch,
 ): Promise<HomepageSignals> {
   const empty = emptyHomepageSignals();
@@ -191,7 +204,12 @@ export async function fetchHomepageSignals(
       if (!contentType.includes("text/html")) return empty;
 
       const html = await readLimitedBody(response);
-      return parseHomepageSignals(html, url, response.headers.get("last-modified"));
+      return parseHomepageSignals(
+        html,
+        url,
+        response.headers.get("last-modified"),
+        vertical,
+      );
     }
   } catch {
     return empty;
@@ -204,7 +222,9 @@ export function parseHomepageSignals(
   html: string,
   finalUrl: URL,
   lastModifiedHeader: string | null = null,
+  vertical: VerticalId = Vertical.RESTAURANT,
 ): HomepageSignals {
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const viewport = metaContent(html, "viewport");
   const title =
     decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") ||
@@ -213,6 +233,16 @@ export function parseHomepageSignals(
     metaContent(html, "description") || metaContent(html, "og:description");
   const pageText = stripMarkup(html).slice(0, MAX_PAGE_TEXT_CHARS);
 
+  const hasCatalogHint = adapter.homepage.catalogPattern.test(
+    html.slice(0, 250_000),
+  );
+  const hasConversionHint = adapter.homepage.conversionPattern.test(
+    html.slice(0, 250_000),
+  );
+  const hasBusinessJsonLd = detectBusinessJsonLd(
+    html,
+    adapter.homepage.structuredDataTypes,
+  );
   return {
     isFetched: true,
     finalUrl: finalUrl.toString(),
@@ -221,11 +251,14 @@ export function parseHomepageSignals(
     isDesktopOnlyViewport: isDesktopOnlyViewport(viewport),
     hasDesktopOnlyMarkup:
       /<frameset\b/i.test(html) || /shockwave-flash|application\/x-shockwave-flash/i.test(html),
-    hasMenuHint: detectMenuHint(html),
-    hasBookingHint: detectBookingHint(html),
+    hasCatalogHint,
+    hasConversionHint,
+    hasBusinessJsonLd,
+    hasMenuHint: hasCatalogHint,
+    hasBookingHint: hasConversionHint,
     hasTitle: title.length > 0,
     hasMetaDescription: metaDescription.length > 0,
-    hasRestaurantJsonLd: detectRestaurantJsonLd(html),
+    hasRestaurantJsonLd: hasBusinessJsonLd,
     scriptCount: (html.match(/<script\b/gi) ?? []).length,
     htmlBytes: new TextEncoder().encode(html).length,
     lastModifiedAt: lastModifiedHeader,
@@ -243,6 +276,9 @@ function emptyHomepageSignals(): HomepageSignals {
     hasViewport: false,
     isDesktopOnlyViewport: false,
     hasDesktopOnlyMarkup: false,
+    hasCatalogHint: false,
+    hasConversionHint: false,
+    hasBusinessJsonLd: false,
     hasMenuHint: false,
     hasBookingHint: false,
     hasTitle: false,
@@ -298,60 +334,34 @@ function isDesktopOnlyViewport(content: string): boolean {
   return width ? Number(width) >= 980 : false;
 }
 
-function detectMenuHint(html: string): boolean {
-  const sample = html.slice(0, 250_000);
-  if (
-    /href=["'][^"']*(?:\/menu\b|\/menus\b|\/carte\b|\/speise|\/carta\b)[^"']*["']/i.test(
-      sample,
-    )
-  ) {
-    return true;
-  }
-  return /<a\b[^>]*>[\s\S]{0,80}\b(?:menu|menus|la carte|carte|speisekarte)\b[\s\S]{0,80}<\/a>/i.test(
-    sample,
-  );
-}
-
-function detectBookingHint(html: string): boolean {
-  const sample = html.slice(0, 250_000).toLowerCase();
-  if (
-    restaurantLinkKeywordHints.some(
-      (hint) => hint.type === "booking" && hint.pattern.test(sample),
-    )
-  ) {
-    return true;
-  }
-  return /opentable|sevenrooms|resy|thefork|lafourchette|quandoo|zenchef|bookatable/.test(
-    sample,
-  );
-}
-
-function detectRestaurantJsonLd(html: string): boolean {
+function detectBusinessJsonLd(html: string, typePattern: RegExp): boolean {
   const scriptPattern =
     /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   for (const match of html.matchAll(scriptPattern)) {
     const raw = match[1]?.trim();
     if (!raw) continue;
     try {
-      if (jsonLdHasRestaurantType(JSON.parse(raw))) return true;
+      if (jsonLdHasBusinessType(JSON.parse(raw), typePattern)) return true;
     } catch {
-      // Homepage JSON-LD is often invalid; a parse failure is not a restaurant type.
+      // Homepage JSON-LD is often invalid; a parse failure is not evidence.
     }
   }
   return false;
 }
 
-function jsonLdHasRestaurantType(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(jsonLdHasRestaurantType);
+function jsonLdHasBusinessType(value: unknown, typePattern: RegExp): boolean {
+  if (Array.isArray(value)) {
+    return value.some((entry) => jsonLdHasBusinessType(entry, typePattern));
+  }
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  if (jsonLdHasRestaurantType(record["@graph"])) return true;
+  if (jsonLdHasBusinessType(record["@graph"], typePattern)) return true;
   const type = record["@type"];
   const types = Array.isArray(type) ? type : [type];
   return types.some(
     (entry) =>
       typeof entry === "string" &&
-      /^(Restaurant|LocalBusiness|FoodEstablishment)$/i.test(entry),
+      typePattern.test(entry),
   );
 }
 

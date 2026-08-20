@@ -1,5 +1,8 @@
 import { z } from "zod";
+import { Vertical } from "@/generated/prisma/enums";
 import type { LeadDiscoveryProvider } from "@/lib/lead-discovery";
+import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 import {
   localSeoAuditResultSchema,
   type LocalSeoAuditResult,
@@ -7,8 +10,32 @@ import {
 
 export const LEAD_DISCOVERY_ATTRIBUTE_KEY = "leadDiscovery";
 export const LOCAL_SEO_AUDIT_ATTRIBUTE_KEY = "localSeoAudit";
+export const LEAD_ELIGIBILITY_ATTRIBUTE_KEY = "leadEligibility";
+
+export const leadEligibilityStateSchema = z.enum([
+  "UNKNOWN",
+  "ELIGIBLE",
+  "INELIGIBLE",
+]);
+export const leadEligibilityEvidenceSchema = z
+  .record(
+    z.string().trim().min(1).max(80),
+    z.string().trim().min(1).max(500),
+  )
+  .refine((record) => Object.keys(record).length <= 20, {
+    message: "At most 20 eligibility evidence fields are allowed",
+  });
+export const leadEligibilityRecordSchema = z.object({
+  state: leadEligibilityStateSchema,
+  evidence: leadEligibilityEvidenceSchema,
+  updatedAt: z.string().datetime({ offset: true }),
+  updatedBy: z.string().trim().min(1).max(160),
+});
 
 export const leadDiscoveryRecordSchema = z.object({
+  vertical: z.enum(Vertical),
+  adapterId: z.string().trim().min(1).max(80),
+  query: z.string().trim().min(1).max(200),
   city: z.string().trim().min(1).max(80),
   placeId: z.string().trim().max(200).nullable(),
   sourceProvider: z.enum(["google_places", "nominatim"]),
@@ -19,9 +46,11 @@ export const leadDiscoveryRecordSchema = z.object({
   rating: z.number().min(0).max(5).nullable(),
   reviewCount: z.number().int().min(0).nullable(),
   hasWebsite: z.boolean(),
+  categories: z.array(z.string().trim().min(1).max(100)).max(20),
 });
 
 export type LeadDiscoveryRecord = z.infer<typeof leadDiscoveryRecordSchema>;
+export type LeadEligibilityRecord = z.infer<typeof leadEligibilityRecordSchema>;
 
 export type OperatorLeadDiscoveryView = {
   score: number;
@@ -31,6 +60,8 @@ export type OperatorLeadDiscoveryView = {
   placeId: string | null;
 };
 
+export type OperatorLeadEligibilityView = LeadEligibilityRecord;
+
 export type OperatorLocalSeoAuditView = {
   score: number;
   topFixes: Array<{ id: string; title: string }>;
@@ -38,6 +69,8 @@ export type OperatorLocalSeoAuditView = {
 };
 
 export function createLeadDiscoveryRecord(input: {
+  vertical?: VerticalId;
+  query?: string;
   city: string;
   placeId: string | null;
   sourceProvider: LeadDiscoveryProvider;
@@ -48,8 +81,14 @@ export function createLeadDiscoveryRecord(input: {
   rating: number | null;
   reviewCount: number | null;
   hasWebsite: boolean;
+  categories?: string[];
 }): LeadDiscoveryRecord {
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   return leadDiscoveryRecordSchema.parse({
+    vertical,
+    adapterId: adapter.adapterId,
+    query: input.query ?? adapter.placeSearch.nominatimQuery(input.city),
     city: input.city,
     placeId: input.placeId,
     sourceProvider: input.sourceProvider,
@@ -60,6 +99,21 @@ export function createLeadDiscoveryRecord(input: {
     rating: input.rating,
     reviewCount: input.reviewCount,
     hasWebsite: input.hasWebsite,
+    categories: input.categories ?? [],
+  });
+}
+
+export function createLeadEligibilityRecord(input: {
+  state?: z.infer<typeof leadEligibilityStateSchema>;
+  evidence?: Record<string, string>;
+  updatedBy: string;
+  updatedAt?: string;
+}): LeadEligibilityRecord {
+  return leadEligibilityRecordSchema.parse({
+    state: input.state ?? "UNKNOWN",
+    evidence: input.evidence ?? {},
+    updatedBy: input.updatedBy,
+    updatedAt: input.updatedAt ?? new Date().toISOString(),
   });
 }
 
@@ -67,6 +121,7 @@ export function mergeOperatorLeadAttributes(
   existing: unknown,
   discovery: LeadDiscoveryRecord,
   audit: LocalSeoAuditResult | null,
+  eligibility?: LeadEligibilityRecord,
 ): Record<string, unknown> {
   const current = asAttributeRecord(existing);
   return {
@@ -74,6 +129,23 @@ export function mergeOperatorLeadAttributes(
     [LEAD_DISCOVERY_ATTRIBUTE_KEY]: discovery,
     [LOCAL_SEO_AUDIT_ATTRIBUTE_KEY]:
       audit ?? current[LOCAL_SEO_AUDIT_ATTRIBUTE_KEY] ?? null,
+    [LEAD_ELIGIBILITY_ATTRIBUTE_KEY]:
+      eligibility ??
+      current[LEAD_ELIGIBILITY_ATTRIBUTE_KEY] ??
+      createLeadEligibilityRecord({
+        updatedBy: "system:lead-discovery",
+        updatedAt: discovery.discoveredAt,
+      }),
+  };
+}
+
+export function mergeLeadEligibilityAttributes(
+  existing: unknown,
+  eligibility: LeadEligibilityRecord,
+): Record<string, unknown> {
+  return {
+    ...asAttributeRecord(existing),
+    [LEAD_ELIGIBILITY_ATTRIBUTE_KEY]: eligibility,
   };
 }
 
@@ -84,6 +156,27 @@ export function parseLeadDiscovery(
     asAttributeRecord(attributes)[LEAD_DISCOVERY_ATTRIBUTE_KEY],
   );
   return parsed.success ? parsed.data : null;
+}
+
+export function parseLeadEligibility(
+  attributes: unknown,
+): LeadEligibilityRecord | null {
+  const parsed = leadEligibilityRecordSchema.safeParse(
+    asAttributeRecord(attributes)[LEAD_ELIGIBILITY_ATTRIBUTE_KEY],
+  );
+  return parsed.success ? parsed.data : null;
+}
+
+export function toOperatorLeadEligibilityView(
+  attributes: unknown,
+): OperatorLeadEligibilityView {
+  return (
+    parseLeadEligibility(attributes) ??
+    createLeadEligibilityRecord({
+      updatedBy: "system:legacy-lead",
+      updatedAt: new Date(0).toISOString(),
+    })
+  );
 }
 
 export function parseLocalSeoAudit(

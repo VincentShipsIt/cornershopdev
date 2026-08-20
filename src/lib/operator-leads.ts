@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import {
@@ -18,6 +19,10 @@ import {
   generateDraftForVertical,
 } from "@/lib/site-pipeline";
 import type { VerticalId } from "@/lib/verticals/types";
+import {
+  createLeadEligibilityRecord,
+  mergeLeadEligibilityAttributes,
+} from "@/lib/operator-lead-attributes";
 
 /**
  * Lead statuses that a site may still be reopened or outreached from.
@@ -141,9 +146,11 @@ export async function createOrReopenOperatorLead(input: {
 
 export async function recordOperatorLeadAction(input: {
   siteSlug: string;
-  action: "add_note" | "complete_review";
+  action: "add_note" | "complete_review" | "set_eligibility";
   note: string | null;
   actor: string;
+  eligibility?: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE";
+  eligibilityEvidence?: Record<string, string>;
 }): Promise<{ createdAt: Date }> {
   const note = input.note?.trim() || null;
   if (input.action === "add_note" && !note) {
@@ -153,10 +160,40 @@ export async function recordOperatorLeadAction(input: {
   return db.$transaction(async (tx) => {
     const site = await tx.site.findUnique({
       where: { slug: input.siteSlug },
-      select: { id: true },
+      select: { id: true, attributes: true },
     });
     if (!site) throw new OperatorLeadError("Lead not found.", 404);
     const createdAt = new Date();
+    if (input.action === "set_eligibility") {
+      const eligibility = createLeadEligibilityRecord({
+        state: input.eligibility,
+        evidence: input.eligibilityEvidence,
+        updatedBy: input.actor,
+        updatedAt: createdAt.toISOString(),
+      });
+      await tx.site.update({
+        where: { id: site.id },
+        data: {
+          attributes: mergeLeadEligibilityAttributes(
+            site.attributes,
+            eligibility,
+          ) as Prisma.InputJsonValue,
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          type: "site.lead.eligibility.updated",
+          actor: input.actor,
+          metadata: {
+            state: eligibility.state,
+            evidenceFields: Object.keys(eligibility.evidence).sort(),
+          },
+          siteId: site.id,
+          createdAt,
+        },
+      });
+      return { createdAt };
+    }
     await tx.auditEvent.create({
       data: {
         type:
