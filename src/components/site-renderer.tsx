@@ -3,7 +3,9 @@ import {
   CalendarDays,
   Mail,
   MapPin,
+  MessageCircle,
   Phone,
+  ShieldCheck,
   ShoppingBag,
 } from "lucide-react";
 import Image from "next/image";
@@ -11,6 +13,7 @@ import Link from "next/link";
 import { BookingEmbed } from "@/components/booking-embed";
 import { BookingRequestForm } from "@/components/booking-request-form";
 import { FoodRetailStructuredData } from "@/components/food-retail-structured-data";
+import { LocalServiceStructuredData } from "@/components/local-service-structured-data";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { RestaurantStructuredData } from "@/components/restaurant-themes/shared";
 import { SiteAnalytics } from "@/components/site-analytics";
@@ -64,6 +67,14 @@ export function SiteRenderer({
 }: SiteRendererProps) {
   const config = resolveVerticalConfig(vertical);
   const dictionary = getSiteDictionary(config, locale);
+  const allowedIntegrationTypes = new Set(config.integrationTypes);
+  const integrations = draft.integrations.filter((integration) =>
+    allowedIntegrationTypes.has(integration.type),
+  );
+  const integrationSafeDraft =
+    integrations.length === draft.integrations.length
+      ? draft
+      : { ...draft, integrations };
 
   if (vertical === Vertical.RESTAURANT) {
     const selection = parseRestaurantThemeSelection(
@@ -72,7 +83,7 @@ export function SiteRenderer({
     if (selection) {
       return (
         <RestaurantThemeRenderer
-          draft={draft}
+          draft={integrationSafeDraft}
           selection={selection}
           locale={locale}
           localeBasePath={localeBasePath}
@@ -85,14 +96,20 @@ export function SiteRenderer({
     }
   }
 
-  const booking = draft.integrations.find(
+  const booking = integrations.find(
     (integration) =>
       integration.enabled && integration.type === "booking",
   );
-  const ordering = draft.integrations.find(
+  const ordering = integrations.find(
     (integration) =>
       integration.enabled &&
       ["ordering", "delivery"].includes(integration.type),
+  );
+  const quote = integrations.find(
+    (integration) => integration.enabled && integration.type === "quote",
+  );
+  const contact = integrations.find(
+    (integration) => integration.enabled && integration.type === "contact",
   );
   const resolvedTemplate = config.templates.resolve(draft.attributes);
   const template = theme
@@ -110,12 +127,20 @@ export function SiteRenderer({
   // the contact column already link out to it. Rendering an empty section for that
   // case would change every existing restaurant site for no gain.
   const showBookingSection = Boolean(bookingEmbed) || showRequestForm;
-  const primaryAction =
-    capabilities.primaryAction === "ordering" ? ordering : booking;
-  const secondaryAction =
-    capabilities.primaryAction === "ordering" ? booking : ordering;
+  const actions = { booking, ordering, quote, contact };
+  const actionPriority = {
+    booking: ["booking", "ordering"],
+    ordering: ["ordering", "booking"],
+    quote: ["quote", "contact", "booking", "ordering"],
+    contact: ["contact", "quote", "booking", "ordering"],
+  } as const;
+  const [primaryAction, secondaryAction] = actionPriority[
+    capabilities.primaryAction
+  ].flatMap((type) => (actions[type] ? [actions[type]] : []));
   const fulfillmentNote =
     config.presentation.fulfillmentNote?.(draft.attributes, locale) ?? null;
+  const businessDetails =
+    config.presentation.businessDetails?.(draft.attributes, locale) ?? null;
   const copy = getTemplateCopy(template, locale);
   const picturedItems = draft.catalogSections
     .flatMap((section) => section.items)
@@ -168,6 +193,9 @@ export function SiteRenderer({
       ) : null}
       {vertical === Vertical.FOOD_RETAIL ? (
         <FoodRetailStructuredData draft={draft} enabled={analyticsEnabled} />
+      ) : null}
+      {vertical === Vertical.LOCAL_SERVICE ? (
+        <LocalServiceStructuredData draft={draft} enabled={analyticsEnabled} />
       ) : null}
       <header
         className={cn(
@@ -391,6 +419,85 @@ export function SiteRenderer({
         </section>
       ) : null}
 
+      {capabilities.showGallery && businessDetails?.projects.length ? (
+        <section className="mx-auto max-w-7xl px-6 py-14 md:px-10 md:py-20">
+          <p
+            className="text-xs font-bold uppercase tracking-[0.18em]"
+            style={{ color: "var(--site-accent)" }}
+          >
+            {dictionary.projectsHeading ?? copy.featuredHeading}
+          </p>
+          <h2 className="mt-3 max-w-3xl break-words text-4xl font-bold tracking-[-0.04em] md:text-6xl">
+            {copy.featuredSubheading}
+          </h2>
+          <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {businessDetails.projects.map((project) => (
+              <article
+                key={`${project.title}-${project.location}`}
+                className="overflow-hidden rounded-[1.25rem] border border-current/10"
+              >
+                {project.imageUrl ? (
+                  <div className="relative aspect-[4/3] overflow-hidden bg-black/5">
+                    {project.imageUrl.startsWith("/") ? (
+                      <Image
+                        src={project.imageUrl}
+                        alt={project.title}
+                        fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div
+                        role="img"
+                        aria-label={project.title}
+                        className="absolute inset-0 bg-cover bg-center"
+                        style={{ backgroundImage: `url("${project.imageUrl}")` }}
+                      />
+                    )}
+                  </div>
+                ) : null}
+                <div className="p-5">
+                  <h3 className="text-lg font-bold">{project.title}</h3>
+                  {project.location ? (
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] opacity-60">
+                      {project.location}
+                    </p>
+                  ) : null}
+                  {project.description ? (
+                    <p className="mt-3 text-sm leading-6 opacity-75">
+                      {project.description}
+                    </p>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {businessDetails &&
+      (businessDetails.serviceAreas.length > 0 ||
+        businessDetails.credentials.length > 0 ||
+        businessDetails.trustSignals.length > 0) ? (
+        <section className="mx-auto grid max-w-7xl gap-5 px-6 py-14 md:px-10 md:py-20 lg:grid-cols-3">
+          <BusinessDetailCard
+            heading={dictionary.serviceAreasHeading ?? "Service areas"}
+            items={businessDetails.serviceAreas}
+            icon={<MapPin className="size-5" />}
+          />
+          <BusinessDetailCard
+            heading={dictionary.credentialsHeading ?? "Credentials"}
+            items={businessDetails.credentials}
+            icon={<ShieldCheck className="size-5" />}
+          />
+          <BusinessDetailCard
+            heading={dictionary.trustHeading ?? "Trust signals"}
+            items={businessDetails.trustSignals}
+            icon={<ShieldCheck className="size-5" />}
+          />
+        </section>
+      ) : null}
+
       <section className="mx-auto grid max-w-7xl gap-12 px-6 py-16 md:px-10 md:py-24 lg:grid-cols-[0.68fr_1.32fr]">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-70">
@@ -404,6 +511,12 @@ export function SiteRenderer({
               <span className="flex items-start gap-2">
                 <MapPin className="mt-0.5 size-4 shrink-0" />
                 {draft.address}
+              </span>
+            ) : null}
+            {businessDetails?.availability ? (
+              <span className="flex items-center gap-2 font-semibold opacity-100">
+                <MessageCircle className="size-4" />
+                {businessDetails.availability}
               </span>
             ) : null}
             {fulfillmentNote ? (
@@ -431,6 +544,32 @@ export function SiteRenderer({
               >
                 <Mail className="size-4" />
                 {draft.email}
+              </a>
+            ) : null}
+            {quote ? (
+              <a
+                href={localizeIntegrationUrl(quote.url, locale)}
+                data-analytics-cta
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
+                <MessageCircle className="size-4" />
+                {quote.label}
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            ) : null}
+            {contact ? (
+              <a
+                href={localizeIntegrationUrl(contact.url, locale)}
+                data-analytics-cta
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 font-semibold opacity-100"
+              >
+                <MessageCircle className="size-4" />
+                {contact.label}
+                <ArrowUpRight className="size-3.5" />
               </a>
             ) : null}
             {booking ? (
@@ -607,6 +746,31 @@ export function SiteRenderer({
         <span className="sm:text-right">{dictionary.seasonalNotice}</span>
       </footer>
     </article>
+  );
+}
+
+function BusinessDetailCard({
+  heading,
+  items,
+  icon,
+}: {
+  heading: string;
+  items: string[];
+  icon: React.ReactNode;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded-[1.25rem] border border-current/10 p-6">
+      <div className="flex items-center gap-3">
+        {icon}
+        <h2 className="text-lg font-bold">{heading}</h2>
+      </div>
+      <ul className="mt-5 space-y-3 text-sm leading-6 opacity-75">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -89,7 +89,13 @@ export type PersistableSiteDraft = {
     }>;
   }>;
   integrations: Array<{
-    type: "booking" | "ordering" | "delivery" | "social";
+    type:
+      | "booking"
+      | "ordering"
+      | "delivery"
+      | "social"
+      | "quote"
+      | "contact";
     label: string;
     provider: string | null;
     url: string;
@@ -780,8 +786,14 @@ function catalogSectionCreateData(
 
 function toDatabaseIntegrationType(
   value: PersistableSiteDraft["integrations"][number]["type"],
-): "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL" {
-  return value.toUpperCase() as "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL";
+): "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL" | "QUOTE" | "CONTACT" {
+  return value.toUpperCase() as
+    | "BOOKING"
+    | "ORDERING"
+    | "DELIVERY"
+    | "SOCIAL"
+    | "QUOTE"
+    | "CONTACT";
 }
 
 function toDatabaseImageProvenance(

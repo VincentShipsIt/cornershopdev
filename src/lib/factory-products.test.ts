@@ -10,6 +10,6 @@ describe("factory product catalog", () => {
     );
     expect(catalog.next?.marketing.brand.name).toBe("Salonfront");
     expect(catalog.next?.marketing.domain).toBeNull();
-    expect(catalog.registeredCount).toBe(3);
+    expect(catalog.registeredCount).toBe(4);
   });
 });

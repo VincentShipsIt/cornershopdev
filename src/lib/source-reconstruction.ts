@@ -78,6 +78,7 @@ export type AccessiblePalette = {
 };
 
 export type ReconstructedSource = {
+  businessTypes: string[];
   sourceLocale: string | null;
   name: string;
   description: string;
@@ -146,6 +147,12 @@ export function reconstructSource(input: {
   const sourcedBusiness = selectBusinessEntity(jsonEntities, homepageUrl);
   const business = sourcedBusiness?.value ?? null;
   const businessSourceUrl = sourcedBusiness?.sourceUrl ?? homepageUrl;
+  const businessTypes = business
+    ? jsonTypes(business)
+        .map((type) => boundedText(type, 80))
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
 
   const name = firstCandidate([
     jsonStringCandidate(business?.name, "json-ld", businessSourceUrl, business),
@@ -205,6 +212,13 @@ export function reconstructSource(input: {
   addEvidence(evidence, "address", address);
   addEvidence(evidence, "phone", phone);
   addEvidence(evidence, "email", email);
+  for (const type of businessTypes) {
+    addEvidence(
+      evidence,
+      "business.type",
+      candidate(type, "json-ld", businessSourceUrl, business),
+    );
+  }
 
   const jsonLogo = resolveAssetCandidate(
     assetValue(business?.logo),
@@ -269,6 +283,7 @@ export function reconstructSource(input: {
   );
 
   return {
+    businessTypes,
     sourceLocale: extractLocale(input.homepage, business),
     name: boundedText(name?.value || input.fallbackName, 120),
     description: boundedText(description?.value ?? "", 500),
@@ -401,6 +416,15 @@ function selectBusinessEntity(
   const preferredTypes = new Set([
     "restaurant",
     "localbusiness",
+    "homeandconstructionbusiness",
+    "plumber",
+    "electrician",
+    "generalcontractor",
+    "roofingcontractor",
+    "housepainter",
+    "hvacbusiness",
+    "locksmith",
+    "professionalservice",
     "beautysalon",
     "hairsalon",
     "nailsalon",

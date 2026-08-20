@@ -31,6 +31,7 @@ import {
 } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
+import { sampleLocalServiceSiteDraft } from "@/lib/verticals/local-service/fixtures";
 
 type Stage = {
   label: string;
@@ -103,6 +104,28 @@ const verticalCopy = {
       { title: "Services & prices", copy: "Reading the source" },
       { title: "Hours", copy: "Checking business details" },
       { title: "Appointments", copy: "Keeping booking links" },
+    ],
+  },
+  [Vertical.LOCAL_SERVICE]: {
+    label: "Local trade",
+    eyebrow: "New local trade",
+    placeholder: "trade website or business name",
+    opening: "Opening the trade business",
+    idlePrompt:
+      "Paste a plumber, electrician, builder, repair trade or artisan website. The result remains a private pilot preview; claiming and payment are not available yet.",
+    recovering:
+      "The shape is already here. We are recovering sourced services, branding, hours, service evidence and existing contact links now.",
+    emptyStatePrompt:
+      "Start with a trade website or business name. No account is needed to see the result.",
+    claimHint:
+      "Review every service, availability statement, credential, project and contact link in this private pilot preview.",
+    catalogStage: "Recover services and evidence",
+    integrationsStage: "Preserve phone, WhatsApp and quote links",
+    previewCatalogLabel: "Services",
+    previewCards: [
+      { title: "Services", copy: "Reading the source" },
+      { title: "Hours & coverage", copy: "Checking business details" },
+      { title: "Contact", copy: "Keeping existing links" },
     ],
   },
   [Vertical.FOOD_RETAIL]: {
@@ -327,6 +350,23 @@ export function ImportStudio({
   }, [initialSource]);
 
   function useDemo() {
+    if (vertical === Vertical.LOCAL_SERVICE) {
+      setSource(sampleLocalServiceSiteDraft.name);
+      setPreviewSource(sampleLocalServiceSiteDraft.name);
+      setError(null);
+      complete(
+        {
+          draft: sampleLocalServiceSiteDraft,
+          vertical: Vertical.LOCAL_SERVICE,
+        },
+        {
+          preview: `/preview/${sampleLocalServiceSiteDraft.slug}`,
+          claim: `/claim/${sampleLocalServiceSiteDraft.slug}`,
+        },
+        false,
+      );
+      return;
+    }
     if (vertical === Vertical.FOOD_RETAIL) {
       setSource(sampleFoodRetailDraft.name);
       setError(null);
@@ -439,7 +479,11 @@ export function ImportStudio({
                 disabled={loading}
               />
             </div>
-            <Button className="w-full" disabled={!source.trim() || loading}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!source.trim() || loading}
+            >
               {loading ? (
                 <>
                   <LoaderCircle className="animate-spin" />

@@ -17,8 +17,10 @@ import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
 import { FoodRetailDashboard } from "@/app/dashboard/food-retail-dashboard";
+import { LocalServiceDashboard } from "@/app/dashboard/local-service-dashboard";
 import { findSiteDraft } from "@/lib/sites";
 import type { FoodRetailSiteDraft } from "@/lib/verticals/food-retail/schema";
+import type { LocalServiceSiteDraft } from "@/lib/verticals/local-service/schema";
 import { EditorialFontScope } from "@/components/fonts/editorial-font-scope";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -55,6 +57,27 @@ export default async function DashboardPage({
           brand={await resolveRequestBrand()}
           initialDraft={loaded.draft as FoodRetailSiteDraft}
           initialRevision={loaded.revision}
+        />
+      </EditorialFontScope>
+    );
+  }
+
+  if (access?.ok && access.site.vertical === Vertical.LOCAL_SERVICE) {
+    const [loaded, workspaces] = await Promise.all([
+      findSiteDraft(access.site.slug),
+      listAccountWorkspaces(access.session.userId),
+    ]);
+    if (!loaded || loaded.vertical !== Vertical.LOCAL_SERVICE) {
+      redirect("/sign-in");
+    }
+    return (
+      <EditorialFontScope>
+        <LocalServiceDashboard
+          email={access.user.email}
+          brand={await resolveRequestBrand()}
+          initialDraft={loaded.draft as LocalServiceSiteDraft}
+          initialRevision={loaded.revision}
+          canSwitchWorkspace={workspaces.length > 1}
         />
       </EditorialFontScope>
     );

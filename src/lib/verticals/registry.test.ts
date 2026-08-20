@@ -8,6 +8,7 @@ import {
 } from "@/lib/restaurant";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
 import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
+import { localServiceConfig } from "@/lib/verticals/local-service/config";
 import {
   isVerticalClaimEnabled,
   isVerticalPublicationEnabled,
@@ -20,6 +21,7 @@ import {
   resolveVerticalBySlug,
   resolveVerticalConfig,
   verticalAssetNamespace,
+  verticalLaunchReadiness,
   verticalSlug,
 } from "@/lib/verticals/registry";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
@@ -36,6 +38,7 @@ describe("vertical registry", () => {
     expect(listVerticalIds()).toEqual([
       Vertical.RESTAURANT,
       Vertical.BEAUTY,
+      Vertical.LOCAL_SERVICE,
       Vertical.FOOD_RETAIL,
     ]);
   });
@@ -109,6 +112,15 @@ describe("vertical registry", () => {
       }),
     ).toMatchObject({
       primaryAction: "ordering",
+      bookingRequestMode: "never",
+    });
+    expect(
+      localServiceConfig.rendererCapabilities({
+        ...localServiceConfig.attributeDefaults,
+        tradeType: "plumber",
+      }),
+    ).toMatchObject({
+      primaryAction: "quote",
       bookingRequestMode: "never",
     });
   });
@@ -230,6 +242,7 @@ describe("niche routing", () => {
       verticalSlug(Vertical.BEAUTY),
     );
     expect(verticalAssetNamespace(Vertical.FOOD_RETAIL)).toBe("foodretail");
+    expect(verticalAssetNamespace(Vertical.LOCAL_SERVICE)).toBe("localservice");
 
     const namespaces = listVerticalIds().map(verticalAssetNamespace);
     expect(new Set(namespaces).size).toBe(namespaces.length);
@@ -253,6 +266,7 @@ describe("niche routing", () => {
     const listed = listMarketingVerticals();
     expect(isVerticalPubliclyLaunched(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalPubliclyLaunched(Vertical.BEAUTY)).toBe(false);
+    expect(isVerticalPubliclyLaunched(Vertical.LOCAL_SERVICE)).toBe(false);
     expect(isVerticalPubliclyLaunched(Vertical.FOOD_RETAIL)).toBe(false);
     expect(listed).toEqual(
       listVerticalIds()
@@ -264,6 +278,7 @@ describe("niche routing", () => {
         ),
     );
     expect(listed).not.toContain(Vertical.BEAUTY);
+    expect(listed).not.toContain(Vertical.LOCAL_SERVICE);
     expect(listed).not.toContain(Vertical.FOOD_RETAIL);
     expect(foodRetailConfig.marketing).toMatchObject({
       publiclyAccessible: false,
@@ -280,19 +295,35 @@ describe("niche routing", () => {
     ]);
     expect(isVerticalPubliclyAccessible(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalPubliclyAccessible(Vertical.BEAUTY)).toBe(true);
+    expect(isVerticalPubliclyAccessible(Vertical.LOCAL_SERVICE)).toBe(false);
     expect(isVerticalPubliclyAccessible(Vertical.FOOD_RETAIL)).toBe(false);
   });
 
   it("enables claim checkout only for a fully launched vertical", () => {
     expect(isVerticalClaimEnabled(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalClaimEnabled(Vertical.BEAUTY)).toBe(false);
+    expect(isVerticalClaimEnabled(Vertical.LOCAL_SERVICE)).toBe(false);
     expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(false);
   });
 
   it("keeps publication explicit while food retail remains private", () => {
     expect(isVerticalPublicationEnabled(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalPublicationEnabled(Vertical.BEAUTY)).toBe(true);
+    expect(isVerticalPublicationEnabled(Vertical.LOCAL_SERVICE)).toBe(false);
     expect(isVerticalPublicationEnabled(Vertical.FOOD_RETAIL)).toBe(false);
+  });
+
+  it("keeps local service gated until public access, domain, routing and sender are real", () => {
+    expect(verticalLaunchReadiness(Vertical.LOCAL_SERVICE)).toEqual({
+      ready: false,
+      issues: ["public-access", "domain", "sender"],
+    });
+    expect(localServiceConfig.marketing).toMatchObject({
+      publiclyAccessible: false,
+      hostnames: [],
+      domain: null,
+      email: null,
+    });
   });
 
   it("registers the selected Restofrontapp mark and favicon assets", () => {

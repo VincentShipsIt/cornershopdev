@@ -114,6 +114,26 @@ The implementation contract, test fixture, structured-data mapping and required
 domain/sender/production-config evidence are documented in
 [`docs/verticals/food-retail.md`](docs/verticals/food-retail.md).
 
+## Local-service vertical
+
+`LOCAL_SERVICE` is the bounded vertical for plumbers, electricians, builders,
+repair trades, and artisans. It reuses the shared site/catalog/integration
+engine while modeling services, service areas, explicit availability posture,
+credentials and insurance evidence, trust signals, completed projects, hours,
+and phone, WhatsApp, quote, or existing scheduling links.
+
+Its deterministic no-model path recognizes sourced Schema.org trade subtypes
+and preserves source language, logo/favicon, accessible brand palette, contact
+details, hours, same-origin navigation, structured services, prices, and
+evidence. Missing emergency coverage, credentials, insurance, trust claims,
+projects, prices, or availability remain unstated rather than being inferred.
+
+The vertical is registered for private imports, previews, and revision-safe
+owner editing. Public niche access, claiming, publication, and rollback remain
+disabled until a real domain, exact routed hostname, and matching verified
+sender configuration satisfy the launch-readiness gate. See
+[`docs/verticals/local-service.md`](docs/verticals/local-service.md).
+
 ## Internationalization
 
 Site data uses one canonical source locale plus structured translation

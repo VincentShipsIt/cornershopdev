@@ -78,6 +78,7 @@ export const beautyConfig = {
   },
   marketing: beautyMarketing,
   publicationEnabled: true,
+  integrationTypes: ["booking", "social"],
   attributesSchema: beautyAttributesSchema,
   attributeDefaults: {
     serviceStyle: "modern-studio",

@@ -58,6 +58,9 @@ export const menuSectionSchema = catalogSectionSchema.extend({
 });
 
 export const restaurantIntegrationSchema = integrationSchema
+  .extend({
+    type: z.enum(["booking", "ordering", "delivery", "social"]),
+  })
   .superRefine((integration, context) => {
     const provider = findRestaurantProviderByUrl(integration.url);
     if (provider && provider.type !== integration.type) {

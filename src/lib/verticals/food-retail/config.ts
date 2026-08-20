@@ -135,6 +135,7 @@ export const foodRetailConfig = {
   },
   marketing: foodRetailMarketing,
   publicationEnabled: false,
+  integrationTypes: ["ordering", "delivery", "social"],
   attributesSchema: foodRetailAttributesSchema,
   attributeDefaults: {
     shopType: "local-food-shop",

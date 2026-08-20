@@ -14,7 +14,24 @@ export type IntegrationLinkType =
   | "booking"
   | "ordering"
   | "delivery"
-  | "social";
+  | "social"
+  | "quote"
+  | "contact";
+
+export type VerticalProject = {
+  title: string;
+  description: string;
+  imageUrl: string | null;
+  location: string;
+};
+
+export type VerticalBusinessDetails = {
+  availability: string | null;
+  serviceAreas: string[];
+  credentials: string[];
+  trustSignals: string[];
+  projects: VerticalProject[];
+};
 
 /**
  * How a provider's own booking widget is embedded on a generated site.
@@ -235,10 +252,21 @@ export type VerticalConfig<
    * private imports and previews without accidentally inheriting publication.
    */
   publicationEnabled: boolean;
+  /**
+   * Model assistance is the compatibility default. Evidence-sensitive verticals
+   * can opt into deterministic reconstruction and skip text generation entirely.
+   */
+  draftGenerationStrategy?: "model-assisted" | "deterministic-only";
+  /** Integration kinds this vertical may persist or expose in shared chrome. */
+  integrationTypes: readonly IntegrationLinkType[];
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
   /** Optional richer defaults used only for a brand-new non-AI import. */
   deterministicAttributes?: TAttributes;
+  /** Source-subtype-aware defaults for deterministic imports. */
+  deterministicAttributesFromSource?: (source: {
+    businessTypes?: string[];
+  }) => TAttributes;
   /** Locale-specific vocabulary for sparse no-model imports. */
   deterministicCopy?: Record<
     string,
@@ -297,6 +325,11 @@ export type VerticalConfig<
       attributes: TAttributes,
       locale: string,
     ) => string | null;
+    /** Optional vertical-neutral facts rendered outside the catalog. */
+    businessDetails?: (
+      attributes: TAttributes,
+      locale: string,
+    ) => VerticalBusinessDetails;
   };
   templates: {
     definitions: Record<string, TTemplate>;
@@ -326,6 +359,8 @@ export type VerticalConfig<
   }) => TDraft;
   /** Adds facts that came directly from deterministic source extraction. */
   deterministicItemAttributes?: (item: {
+    price: number | null;
+    currency: string | null;
     availability: boolean | null;
     availabilitySourceUrl?: string | null;
   }) => TItemAttributes;
@@ -343,7 +378,7 @@ export type VerticalConfig<
   rendererCapabilities: (attributes: TAttributes) => {
     showGallery: boolean;
     /** Which existing integration becomes the conversion-first header action. */
-    primaryAction: "booking" | "ordering";
+    primaryAction: "booking" | "ordering" | "quote" | "contact";
     /** Prevents non-appointment trades from inheriting reservation lead capture. */
     bookingRequestMode: "when-missing" | "always" | "never";
   };

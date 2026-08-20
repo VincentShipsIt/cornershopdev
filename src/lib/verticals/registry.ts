@@ -1,6 +1,7 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
 import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
+import { localServiceConfig } from "@/lib/verticals/local-service/config";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import type { VerticalConfig, VerticalId } from "@/lib/verticals/types";
 
@@ -23,6 +24,7 @@ export type ErasedVerticalConfig = VerticalConfig<any, any, any, any>;
 const registry = {
   [Vertical.RESTAURANT]: restaurantConfig,
   [Vertical.BEAUTY]: beautyConfig,
+  [Vertical.LOCAL_SERVICE]: localServiceConfig,
   [Vertical.FOOD_RETAIL]: foodRetailConfig,
 } satisfies Record<VerticalId, ErasedVerticalConfig>;
 
@@ -122,13 +124,43 @@ export function isVerticalPubliclyAccessible(id: VerticalId): boolean {
  * canonical domain, a matching routed hostname and a niche-specific sender.
  */
 export function isVerticalPubliclyLaunched(id: VerticalId): boolean {
+  return verticalLaunchReadiness(id).ready;
+}
+
+export type VerticalLaunchReadiness = {
+  ready: boolean;
+  issues: Array<
+    | "public-access"
+    | "domain"
+    | "sender"
+    | "hostname"
+    | "sender-domain"
+  >;
+};
+
+export function verticalLaunchReadiness(
+  id: VerticalId,
+): VerticalLaunchReadiness {
   const { domain, email, hostnames } = resolveVerticalConfig(id).marketing;
-  return Boolean(
-    isVerticalPubliclyAccessible(id) &&
-      domain &&
-      email &&
-      hostnames.includes(domain),
-  );
+  const issues: VerticalLaunchReadiness["issues"] = [];
+  if (!isVerticalPubliclyAccessible(id)) issues.push("public-access");
+  if (!domain) issues.push("domain");
+  if (!email) issues.push("sender");
+  if (domain && !hostnames.includes(domain)) issues.push("hostname");
+  if (
+    domain &&
+    email &&
+    [email.from, email.replyTo].some((value) => {
+      const emailDomain = value.match(/@([^>\s]+)>?$/)?.[1]?.toLowerCase();
+      return (
+        !emailDomain ||
+        (emailDomain !== domain && !emailDomain.endsWith(`.${domain}`))
+      );
+    })
+  ) {
+    issues.push("sender-domain");
+  }
+  return { ready: issues.length === 0, issues };
 }
 
 /**

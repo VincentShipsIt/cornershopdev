@@ -4,6 +4,7 @@ import { saveAuthorizedSiteDraft } from "@/lib/owner-site-save";
 import { sampleRestaurant } from "@/lib/restaurant";
 import { DraftRevisionConflictError } from "@/lib/site-persistence";
 import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
+import { sampleLocalServiceSiteDraft } from "@/lib/verticals/local-service/fixtures";
 
 let currentRevision = 7;
 const updateSiteDraft = mock(
@@ -116,6 +117,29 @@ describe("owner site save revision contract", () => {
       "Source navigation destinations must match the authenticated source origin and intent",
     );
     expect(updateSiteDraft).not.toHaveBeenCalled();
+  });
+
+  it("persists a schema-valid local-service draft with optimistic concurrency", async () => {
+    const response = await saveAuthorizedSiteDraft(
+      sampleLocalServiceSiteDraft.slug,
+      { ...access, site: { vertical: Vertical.LOCAL_SERVICE } },
+      {
+        ...sampleLocalServiceSiteDraft,
+        expectedRevision: currentRevision,
+      },
+      updateSiteDraft,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ revision: 8 });
+    expect(updateSiteDraft).toHaveBeenCalledWith(
+      sampleLocalServiceSiteDraft.slug,
+      expect.objectContaining({
+        attributes: expect.objectContaining({ tradeType: "electrician" }),
+      }),
+      Vertical.LOCAL_SERVICE,
+      expect.objectContaining({ expectedRevision: 7 }),
+    );
   });
 });
 

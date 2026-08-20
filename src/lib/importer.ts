@@ -11,6 +11,7 @@ import {
   type ReconstructionEvidence,
 } from "@/lib/source-reconstruction";
 import type {
+  IntegrationLinkType,
   LinkClassificationHint,
   ProviderDefinition,
   VerticalConfig,
@@ -34,13 +35,14 @@ const bareDomainPattern =
 export type ExtractedLink = {
   label: string;
   url: string;
-  type: "booking" | "ordering" | "delivery" | "social";
+  type: IntegrationLinkType;
   provider: string | null;
 };
 
 export type ExtractedSite = {
   source: string;
   sourceUrl: string | null;
+  businessTypes?: string[];
   sourceLocale: string | null;
   name: string;
   description: string;
@@ -448,7 +450,7 @@ function classifyLink(
   );
 }
 
-function extractLinks(
+export function extractSourceLinks(
   html: string,
   baseUrl: URL,
   providers: ProviderDefinition[],
@@ -488,6 +490,10 @@ function extractLinks(
           label ||
           (type === "booking"
             ? "Book a table"
+            : type === "quote"
+              ? "Request a quote"
+              : type === "contact"
+                ? "Contact us"
             : type === "social"
               ? "Follow us"
               : "Order online"),
@@ -551,6 +557,7 @@ export async function inspectSource(
     return {
       source,
       sourceUrl: null,
+      businessTypes: [],
       sourceLocale: null,
       name: source,
       description: "",
@@ -601,7 +608,7 @@ export async function inspectSource(
     .slice(0, MAX_SOURCE_TEXT_CHARS);
   const links = [html, ...discoveredPages.map((page) => page.html)]
     .flatMap((pageHtml) =>
-      extractLinks(
+      extractSourceLinks(
         pageHtml,
         finalUrl,
         vertical.providers,

@@ -69,7 +69,7 @@ const absoluteSiteImageUrlSchema = z.url().superRefine((value, context) => {
 
 export const siteImageUrlSchema = z.union([
   absoluteSiteImageUrlSchema,
-  z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
+  z.string().regex(/^\/(?!\/)[a-zA-Z0-9/_\-.]+$/),
 ]);
 
 export const supportedCurrencySchema = z.enum([
@@ -141,7 +141,14 @@ export const safeExternalHttpsUrlSchema = z.url().superRefine((value, context) =
 });
 
 export const integrationSchema = z.object({
-  type: z.enum(["booking", "ordering", "delivery", "social"]),
+  type: z.enum([
+    "booking",
+    "ordering",
+    "delivery",
+    "social",
+    "quote",
+    "contact",
+  ]),
   label: z.string().trim().min(1).max(60),
   provider: z.string().trim().min(1).max(60).nullable().default(null),
   url: safeExternalHttpsUrlSchema,
