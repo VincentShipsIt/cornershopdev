@@ -7,6 +7,7 @@ import type { RestaurantDraft } from "@/lib/restaurant";
 import { applyRegeneratedRestaurantTranslation } from "@/lib/restaurant-menu-editor";
 import { repairPalette } from "@/lib/source-reconstruction";
 import { restaurantTranslationCandidateSchema } from "@/lib/verticals/restaurant/schema";
+import { supportedCurrencySchema } from "@/lib/verticals/schema";
 import type {
   VerticalConfig,
   VerticalTemplateDefinition,
@@ -62,6 +63,10 @@ type SiteDraftShape<
 type PromptVerticalConfig = Pick<VerticalConfig, "prompt" | "vocabulary">;
 
 type ImagePromptVerticalConfig = Pick<VerticalConfig, "imageEnhancement">;
+
+export type SiteDraftGenerationDependencies = {
+  generateText?: typeof generateText;
+};
 
 export const SHARED_SKELETON = `Rules:
 - Never invent booking, ordering, delivery, address, phone, email, opening-hour, availability, allergen, service, or price facts.
@@ -263,19 +268,31 @@ export function deterministicDraft<
     ? source.catalogSections.map((section) => ({
         name: section.name === "Catalog" ? catalogName : section.name,
         description: section.description,
-        items: section.items.map((item) => ({
-          name: item.name,
-          description: item.description,
-          price: item.price,
-          currency: item.currency ?? "EUR",
-          available: item.availability,
-          attributes:
-            vertical.deterministicItemAttributes?.(item) ??
-            vertical.itemAttributeDefaults,
-          imageUrl: item.imageUrl,
-          originalImageUrl: item.imageUrl,
-          imageProvenance: item.imageUrl ? "official" : null,
-        })),
+        items: section.items.map((item) => {
+          const currency = supportedCurrencySchema.safeParse(item.currency);
+          const sourceBackedPrice =
+            item.price !== null && currency.success ? item.price : null;
+          const deterministicItem = {
+            ...item,
+            price: sourceBackedPrice,
+            currency: currency.success ? currency.data : null,
+          };
+          return {
+            name: item.name,
+            description: item.description,
+            price: sourceBackedPrice,
+            // Unpriced rows retain the shared draft schema's inert display
+            // default, but no amount can acquire a source-unknown currency.
+            currency: currency.success ? currency.data : undefined,
+            available: item.availability,
+            attributes:
+              vertical.deterministicItemAttributes?.(deterministicItem) ??
+              vertical.itemAttributeDefaults,
+            imageUrl: item.imageUrl,
+            originalImageUrl: item.imageUrl,
+            imageProvenance: item.imageUrl ? "official" : null,
+          };
+        }),
       }))
     : [
         {
@@ -363,10 +380,17 @@ export async function generateSiteDraft<
 >(
   source: ExtractedSite,
   vertical: VerticalConfig<TAttributes, TItemAttributes, TTemplate, TDraft>,
+  dependencies: SiteDraftGenerationDependencies = {},
 ): Promise<TDraft> {
-  if (!aiIsConfigured()) return deterministicDraft(source, vertical);
+  if (
+    vertical.draftGenerationStrategy === "deterministic-only" ||
+    !aiIsConfigured()
+  ) {
+    return deterministicDraft(source, vertical);
+  }
 
-  const { output } = await generateText({
+  const runGenerateText = dependencies.generateText ?? generateText;
+  const { output } = await runGenerateText({
     model: getTextModel(),
     output: Output.object({
       schema: vertical.draftSchema,

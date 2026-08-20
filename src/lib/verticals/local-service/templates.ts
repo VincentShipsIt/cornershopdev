@@ -23,40 +23,40 @@ export const localServiceTemplates: Record<
   LocalServiceTemplate
 > = {
   plumber: template("plumber", "split", "stack", false, {
-    catalogEyebrow: "Plumbing services",
-    catalogHeading: "Clear help for leaks, heating and installations.",
-    featuredHeading: "Recent work",
-    featuredSubheading: "Completed plumbing projects, shown honestly.",
+    catalogEyebrow: "Plumber",
+    catalogHeading: "Services listed by the business.",
+    featuredHeading: "Projects",
+    featuredSubheading: "Project information provided by the business.",
   }),
   electrician: template("electrician", "split", "columns", false, {
-    catalogEyebrow: "Electrical services",
-    catalogHeading: "Safe, qualified work for homes and businesses.",
-    featuredHeading: "Recent work",
-    featuredSubheading: "Installations and repairs from the field.",
+    catalogEyebrow: "Electrician",
+    catalogHeading: "Services listed by the business.",
+    featuredHeading: "Projects",
+    featuredSubheading: "Project information provided by the business.",
   }),
   builder: template("builder", "immersive", "cards", true, {
-    catalogEyebrow: "Building services",
-    catalogHeading: "From repair work to full projects.",
-    featuredHeading: "Project gallery",
-    featuredSubheading: "Finished work and the places it belongs to.",
+    catalogEyebrow: "Builder",
+    catalogHeading: "Services listed by the business.",
+    featuredHeading: "Projects",
+    featuredSubheading: "Project information provided by the business.",
   }),
   repair: template("repair", "card", "stack", false, {
-    catalogEyebrow: "Repair services",
-    catalogHeading: "Diagnose the problem. Explain the fix.",
-    featuredHeading: "Recent repairs",
-    featuredSubheading: "Practical work, documented clearly.",
+    catalogEyebrow: "Repair trade",
+    catalogHeading: "Services listed by the business.",
+    featuredHeading: "Projects",
+    featuredSubheading: "Project information provided by the business.",
   }),
   artisan: template("artisan", "immersive", "cards", true, {
-    catalogEyebrow: "Craft and commissions",
-    catalogHeading: "Made, restored and finished with care.",
-    featuredHeading: "Selected projects",
-    featuredSubheading: "A portfolio of real commissioned work.",
+    catalogEyebrow: "Artisan",
+    catalogHeading: "Services listed by the business.",
+    featuredHeading: "Projects",
+    featuredSubheading: "Project information provided by the business.",
   }),
   "general-trades": template("general-trades", "split", "columns", true, {
-    catalogEyebrow: "Services",
-    catalogHeading: "The work covered, in plain language.",
-    featuredHeading: "Recent projects",
-    featuredSubheading: "Evidence of the work, not stock promises.",
+    catalogEyebrow: "Local trade",
+    catalogHeading: "Services listed by the business.",
+    featuredHeading: "Projects",
+    featuredSubheading: "Project information provided by the business.",
   }),
 };
 
@@ -78,13 +78,24 @@ function template(
     copy: {
       en: copy,
       fr: {
-        catalogEyebrow: "Services",
-        catalogHeading: "Des interventions décrites clairement.",
-        featuredHeading: "Réalisations récentes",
-        featuredSubheading: "Des travaux réels, présentés sans exagération.",
+        catalogEyebrow: tradeLabelFr(id),
+        catalogHeading: "Services indiqués par l’entreprise.",
+        featuredHeading: "Projets",
+        featuredSubheading: "Informations de projet fournies par l’entreprise.",
       },
     },
   };
+}
+
+function tradeLabelFr(id: LocalServiceTradeType): string {
+  return {
+    plumber: "Plombier",
+    electrician: "Électricien",
+    builder: "Entreprise du bâtiment",
+    repair: "Dépannage",
+    artisan: "Artisan",
+    "general-trades": "Entreprise locale",
+  }[id];
 }
 
 export function resolveLocalServiceTemplateFromAttributes(

@@ -252,6 +252,11 @@ export type VerticalConfig<
    * private imports and previews without accidentally inheriting publication.
    */
   publicationEnabled: boolean;
+  /**
+   * Model assistance is the compatibility default. Evidence-sensitive verticals
+   * can opt into deterministic reconstruction and skip text generation entirely.
+   */
+  draftGenerationStrategy?: "model-assisted" | "deterministic-only";
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
   /** Optional richer defaults used only for a brand-new non-AI import. */
@@ -319,7 +324,10 @@ export type VerticalConfig<
       locale: string,
     ) => string | null;
     /** Optional vertical-neutral facts rendered outside the catalog. */
-    businessDetails?: (attributes: TAttributes) => VerticalBusinessDetails;
+    businessDetails?: (
+      attributes: TAttributes,
+      locale: string,
+    ) => VerticalBusinessDetails;
   };
   templates: {
     definitions: Record<string, TTemplate>;

@@ -241,6 +241,9 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
         expect(integrationValues.rows.map((row) => row.value)).toEqual(
           expect.arrayContaining(["QUOTE", "CONTACT"]),
         );
+        expect(integrationValues.rows.map((row) => row.value).slice(-3)).toEqual(
+          ["QUOTE", "CONTACT", "ANALYTICS"],
+        );
       } finally {
         await upgrade?.end().catch(() => undefined);
         await admin.query(

@@ -147,7 +147,12 @@ export function reconstructSource(input: {
   const sourcedBusiness = selectBusinessEntity(jsonEntities, homepageUrl);
   const business = sourcedBusiness?.value ?? null;
   const businessSourceUrl = sourcedBusiness?.sourceUrl ?? homepageUrl;
-  const businessTypes = business ? jsonTypes(business).slice(0, 8) : [];
+  const businessTypes = business
+    ? jsonTypes(business)
+        .map((type) => boundedText(type, 80))
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
 
   const name = firstCandidate([
     jsonStringCandidate(business?.name, "json-ld", businessSourceUrl, business),

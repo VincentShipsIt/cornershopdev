@@ -271,7 +271,24 @@ export function LocalServiceDashboard({
           ))}
         </EditorSection>
 
-        <EditorSection title="Projects" actionLabel="Add project" onAdd={() => change((next) => { next.attributes.projects.push({ title: "New project", description: "", imageUrl: null, location: "" }); })}>
+        <EditorSection
+          title="Projects"
+          actionLabel="Add project"
+          onAdd={() => change((next) => {
+            next.attributes.projects.push({ title: "New project", description: "", imageUrl: null, location: "" });
+            next.attributes.showProjectGallery = true;
+          })}
+        >
+          <label className="mb-4 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.attributes.showProjectGallery}
+              onChange={(event) => change((next) => {
+                next.attributes.showProjectGallery = event.target.checked;
+              })}
+            />
+            Show project gallery
+          </label>
           <div className="grid gap-4 md:grid-cols-2">
             {draft.attributes.projects.map((project, index) => (
               <Card key={`project-${index}`}><CardContent className="grid gap-3 pt-2"><Input aria-label="Project title" value={project.title} onChange={(event) => change((next) => { next.attributes.projects[index].title = event.target.value; })} /><Input aria-label="Project location" value={project.location} placeholder="Location" onChange={(event) => change((next) => { next.attributes.projects[index].location = event.target.value; })} /><Textarea aria-label="Project description" value={project.description} onChange={(event) => change((next) => { next.attributes.projects[index].description = event.target.value; })} /><Input aria-label="Project image URL" value={project.imageUrl ?? ""} placeholder="https://…" onChange={(event) => change((next) => { next.attributes.projects[index].imageUrl = event.target.value || null; })} /><Button variant="destructive" size="sm" onClick={() => change((next) => { next.attributes.projects.splice(index, 1); })}><Trash2 /> Remove project</Button></CardContent></Card>

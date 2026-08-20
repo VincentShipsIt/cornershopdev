@@ -149,6 +149,7 @@ describe("site brand image security", () => {
     "https://service.internal./logo.svg",
     "https://metadata.google.internal./logo.svg",
     "https://192.168.1.1./logo.svg",
+    "//images.example/logo.svg",
   ])("rejects unsafe brand image %s before CSS rendering", (logoUrl) => {
     expect(siteImageUrlSchema.safeParse(logoUrl).success).toBe(false);
   });

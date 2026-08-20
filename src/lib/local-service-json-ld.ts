@@ -9,6 +9,30 @@ const schemaTypes = {
   "general-trades": "HomeAndConstructionBusiness",
 } as const;
 
+const schemaDayCodes: Record<string, string> = {
+  monday: "Mo",
+  mon: "Mo",
+  lundi: "Mo",
+  tuesday: "Tu",
+  tue: "Tu",
+  mardi: "Tu",
+  wednesday: "We",
+  wed: "We",
+  mercredi: "We",
+  thursday: "Th",
+  thu: "Th",
+  jeudi: "Th",
+  friday: "Fr",
+  fri: "Fr",
+  vendredi: "Fr",
+  saturday: "Sa",
+  sat: "Sa",
+  samedi: "Sa",
+  sunday: "Su",
+  sun: "Su",
+  dimanche: "Su",
+};
+
 type LocalServiceJsonLd = {
   "@context": "https://schema.org";
   "@type": string;
@@ -80,9 +104,10 @@ export function buildLocalServiceJsonLd(
       (integration) => integration.enabled && integration.type === "social",
     )
     .map((integration) => integration.url);
-  const hours = draft.businessHours
-    .map((entry) => `${entry.days} ${entry.hours}`.trim())
-    .filter(Boolean);
+  const hours = draft.businessHours.flatMap((entry) => {
+    const canonical = canonicalOpeningHours(entry.days, entry.hours);
+    return canonical ? [canonical] : [];
+  });
 
   return compact({
     "@context": "https://schema.org",
@@ -128,6 +153,43 @@ export function buildLocalServiceJsonLd(
     sameAs: socialLinks.length > 0 ? socialLinks : undefined,
     potentialAction: actions.length > 0 ? actions : undefined,
   });
+}
+
+function canonicalOpeningHours(days: string, hours: string): string | null {
+  const canonicalDays = schemaOpeningDays(days);
+  const timeRange = hours.trim().match(
+    /^([01]?\d|2[0-3]):([0-5]\d)\s*[-–—]\s*([01]?\d|2[0-3]):([0-5]\d)$/,
+  );
+  if (!canonicalDays || !timeRange) return null;
+  const [, openHour, openMinute, closeHour, closeMinute] = timeRange;
+  const opens = `${openHour.padStart(2, "0")}:${openMinute}`;
+  const closes = `${closeHour.padStart(2, "0")}:${closeMinute}`;
+  return `${canonicalDays} ${opens}-${closes}`;
+}
+
+function schemaOpeningDays(value: string): string | null {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  if (/^(?:every day|daily|tous les jours)$/.test(normalized)) return "Mo-Su";
+
+  const range = normalized.match(
+    /^(?:du\s+)?([a-z]+)\s*(?:-|–|—|to|through|au)\s*([a-z]+)$/,
+  );
+  if (range?.[1] && range[2]) {
+    const start = schemaDayCodes[range[1]];
+    const end = schemaDayCodes[range[2]];
+    return start && end ? `${start}-${end}` : null;
+  }
+
+  const parts = normalized
+    .split(/\s*(?:,|;|&|\band\b|\bet\b)\s*/)
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  const codes = parts.map((part) => schemaDayCodes[part]);
+  return codes.every(Boolean) ? codes.join(",") : null;
 }
 
 export function serializeLocalServiceJsonLd(draft: SiteDraftView): string {

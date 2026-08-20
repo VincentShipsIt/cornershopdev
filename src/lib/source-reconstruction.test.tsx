@@ -31,6 +31,41 @@ async function fixture(name: string): Promise<string> {
 }
 
 describe("deterministic source reconstruction", () => {
+  it("bounds each JSON-LD business type before generation input", () => {
+    const longType = `Plumber${"x".repeat(200)}`;
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `<script type="application/ld+json">${JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": [
+            longType,
+            "Electrician",
+            "GeneralContractor",
+            "RoofingContractor",
+            "Locksmith",
+            "HVACBusiness",
+            "HousePainter",
+            "ProfessionalService",
+            "LocalBusiness",
+          ],
+          name: "Bounded types",
+        })}</script>`,
+        url: new URL("https://bounded-types.example/"),
+      },
+      fallbackName: "bounded-types.example",
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.businessTypes).toHaveLength(8);
+    expect(reconstructed.businessTypes[0]).toBe(
+      longType.toLowerCase().slice(0, 80),
+    );
+    expect(
+      reconstructed.businessTypes.every((type) => type.length <= 80),
+    ).toBe(true);
+  });
+
   it("recovers multilingual structured facts, branding, navigation, and a bounded menu with evidence", async () => {
     const html = await fixture("french-restaurant.html");
     const reconstructed = reconstructSource({

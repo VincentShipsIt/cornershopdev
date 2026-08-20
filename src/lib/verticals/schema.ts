@@ -69,7 +69,7 @@ const absoluteSiteImageUrlSchema = z.url().superRefine((value, context) => {
 
 export const siteImageUrlSchema = z.union([
   absoluteSiteImageUrlSchema,
-  z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
+  z.string().regex(/^\/(?!\/)[a-zA-Z0-9/_\-.]+$/),
 ]);
 
 export const supportedCurrencySchema = z.enum([

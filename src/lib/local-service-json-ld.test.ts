@@ -14,8 +14,8 @@ describe("local-service JSON-LD", () => {
       name: "Harbour Electrical",
       telephone: "+356 7999 1122",
       openingHours: [
-        "Monday–Friday 08:00–18:00",
-        "Saturday 08:00–13:00",
+        "Mo-Fr 08:00-18:00",
+        "Sa 08:00-13:00",
       ],
     });
     expect(jsonLd.areaServed?.map(({ name }) => name)).toEqual([
@@ -31,6 +31,18 @@ describe("local-service JSON-LD", () => {
       "https://wa.me/35679991122",
       "https://example.com/harbour-electrical/quote",
     ]);
+  });
+
+  it("omits display-only or malformed hours from structured data", () => {
+    const jsonLd = buildLocalServiceJsonLd({
+      ...sampleLocalServiceSiteDraft,
+      businessHours: [
+        { days: "Sur rendez-vous", hours: "Appelez-nous" },
+        { days: "lundi–vendredi", hours: "8:00–17:30" },
+      ],
+    });
+
+    expect(jsonLd.openingHours).toEqual(["Mo-Fr 08:00-17:30"]);
   });
 
   it("escapes tag openings before inserting JSON-LD into a script tag", () => {

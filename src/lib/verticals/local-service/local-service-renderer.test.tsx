@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ImportStudio } from "@/app/create/import-studio";
 import {
@@ -6,7 +6,11 @@ import {
   reconcileLocalServiceDraftAfterSave,
 } from "@/app/dashboard/local-service-dashboard";
 import { SiteRenderer } from "@/components/site-renderer";
-import { generateSiteDraft } from "@/lib/ai/site-generation";
+import {
+  deterministicDraft,
+  generateSiteDraft,
+  type SiteDraftGenerationDependencies,
+} from "@/lib/ai/site-generation";
 import { FACTORY_BRAND } from "@/lib/brand";
 import {
   extractSourceLinks,
@@ -74,6 +78,7 @@ describe("local-service surfaces", () => {
     expect(html).toContain("Draft revision 7");
     expect(html).toContain("Private pilot · publishing disabled");
     expect(html).toContain("Services, proof and contact.");
+    expect(html).toContain("Show project gallery");
     expect(html).not.toContain(">Publish<");
   });
 
@@ -115,8 +120,11 @@ describe("local-service surfaces", () => {
     expect(reconciled.hadNewerEdits).toBe(true);
   });
 
-  it("reconstructs a sourced French plumber preview without a model or invented claims", async () => {
-    delete process.env.OPENROUTER_API_KEY;
+  it("reconstructs a sourced French plumber preview without invoking the configured model", async () => {
+    process.env.OPENROUTER_API_KEY = "configured-but-unused";
+    const modelGenerate = mock(async () => {
+      throw new Error("LOCAL_SERVICE must not invoke text generation");
+    });
     const sourceUrl = new URL("https://atelier-riviere.example/");
     const fixture = await Bun.file(
       new URL("../../__fixtures__/importer/french-plumber.html", import.meta.url),
@@ -144,7 +152,12 @@ describe("local-service surfaces", () => {
       ...reconstructed,
     };
 
-    const draft = await generateSiteDraft(extracted, localServiceConfig);
+    const draft = await generateSiteDraft(extracted, localServiceConfig, {
+      generateText:
+        modelGenerate as SiteDraftGenerationDependencies["generateText"],
+    });
+    expect(modelGenerate).not.toHaveBeenCalled();
+    expect(draft).toEqual(deterministicDraft(extracted, localServiceConfig));
     const html = renderToStaticMarkup(
       <SiteRenderer draft={draft} vertical={Vertical.LOCAL_SERVICE} />,
     );
@@ -252,7 +265,76 @@ describe("local-service surfaces", () => {
     expect(html).toContain("Remplacement de robinetterie");
     expect(html).toContain("bonjour@atelier-riviere.example");
     expect(html).toContain("Demander un devis");
+    expect(html).toContain("Services indiqués par l’entreprise.");
     expect(html).not.toContain("Emergency callout");
     expect(html).not.toContain("Number of people");
   });
+
+  it("localizes evidence-backed availability labels in French", () => {
+    const html = renderToStaticMarkup(
+      <SiteRenderer
+        draft={{
+          ...sampleLocalServiceSiteDraft,
+          defaultLocale: "fr",
+          attributes: {
+            ...sampleLocalServiceSiteDraft.attributes,
+            availabilityPosture: "scheduled",
+          },
+        }}
+        vertical={Vertical.LOCAL_SERVICE}
+        locale="fr"
+      />,
+    );
+
+    expect(html).toContain("Interventions planifiées");
+    expect(html).not.toContain("Scheduled work");
+  });
+
+  it.each([
+    ["Plumber", "plumber"],
+    ["Electrician", "electrician"],
+    ["GeneralContractor", "builder"],
+    ["Locksmith", "repair"],
+    ["HousePainter", "artisan"],
+    ["LocalBusiness", "general-trades"],
+  ] as const)(
+    "keeps sparse %s template copy subtype-only",
+    (businessType, tradeType) => {
+      const draft = deterministicDraft(
+        {
+          source: "Sparse trade",
+          sourceUrl: "https://sparse-trade.example/",
+          businessTypes: [businessType],
+          sourceLocale: "en",
+          name: "Sparse trade",
+          description: "",
+          address: "",
+          phone: "",
+          email: "",
+          businessHours: [],
+          heroImageUrl: null,
+          pageText: "Sparse trade",
+          links: [],
+        },
+        localServiceConfig,
+      );
+      const html = renderToStaticMarkup(
+        <SiteRenderer draft={draft} vertical={Vertical.LOCAL_SERVICE} />,
+      ).toLowerCase();
+
+      expect(draft.attributes.tradeType).toBe(tradeType);
+      for (const unsupportedClaim of [
+        "safe, qualified",
+        "leaks, heating",
+        "installations and repairs",
+        "finished with care",
+        "completed plumbing",
+        "finished work",
+        "real commissioned work",
+        "recent work",
+      ]) {
+        expect(html).not.toContain(unsupportedClaim);
+      }
+    },
+  );
 });

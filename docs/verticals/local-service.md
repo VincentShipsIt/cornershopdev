@@ -32,16 +32,24 @@ credentials, licences, insurance, guarantees, project outcomes, WhatsApp
 numbers, quote tools, and prices. Deterministic imports default every trust and
 availability field to empty or `not-stated`.
 
-Prompt instructions are not the trust boundary. After any configured model
-returns, `bindGeneratedLocalServiceDraftToEvidence` replaces identity, locale,
-branding, contact details, hours, integrations, catalog/services, prices,
-availability, emergency posture, areas, credentials, insurance, trust signals,
-and projects with the deterministic reconstruction. The model may only choose
-whether an already source-backed project gallery is shown. LOCAL_SERVICE does
-not yet have `current`/`stale`/`draft` translation review state, so generated
-translation overlays are discarded rather than stored with an implied approval.
-They may be introduced only alongside explicit owner review and publication
-gates.
+Prompt instructions are not the trust boundary. LOCAL_SERVICE declares the
+`deterministic-only` draft-generation strategy, so `generateSiteDraft` skips
+text generation even when OpenRouter is configured. This avoids sending source
+content to a model and avoids model latency and cost. The
+`bindGeneratedLocalServiceDraftToEvidence` hook remains a defence-in-depth
+boundary for direct callers and tests: it replaces identity, locale, branding,
+contact details, hours, integrations, catalog/services, prices, availability,
+emergency posture, areas, credentials, insurance, trust signals, and projects
+with the deterministic reconstruction. LOCAL_SERVICE does not yet have
+`current`/`stale`/`draft` translation review state, so generated translation
+overlays are discarded rather than stored with an implied approval. They may be
+introduced only alongside explicit owner review and publication gates.
+
+Template headings identify the trade subtype and the source of the displayed
+information only. They do not imply credentials, safety, quality, covered
+services, completed work, or outcomes. Structured opening hours are emitted
+only when display rows can be converted to canonical Schema.org day and time
+tokens; ambiguous rows remain visible to customers but are omitted from JSON-LD.
 
 ## Rendering and SEO
 

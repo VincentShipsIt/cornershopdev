@@ -13,13 +13,22 @@ separate boundaries:
 3. `deterministicDraft` validates the recovered data through the selected
    vertical schema before persistence.
 
+`LOCAL_SERVICE` is deterministic-only even when `OPENROUTER_API_KEY` exists.
+Its vertical strategy returns the validated deterministic draft before model
+selection or `generateText`, so a plumber or artisan import makes zero text-model
+calls and incurs no model latency or cost. Existing verticals retain the shared
+model-assisted default.
+
 ## Accepted evidence
 
 - Business identity and contact data: JSON-LD, metadata, semantic address
   markup, and explicit `tel:`/`mailto:` links. Email candidates are parsed with
   the account email schema; malformed or query-suffixed raw values are skipped,
   while valid `mailto:` addresses are normalized before evidence is recorded.
-- Hours: JSON-LD `openingHoursSpecification` or `openingHours` values.
+- Hours: JSON-LD `openingHoursSpecification` or `openingHours` values. The
+  customer-facing source wording is preserved, while LOCAL_SERVICE structured
+  data emits only rows that safely canonicalize to Schema.org day codes and
+  `HH:MM-HH:MM`; ambiguous display labels are omitted from JSON-LD.
 - Catalog candidates: schema.org `MenuSection`, `MenuItem`, `OfferCatalog`,
   `Product`, or `Service` entities. Unsupported or currency-less prices remain
   unset; missing items are never generated. Availability is nullable and stays
@@ -28,9 +37,10 @@ separate boundaries:
 - Business subtype: schema.org local-service types such as `Plumber`,
   `Electrician`, `GeneralContractor`, `RoofingContractor`, `HVACBusiness`,
   `Locksmith`, `HousePainter`, and `ProfessionalService` are accepted as the
-  business entity and retained as evidence. The `LOCAL_SERVICE` deterministic
-  adapter maps only those explicit types to its bounded trade enum; unsupported
-  or missing types remain `general-trades`.
+  business entity and retained as evidence. At most eight types are retained and
+  each is capped at 80 characters before prompt or draft use. The
+  `LOCAL_SERVICE` deterministic adapter maps only those explicit types to its
+  bounded trade enum; unsupported or missing types remain `general-trades`.
 - Branding: JSON-LD and explicit logo/favicon/hero markup plus CSS custom
   properties and `theme-color` metadata. Colour pairs are normalized and
   repaired to WCAG contrast thresholds before rendering.
@@ -81,8 +91,8 @@ business field.
 ## Bounds and non-goals
 
 - 24 JSON-LD blocks, 240 traversed entities, 12 navigation links, 24 assets,
-  80 evidence records, 12 catalog sections, 40 items per section, and 120 items
-  total.
+  80 evidence records, 8 business types of at most 80 characters each, 12
+  catalog sections, 40 items per section, and 120 items total.
 - Malformed JSON-LD or HTML is ignored locally; invalid numeric entities become
   replacement characters and valid independent evidence can still produce a
   preview.

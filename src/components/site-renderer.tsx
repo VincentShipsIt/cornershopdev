@@ -132,7 +132,7 @@ export function SiteRenderer({
   const fulfillmentNote =
     config.presentation.fulfillmentNote?.(draft.attributes, locale) ?? null;
   const businessDetails =
-    config.presentation.businessDetails?.(draft.attributes) ?? null;
+    config.presentation.businessDetails?.(draft.attributes, locale) ?? null;
   const copy = getTemplateCopy(template, locale);
   const picturedItems = draft.catalogSections
     .flatMap((section) => section.items)

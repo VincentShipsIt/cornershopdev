@@ -352,6 +352,7 @@ export function ImportStudio({
   function useDemo() {
     if (vertical === Vertical.LOCAL_SERVICE) {
       setSource(sampleLocalServiceSiteDraft.name);
+      setPreviewSource(sampleLocalServiceSiteDraft.name);
       setError(null);
       complete(
         {

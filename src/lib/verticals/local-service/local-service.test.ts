@@ -203,4 +203,45 @@ describe("local-service vertical", () => {
     expect(bound.integrations).toEqual([]);
     expect(bound.translations).toEqual([]);
   });
+
+  it("drops a malformed source amount when its currency is absent", () => {
+    const draft = deterministicDraft(
+      {
+        source: "Malformed price source",
+        sourceUrl: "https://malformed-price.example/",
+        sourceLocale: "en",
+        name: "Malformed price source",
+        description: "A sparse source with an amount but no supported currency.",
+        address: "",
+        phone: "",
+        email: "",
+        businessHours: [],
+        heroImageUrl: null,
+        pageText: "Malformed price source",
+        links: [],
+        catalogSections: [
+          {
+            name: "Services",
+            description: "",
+            items: [
+              {
+                name: "Unqualified amount",
+                description: "",
+                price: 95,
+                currency: null,
+                availability: null,
+                imageUrl: null,
+              },
+            ],
+          },
+        ],
+      },
+      localServiceConfig,
+    );
+
+    expect(draft.catalogSections[0]?.items[0]).toMatchObject({
+      price: null,
+      attributes: { pricingModel: "not-stated" },
+    });
+  });
 });

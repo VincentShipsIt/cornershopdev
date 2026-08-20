@@ -32,16 +32,30 @@ const tradeLabels: Record<LocalServiceTradeType, string> = {
 };
 
 const availabilityLabels: Record<
-  LocalServiceAttributes["availabilityPosture"],
-  string | null
+  "en" | "fr",
+  Record<LocalServiceAttributes["availabilityPosture"], string | null>
 > = {
-  "not-stated": null,
-  scheduled: "Scheduled work",
-  "same-day": "Same-day availability stated",
-  "emergency-callout": "Emergency callouts stated",
-  "24-7-emergency": "24/7 emergency service stated",
-  "by-appointment": "By appointment",
+  en: {
+    "not-stated": null,
+    scheduled: "Scheduled work",
+    "same-day": "Same-day availability stated",
+    "emergency-callout": "Emergency callouts stated",
+    "24-7-emergency": "24/7 emergency service stated",
+    "by-appointment": "By appointment",
+  },
+  fr: {
+    "not-stated": null,
+    scheduled: "Interventions planifiées",
+    "same-day": "Disponibilité le jour même indiquée",
+    "emergency-callout": "Dépannages d’urgence indiqués",
+    "24-7-emergency": "Service d’urgence 24 h/24 indiqué",
+    "by-appointment": "Sur rendez-vous",
+  },
 };
+
+function localServiceLanguage(locale: string): "en" | "fr" {
+  return locale.toLowerCase().split("-")[0] === "fr" ? "fr" : "en";
+}
 
 /**
  * LOCAL_SERVICE treats model output as an untrusted presentation proposal.
@@ -78,14 +92,14 @@ export const localServiceDictionaryExtensions = {
     reservationsVia: "Contact via",
     bookingPartner: "our scheduling partner",
     seasonalNotice: "Service coverage and availability may change. Confirm before booking work.",
-    heroImageAlt: "Work by",
+    heroImageAlt: "Image for",
     bookingHeading: "Contact",
     bookingRequestHeading: "Request the work",
     bookingRequestIntro: "Use the listed phone, WhatsApp or quote tool to describe the job.",
     serviceAreasHeading: "Service areas",
     credentialsHeading: "Credentials and cover",
     trustHeading: "Why customers call",
-    projectsHeading: "Completed projects",
+    projectsHeading: "Projects",
   },
   fr: {
     language: "Langue",
@@ -93,7 +107,7 @@ export const localServiceDictionaryExtensions = {
     bookingPartner: "notre outil de contact",
     seasonalNotice:
       "Les zones desservies et les disponibilités peuvent évoluer. Confirmez avant les travaux.",
-    heroImageAlt: "Travaux de",
+    heroImageAlt: "Image de",
     bookingHeading: "Contact",
     bookingRequestHeading: "Demander une intervention",
     bookingRequestIntro:
@@ -101,7 +115,7 @@ export const localServiceDictionaryExtensions = {
     serviceAreasHeading: "Zones desservies",
     credentialsHeading: "Qualifications et assurance",
     trustHeading: "Éléments de confiance",
-    projectsHeading: "Réalisations",
+    projectsHeading: "Projets",
   },
 } satisfies Record<string, Record<string, string>>;
 
@@ -136,6 +150,7 @@ export const localServiceConfig = {
   vocabulary: { catalog: "Services", section: "Service group", item: "Service" },
   marketing: localServiceMarketing,
   publicationEnabled: false,
+  draftGenerationStrategy: "deterministic-only",
   attributesSchema: localServiceAttributesSchema,
   attributeDefaults,
   deterministicAttributes: attributeDefaults,
@@ -200,31 +215,44 @@ export const localServiceConfig = {
       if (attributes.emergencyEligible) badges.push("Emergency callout");
       return badges;
     },
-    businessDetails: (attributes) => ({
-      availability: availabilityLabels[attributes.availabilityPosture],
-      serviceAreas: attributes.serviceAreas,
-      credentials: attributes.credentials.map((credential) =>
-        [credential.name, credential.issuer, credential.reference]
-          .filter(Boolean)
-          .join(" · "),
-      ),
-      trustSignals: [
-        ...(attributes.insuranceStatus === "insured"
-          ? [attributes.insuranceDetail || "Insurance stated by the business"]
-          : attributes.insuranceStatus === "not-insured"
-            ? ["Business states that it is not insured"]
-            : []),
-        ...attributes.trustSignals.map((signal) =>
-          [signal.label, signal.detail].filter(Boolean).join(" · "),
+    businessDetails: (attributes, locale) => {
+      const language = localServiceLanguage(locale);
+      return {
+        availability:
+          availabilityLabels[language][attributes.availabilityPosture],
+        serviceAreas: attributes.serviceAreas,
+        credentials: attributes.credentials.map((credential) =>
+          [credential.name, credential.issuer, credential.reference]
+            .filter(Boolean)
+            .join(" · "),
         ),
-      ],
-      projects: attributes.projects.map((project) => ({
-        title: project.title,
-        description: project.description,
-        imageUrl: project.imageUrl,
-        location: project.location,
-      })),
-    }),
+        trustSignals: [
+          ...(attributes.insuranceStatus === "insured"
+            ? [
+                attributes.insuranceDetail ||
+                  (language === "fr"
+                    ? "Assurance indiquée par l’entreprise"
+                    : "Insurance stated by the business"),
+              ]
+            : attributes.insuranceStatus === "not-insured"
+              ? [
+                  language === "fr"
+                    ? "L’entreprise indique ne pas être assurée"
+                    : "Business states that it is not insured",
+                ]
+              : []),
+          ...attributes.trustSignals.map((signal) =>
+            [signal.label, signal.detail].filter(Boolean).join(" · "),
+          ),
+        ],
+        projects: attributes.projects.map((project) => ({
+          title: project.title,
+          description: project.description,
+          imageUrl: project.imageUrl,
+          location: project.location,
+        })),
+      };
+    },
   },
   templates: {
     definitions: localServiceTemplates,
@@ -238,7 +266,8 @@ export const localServiceConfig = {
   }),
   bindGeneratedDraftToEvidence: bindGeneratedLocalServiceDraftToEvidence,
   deterministicItemAttributes: (item) => ({
-    pricingModel: item.price === null ? "not-stated" : "fixed",
+    pricingModel:
+      item.price === null || item.currency === null ? "not-stated" : "fixed",
     priceUnit: "",
     emergencyEligible: false,
   }),
