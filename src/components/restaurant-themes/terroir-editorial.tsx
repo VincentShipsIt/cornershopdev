@@ -1,10 +1,13 @@
 import { formatPrice } from "@/lib/site-draft";
+import { SiteBrand, SourceNavigation } from "@/components/site-brand";
 import {
   fontPairClass,
   itemBadges,
+  sourceBrandPalette,
   themeStyle,
   ThemeAnalytics,
   ThemeBusinessHours,
+  ThemeContact,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -44,19 +47,18 @@ export function TerroirEditorialTheme({
         "relative overflow-hidden font-sans",
         embedded ? "min-h-[760px] rounded-[1.5rem]" : "min-h-screen",
       )}
-      style={themeStyle(tokens)}
+      style={themeStyle(tokens, sourceBrandPalette(draft))}
     >
       <ThemeAnalytics draft={draft} enabled={analyticsEnabled} />
       <header className="grid grid-cols-[1fr_auto] items-center gap-5 border-b border-current/15 px-5 py-5 md:px-10">
-        <a
+        <SiteBrand
+          draft={draft}
           href="#menu"
           className={cn(
             "max-w-[18rem] text-xl leading-none tracking-[-0.035em] md:text-2xl",
             fontPairClass(tokens),
           )}
-        >
-          {draft.name}
-        </a>
+        />
         <div className="flex items-center gap-3">
           <ThemeLocaleNavigation
             locale={locale}
@@ -81,6 +83,7 @@ export function TerroirEditorialTheme({
           )}
         </div>
       </header>
+      <SourceNavigation draft={draft} />
 
       <section className="grid min-h-[74svh] lg:grid-cols-[0.82fr_1.18fr]">
         <div className="flex flex-col justify-between gap-16 px-6 py-10 md:px-10 md:py-14 lg:py-20">
@@ -212,7 +215,7 @@ export function TerroirEditorialTheme({
       <footer className="grid gap-3 border-t border-current/15 px-6 py-7 text-xs opacity-55 sm:grid-cols-3 md:px-10">
         <span>{draft.name}</span>
         <ThemeBusinessHours draft={draft} />
-        <span className="sm:text-right">{draft.address}</span>
+        <ThemeContact draft={draft} className="sm:text-right" />
       </footer>
     </article>
   );

@@ -6,9 +6,13 @@ Cornershopdev turns an existing restaurant websiteâ€”or just a restaurant nameâ€
 
 1. Paste a restaurant URL or name.
 2. Import public website content with SSRF-safe fetching and bounded HTML reads.
-3. Recover the menu, contact details, imagery, and external integrations.
-4. Derive the colour palette from the source branding and select a cuisine-aware layout.
-5. Detect the source language, preserve it as canonical, and generate a complete English translation during the same structured AI pass.
+3. Deterministically recover structured business facts, hours, bounded catalog
+   candidates, relevant navigation, authentic source assets, and field-level
+   provenance before any model is considered.
+4. Recover source logos/favicons and CSS/meta brand colours, repairing contrast
+   where necessary before the palette reaches a renderer.
+5. Detect the source language and preserve it as canonical. When OpenRouter is
+   configured, generate a complete English translation in the structured pass.
 6. Preserve first-party photography and optionally enhance exposure, colour, crop, noise, and clarity without changing the food or venue.
 7. Save a private preview through a durable PostgreSQL-backed Workflow.
 8. Verify ownership through a one-time business-domain email invitation or a concierge-approved owner email.
@@ -160,9 +164,18 @@ fails closed when it is absent or invalid.
 
 ### AI generation
 
-Restaurant crawling, same-origin page discovery, SSRF checks, contact recovery,
-and integration detection run locally without a model. OpenRouter is used only
-to normalize recovered content into a structured restaurant draft:
+Restaurant crawling, same-origin page discovery, SSRF checks, and source
+reconstruction run locally without a model. JSON-LD, metadata, explicit contact
+links, semantic address markup, source navigation, logos/favicons, and CSS/meta
+colours are recovered with bounded parsers. Every accepted fact keeps its source
+URL, extraction method, and excerpt. Structured menu/product/service candidates
+are accepted only when deterministic schema evidence exists.
+
+The persisted draft keeps the repaired palette, logo, favicon, contact details,
+hours, canonical language, source navigation, authentic asset URLs, and the
+evidence records used to recover them. Customer renderers consume that same
+brand data. OpenRouter is optional and used to normalize or enrich the recovered
+content into a structured vertical draft:
 
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_TEXT_MODEL` defaults to `openrouter/auto`
@@ -175,8 +188,9 @@ model must expose `image` output; the default does.
 
 - `OPENROUTER_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image`
 
-Without `OPENROUTER_API_KEY` an import still completes: the draft falls back to
-the deterministic composer and hero enhancement is skipped.
+Without `OPENROUTER_API_KEY` an import still completes with the reconstructed
+business identity, branding, contact details, hours, integrations, and any
+bounded structured catalog candidates. Hero enhancement is skipped.
 
 - `WORKFLOW_ENABLED=true`
 - `WORKFLOW_TARGET_WORLD=@workflow/world-postgres`

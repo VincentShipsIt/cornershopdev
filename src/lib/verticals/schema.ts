@@ -149,6 +149,44 @@ export const businessHoursSchema = z
   .max(14)
   .default([]);
 
+export const sourceDataSchema = z
+  .object({
+    navigation: z
+      .array(
+        z.object({
+          label: z.string().trim().min(1).max(60),
+          url: z.url(),
+        }),
+      )
+      .max(12)
+      .default([]),
+    brandAssets: z
+      .array(
+        z.object({
+          type: z.enum(["logo", "favicon", "hero", "content"]),
+          url: siteImageUrlSchema,
+          sourceUrl: z.url(),
+          provenance: z.literal("official"),
+          evidence: z.enum(["json-ld", "meta", "html", "link", "css"]),
+        }),
+      )
+      .max(24)
+      .default([]),
+    evidence: z
+      .array(
+        z.object({
+          field: z.string().trim().min(1).max(80),
+          value: z.string().max(500),
+          sourceUrl: z.url(),
+          method: z.enum(["json-ld", "meta", "html", "link", "css"]),
+          excerpt: z.string().max(280),
+        }),
+      )
+      .max(80)
+      .default([]),
+  })
+  .default({ navigation: [], brandAssets: [], evidence: [] });
+
 export const translatedCatalogItemSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(320).default(""),
@@ -182,7 +220,10 @@ export const baseSiteDraftCoreShape = {
   description: z.string().min(20).max(500),
   address: z.string().max(220),
   phone: z.string().max(40),
+  email: z.string().email().or(z.literal("")).default(""),
   sourceUrl: z.url().nullable(),
+  logoUrl: siteImageUrlSchema.nullable().default(null),
+  faviconUrl: siteImageUrlSchema.nullable().default(null),
   heroImageUrl: siteImageUrlSchema.nullable(),
   heroOriginalImageUrl: siteImageUrlSchema.nullable().optional(),
   heroImageProvenance: imageProvenanceSchema.nullable().optional(),
@@ -190,7 +231,9 @@ export const baseSiteDraftCoreShape = {
     background: z.string(),
     foreground: z.string(),
     accent: z.string(),
+    accentForeground: z.string().default("#ffffff"),
   }),
+  sourceData: sourceDataSchema,
   autoEnhanceImages: z.boolean().default(true),
   defaultLocale: localeSchema.default("en"),
   businessHours: businessHoursSchema,

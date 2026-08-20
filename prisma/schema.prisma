@@ -197,6 +197,8 @@ model Site {
   sourceUrl                String?
   sourceKey                String?                   @unique
   logoUrl                  String?
+  faviconUrl               String?
+  sourceData               Json                      @default("{}")
   heroImageUrl             String?
   heroOriginalImageUrl     String?
   heroImageProvenance      ImageProvenance?

@@ -4,6 +4,7 @@ import type { ExtractedSite } from "@/lib/importer";
 import { slugify } from "@/lib/restaurant";
 import type { RestaurantDraft } from "@/lib/restaurant";
 import { applyRegeneratedRestaurantTranslation } from "@/lib/restaurant-menu-editor";
+import { repairPalette } from "@/lib/source-reconstruction";
 import { restaurantTranslationCandidateSchema } from "@/lib/verticals/restaurant/schema";
 import type {
   VerticalConfig,
@@ -20,7 +21,10 @@ type SiteDraftShape<
   description: string;
   address: string;
   phone: string;
+  email: string;
   sourceUrl: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
   heroImageUrl: string | null;
   heroOriginalImageUrl?: string | null;
   heroImageProvenance?: "official" | "owner" | "permissioned-ugc" | null;
@@ -28,6 +32,12 @@ type SiteDraftShape<
     background: string;
     foreground: string;
     accent: string;
+    accentForeground: string;
+  };
+  sourceData: {
+    navigation: NonNullable<ExtractedSite["navigation"]>;
+    brandAssets: NonNullable<ExtractedSite["brandAssets"]>;
+    evidence: NonNullable<ExtractedSite["evidence"]>;
   };
   attributes: TAttributes;
   autoEnhanceImages: boolean;
@@ -196,8 +206,40 @@ export function deterministicDraft<
   const name = source.name || source.source;
   const verticalName = vertical.id.toLowerCase();
   const description =
-    source.description ||
-    `A private first look created from the ${verticalName} information currently available.`;
+    source.description.length >= 20
+      ? source.description
+      : `A private preview reconstructed from the source information currently available.`;
+  const fallbackPalette = {
+    ...vertical.presentation.fallbackPalette,
+    accentForeground: "#ffffff",
+  };
+  const palette = source.palette ?? repairPalette({}, fallbackPalette);
+  const catalogSections = source.catalogSections?.length
+    ? source.catalogSections.map((section) => ({
+        name:
+          section.name === "Catalog"
+            ? vertical.vocabulary.catalog
+            : section.name,
+        description: section.description,
+        items: section.items.map((item) => ({
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          currency: item.currency ?? "EUR",
+          available: true,
+          attributes: vertical.itemAttributeDefaults,
+          imageUrl: item.imageUrl,
+          originalImageUrl: item.imageUrl,
+          imageProvenance: item.imageUrl ? "official" : null,
+        })),
+      }))
+    : [
+        {
+          name: vertical.vocabulary.catalog,
+          description: `${vertical.vocabulary.catalog} details were not present in deterministic source markup.`,
+          items: [],
+        },
+      ];
   return vertical.draftSchema.parse({
     slug: slugify(name) || `${verticalName}-preview`,
     name,
@@ -205,28 +247,26 @@ export function deterministicDraft<
     description,
     address: source.address,
     phone: source.phone,
+    email: source.email ?? "",
     sourceUrl: source.sourceUrl,
+    logoUrl: source.logoUrl ?? null,
+    faviconUrl: source.faviconUrl ?? null,
     heroImageUrl: source.heroImageUrl,
     heroOriginalImageUrl: source.heroImageUrl,
     heroImageProvenance: source.heroImageUrl ? "official" : null,
-    palette: {
-      background: "#f4efe5",
-      foreground: "#1d241f",
-      accent: "#a5482d",
+    palette,
+    sourceData: {
+      navigation: source.navigation ?? [],
+      brandAssets: source.brandAssets ?? [],
+      evidence: source.evidence ?? [],
     },
     attributes:
       vertical.deterministicAttributes ?? vertical.attributeDefaults,
     autoEnhanceImages: false,
     defaultLocale: source.sourceLocale ?? "en",
-    businessHours: [],
+    businessHours: source.businessHours ?? [],
     translations: [],
-    catalogSections: [
-      {
-        name: vertical.vocabulary.catalog,
-        description: `${vertical.vocabulary.catalog} details were not available for automatic structuring.`,
-        items: [],
-      },
-    ],
+    catalogSections,
     integrations: source.links,
   });
 }
@@ -255,6 +295,11 @@ ${JSON.stringify({
   phone: source.phone,
   sourceLocale: source.sourceLocale,
   links: source.links,
+  businessHours: source.businessHours,
+  email: source.email,
+  navigation: source.navigation,
+  catalogSections: source.catalogSections,
+  evidence: source.evidence,
 })}
 
 Website text collected from the homepage and relevant same-origin pages:
@@ -289,24 +334,47 @@ export async function generateSiteDraft<
   const normalizedAttributes = vertical.normalizeGeneratedAttributes
     ? vertical.normalizeGeneratedAttributes(attributes, template)
     : attributes;
+  const deterministic = deterministicDraft(source, vertical);
   return vertical.draftSchema.parse({
     ...output,
     slug: slugify(output.name),
     sourceUrl: source.sourceUrl,
+    email: source.email ?? output.email ?? "",
+    logoUrl: source.logoUrl ?? null,
+    faviconUrl: source.faviconUrl ?? null,
     heroImageUrl: source.heroImageUrl,
     heroOriginalImageUrl: source.heroImageUrl,
     heroImageProvenance: source.heroImageUrl ? "official" : null,
     attributes: normalizedAttributes,
+    palette: repairPalette(
+      source.palette ?? output.palette,
+      {
+        ...vertical.presentation.fallbackPalette,
+        accentForeground: "#ffffff",
+      },
+    ),
+    sourceData: {
+      navigation: source.navigation ?? [],
+      brandAssets: source.brandAssets ?? [],
+      evidence: source.evidence ?? [],
+    },
+    businessHours:
+      source.businessHours && source.businessHours.length > 0
+        ? source.businessHours
+        : output.businessHours,
     autoEnhanceImages: true,
-    catalogSections: output.catalogSections.map((section) => ({
-      ...section,
-      items: section.items.map((item) => ({
-        ...item,
-        imageUrl: null,
-        originalImageUrl: null,
-        imageProvenance: null,
-      })),
-    })),
+    catalogSections:
+      source.catalogSections && source.catalogSections.length > 0
+        ? deterministic.catalogSections
+        : output.catalogSections.map((section) => ({
+            ...section,
+            items: section.items.map((item) => ({
+              ...item,
+              imageUrl: null,
+              originalImageUrl: null,
+              imageProvenance: null,
+            })),
+          })),
     integrations:
       source.links.length > 0 ? source.links : output.integrations,
     translations: output.translations.map((translation) => ({

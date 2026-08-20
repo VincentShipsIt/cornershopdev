@@ -98,7 +98,10 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     description: site.description ?? config.presentation.fallbackDescription,
     address: site.address ?? "",
     phone: site.phone ?? "",
+    email: site.email ?? "",
     sourceUrl: site.sourceUrl,
+    logoUrl: site.logoUrl,
+    faviconUrl: site.faviconUrl,
     heroImageUrl: site.heroImageUrl,
     heroOriginalImageUrl: site.heroOriginalImageUrl,
     heroImageProvenance: fromDatabaseImageProvenance(
@@ -108,6 +111,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
       site.draftPalette,
       config.presentation.fallbackPalette,
     ),
+    sourceData: site.sourceData,
     attributes,
     autoEnhanceImages: site.autoEnhanceImages,
     defaultLocale: site.defaultLocale,
@@ -426,7 +430,9 @@ function publishedTheme(
 
 function storedPalette(
   value: Prisma.JsonValue,
-  fallback: SitePaletteView,
+  fallback: Omit<SitePaletteView, "accentForeground"> & {
+    accentForeground?: string;
+  },
 ): SitePaletteView {
   const palette = jsonRecord(value);
   if (
@@ -434,12 +440,19 @@ function storedPalette(
     typeof palette.foreground !== "string" ||
     typeof palette.accent !== "string"
   ) {
-    return fallback;
+    return {
+      ...fallback,
+      accentForeground: fallback.accentForeground ?? "#ffffff",
+    };
   }
   return {
     background: palette.background,
     foreground: palette.foreground,
     accent: palette.accent,
+    accentForeground:
+      typeof palette.accentForeground === "string"
+        ? palette.accentForeground
+        : "#ffffff",
   };
 }
 

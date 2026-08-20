@@ -12,6 +12,25 @@ export type SitePaletteView = {
   background: string;
   foreground: string;
   accent: string;
+  accentForeground?: string;
+};
+
+export type SiteSourceDataView = {
+  navigation: Array<{ label: string; url: string }>;
+  brandAssets: Array<{
+    type: "logo" | "favicon" | "hero" | "content";
+    url: string;
+    sourceUrl: string;
+    provenance: "official";
+    evidence: "json-ld" | "meta" | "html" | "link" | "css";
+  }>;
+  evidence: Array<{
+    field: string;
+    value: string;
+    sourceUrl: string;
+    method: "json-ld" | "meta" | "html" | "link" | "css";
+    excerpt: string;
+  }>;
 };
 
 export const LEGACY_THEME_VERSION = "legacy-v1";
@@ -84,9 +103,13 @@ export type SiteDraftView = {
   description: string;
   address: string;
   phone: string;
+  email?: string;
   sourceUrl: string | null;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
   heroImageUrl: string | null;
   palette: SitePaletteView;
+  sourceData?: SiteSourceDataView;
   defaultLocale: string;
   businessHours: Array<{ days: string; hours: string }>;
   attributes: Record<string, unknown>;

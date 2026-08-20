@@ -1,0 +1,203 @@
+import { afterEach, describe, expect, it } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SiteRenderer } from "@/components/site-renderer";
+import { generateSiteDraft } from "@/lib/ai/site-generation";
+import type { ExtractedSite } from "@/lib/importer";
+import { siteDraftScalarData } from "@/lib/site-persistence";
+import {
+  contrastRatio,
+  reconstructSource,
+  repairPalette,
+  safeSourceAssetUrl,
+} from "@/lib/source-reconstruction";
+import { restaurantConfig } from "@/lib/verticals/restaurant/config";
+
+const fallbackPalette = {
+  background: "#f4efe5",
+  foreground: "#1d241f",
+  accent: "#a5482d",
+  accentForeground: "#ffffff",
+};
+
+const originalKey = process.env.OPENROUTER_API_KEY;
+
+afterEach(() => {
+  if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = originalKey;
+});
+
+async function fixture(name: string): Promise<string> {
+  return Bun.file(new URL(`__fixtures__/importer/${name}`, import.meta.url)).text();
+}
+
+describe("deterministic source reconstruction", () => {
+  it("recovers multilingual structured facts, branding, navigation, and a bounded menu with evidence", async () => {
+    const html = await fixture("french-restaurant.html");
+    const reconstructed = reconstructSource({
+      homepage: { html, url: new URL("https://maisonsafran.example/") },
+      fallbackName: "maisonsafran.example",
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed).toMatchObject({
+      sourceLocale: "fr",
+      name: "Maison Safran",
+      description:
+        "Une table de quartier à Paris, avec une carte courte inspirée par le marché.",
+      address: "12 rue des Fleurs, 75010, Paris, FR",
+      phone: "+33 1 42 00 00 00",
+      email: "bonjour@maisonsafran.example",
+      logoUrl: "https://cdn.maisonsafran.example/logo.svg",
+      faviconUrl: "https://maisonsafran.example/favicon.png",
+      heroImageUrl: "https://cdn.maisonsafran.example/hero.jpg",
+      businessHours: [
+        { days: "Tuesday, Wednesday, Thursday", hours: "12:00–22:30" },
+      ],
+      navigation: [
+        { label: "La carte", url: "https://maisonsafran.example/menu" },
+        {
+          label: "Notre histoire",
+          url: "https://maisonsafran.example/a-propos",
+        },
+      ],
+    });
+    expect(reconstructed.catalogSections).toEqual([
+      {
+        name: "À partager",
+        description: "Pour commencer",
+        items: [
+          {
+            name: "Poireaux vinaigrette",
+            description: "Noisettes torréfiées et moutarde ancienne",
+            price: 11,
+            currency: "EUR",
+            imageUrl: "https://cdn.maisonsafran.example/poireaux.jpg",
+          },
+          {
+            name: "Œuf mayonnaise",
+            description: "Câpres et herbes fraîches",
+            price: 8.5,
+            currency: "EUR",
+            imageUrl: null,
+          },
+        ],
+      },
+    ]);
+    expect(reconstructed.brandAssets.map((asset) => asset.type)).toContain("logo");
+    expect(reconstructed.brandAssets.map((asset) => asset.type)).toContain("favicon");
+    expect(reconstructed.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "name", method: "json-ld" }),
+        expect.objectContaining({ field: "catalog.item", value: "Œuf mayonnaise" }),
+      ]),
+    );
+  });
+
+  it("degrades safely across malformed HTML and JSON-LD without accepting private assets", async () => {
+    const html = await fixture("malformed-spanish-site.html");
+    const reconstructed = reconstructSource({
+      homepage: { html, url: new URL("https://tallerluz.example/") },
+      fallbackName: "tallerluz.example",
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.sourceLocale).toBe("es");
+    expect(reconstructed.name).toBe("Taller Luz");
+    expect(reconstructed.description).toBe(
+      "Cortes, color y cuidado capilar en el centro de Valencia.",
+    );
+    expect(reconstructed.phone).toBe("+34960000000");
+    expect(reconstructed.logoUrl).toBeNull();
+    expect(reconstructed.faviconUrl).toBeNull();
+    expect(reconstructed.heroImageUrl).toBeNull();
+    expect(reconstructed.catalogSections).toEqual([
+      {
+        name: "Catalog",
+        description: "",
+        items: [
+          {
+            name: "Corte y peinado",
+            description: "Lavado, corte personalizado y acabado",
+            price: 35,
+            currency: "EUR",
+            imageUrl: null,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("repairs text and accent contrast while retaining normalized source colours", () => {
+    const palette = repairPalette(
+      { background: "#fff8e8", foreground: "#fffdf8", accent: "#f4d03f" },
+      fallbackPalette,
+    );
+
+    expect(palette.background).toBe("#fff8e8");
+    expect(contrastRatio(palette.background, palette.foreground)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(palette.background, palette.accent)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(palette.accent, palette.accentForeground)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each([
+    "http://images.example/logo.png",
+    "https://user:pass@images.example/logo.png",
+    "https://images.example:8443/logo.png",
+    "https://127.0.0.1/logo.png",
+    "https://169.254.169.254/latest/meta-data/",
+    "https://[::1]/logo.png",
+    "data:image/png;base64,abc",
+  ])("rejects unsafe source asset URL %s", (value) => {
+    expect(safeSourceAssetUrl(value, new URL("https://example.com"))).toBeNull();
+  });
+
+  it("runs fixture HTML through the no-model draft and customer renderer", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    const sourceUrl = new URL("https://maisonsafran.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: await fixture("french-restaurant.html"),
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+    const extracted: ExtractedSite = {
+      source: sourceUrl.toString(),
+      sourceUrl: sourceUrl.toString(),
+      pageText: reconstructed.description,
+      links: [],
+      ...reconstructed,
+    };
+
+    const draft = await generateSiteDraft(extracted, restaurantConfig);
+    const persisted = siteDraftScalarData(draft, restaurantConfig.id);
+    const markup = renderToStaticMarkup(
+      <SiteRenderer draft={draft} vertical={restaurantConfig.id} />,
+    );
+
+    expect(draft.autoEnhanceImages).toBe(false);
+    expect(draft.defaultLocale).toBe("fr");
+    expect(draft.sourceData.evidence.length).toBeGreaterThan(5);
+    expect(draft.catalogSections[0]?.items).toHaveLength(2);
+    expect(persisted).toMatchObject({
+      email: "bonjour@maisonsafran.example",
+      logoUrl: "https://cdn.maisonsafran.example/logo.svg",
+      faviconUrl: "https://maisonsafran.example/favicon.png",
+      sourceData: expect.objectContaining({
+        navigation: expect.any(Array),
+        brandAssets: expect.any(Array),
+        evidence: expect.any(Array),
+      }),
+    });
+    expect(markup).toContain("Maison Safran");
+    expect(markup).toContain("data-source-brand-mark");
+    expect(markup).toContain("--theme-bg:#fff8e8");
+    expect(markup).toContain("Poireaux vinaigrette");
+    expect(markup).toContain("bonjour@maisonsafran.example");
+    expect(markup).toContain("La carte");
+  });
+});
