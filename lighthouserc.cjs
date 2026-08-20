@@ -19,10 +19,10 @@ module.exports = {
         "http://127.0.0.1:4173/",
         "http://127.0.0.1:4173/niche/restaurant",
       ],
-      // 3 runs so assertions check the median (LHCI's default aggregation),
-      // not a single noisy sample — `ubuntu-latest` CI runners are
-      // materially slower/noisier than a local machine, and a lone run can
-      // land a spurious long task during an otherwise-fine build.
+      // Three runs give the explicit median aggregation below enough samples
+      // to reject one noisy outlier without letting one lucky run pass a real
+      // regression. LHCI's implicit default is `optimistic` (best run), not
+      // median, so keep the aggregation contract explicit and tested.
       numberOfRuns: 3,
       // `next.config.ts` sets `output: "standalone"`, which `next start` (and
       // therefore `bun run start`) does not support — Next itself warns
@@ -46,6 +46,7 @@ module.exports = {
       // i.e. the "mobile preset" this budget targets is the tool's default.
     },
     assert: {
+      aggregationMethod: "median",
       assertions: {
         // A prior CI run (ubuntu-latest, numberOfRuns: 1) failed here —
         // performance 0.82 and TBT 335ms on `/`, driven by `mainthread-work-
@@ -60,8 +61,8 @@ module.exports = {
         // never got below 0.90 performance or above ~54ms TBT on either
         // route — the CI failure looks like `numberOfRuns: 1` catching a
         // genuinely noisy sample (GC pause / neighboring-job contention on a
-        // shared runner) rather than a real regression. `numberOfRuns: 3`
-        // above (LHCI asserts the median) is the primary fix for that.
+        // shared runner) rather than a real regression. Three runs with the
+        // explicit median aggregation above rejects one isolated outlier.
         // Kept these two as `error`, not `warn`, since local 8x throttling
         // never reproduced a sub-budget score after the real fix landed.
         "categories:performance": ["error", { minScore: 0.9 }],
