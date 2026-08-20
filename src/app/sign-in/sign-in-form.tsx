@@ -95,6 +95,7 @@ export function SignInForm({
         {copy.emptyPrompt}{" "}
         <Link
           href={copy.createHref}
+          prefetch={false}
           className="font-semibold text-foreground"
         >
           {copy.createLabel}

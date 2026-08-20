@@ -16,6 +16,7 @@ import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
+import { EditorialFontScope } from "@/components/fonts/editorial-font-scope";
 
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await resolveRequestBrand();
@@ -43,12 +44,14 @@ export default async function DashboardPage({
 
   if (access?.ok && access.site.vertical !== Vertical.RESTAURANT) {
     return (
-      <UnsupportedVerticalDashboard
-        email={access.user.email}
-        slug={access.site.slug}
-        vertical={access.site.vertical}
-        brand={await resolveRequestBrand()}
-      />
+      <EditorialFontScope>
+        <UnsupportedVerticalDashboard
+          email={access.user.email}
+          slug={access.site.slug}
+          vertical={access.site.vertical}
+          brand={await resolveRequestBrand()}
+        />
+      </EditorialFontScope>
     );
   }
 
@@ -101,33 +104,35 @@ export default async function DashboardPage({
   }
 
   return (
-    <Dashboard
-      initialDraft={ownerDraft?.draft ?? sampleRestaurant}
-      initialDraftRevision={ownerDraft?.revision ?? 0}
-      email={access?.ok ? access.user.email : "demo@cornershop.dev"}
-      checkoutComplete={query.checkout === "success"}
-      demo={!session}
-      brand={await resolveRequestBrand()}
-      analyticsSummary={analyticsSummary}
-      bookingInbox={bookingInbox}
-      billingAccess={billingAccess}
-      publicationHistory={publicationHistory.map((item) => ({
-        ...item,
-        publishedAt: item.publishedAt.toISOString(),
-      }))}
-      canSwitchWorkspace={workspaces.length > 1}
-      sourceMonitoring={sourceMonitoring}
-      platformUrl={
-        access?.ok
-          ? publicSiteOrigin({
-              slug: access.site.slug,
-              vertical: access.site.vertical,
-            })
-          : publicSiteOrigin({
-              slug: sampleRestaurant.slug,
-              vertical: "RESTAURANT",
-            })
-      }
-    />
+    <EditorialFontScope>
+      <Dashboard
+        initialDraft={ownerDraft?.draft ?? sampleRestaurant}
+        initialDraftRevision={ownerDraft?.revision ?? 0}
+        email={access?.ok ? access.user.email : "demo@cornershop.dev"}
+        checkoutComplete={query.checkout === "success"}
+        demo={!session}
+        brand={await resolveRequestBrand()}
+        analyticsSummary={analyticsSummary}
+        bookingInbox={bookingInbox}
+        billingAccess={billingAccess}
+        publicationHistory={publicationHistory.map((item) => ({
+          ...item,
+          publishedAt: item.publishedAt.toISOString(),
+        }))}
+        canSwitchWorkspace={workspaces.length > 1}
+        sourceMonitoring={sourceMonitoring}
+        platformUrl={
+          access?.ok
+            ? publicSiteOrigin({
+                slug: access.site.slug,
+                vertical: access.site.vertical,
+              })
+            : publicSiteOrigin({
+                slug: sampleRestaurant.slug,
+                vertical: "RESTAURANT",
+              })
+        }
+      />
+    </EditorialFontScope>
   );
 }

@@ -2,14 +2,39 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/*
+ * Next's generated adjusted fallbacks reference Arial and Times New Roman.
+ * Ubuntu runners provide their metric-compatible Liberation equivalents
+ * instead, so name both sources explicitly while retaining Next's measured
+ * overrides. Without these aliases, the cold route reflows before the brand
+ * faces arrive even though macOS remains stable.
+ */
+@font-face {
+  font-family: "Geist Cross-Platform Fallback";
+  src: local("Arial"), local("Liberation Sans");
+  ascent-override: 95.94%;
+  descent-override: 28.16%;
+  line-gap-override: 0%;
+  size-adjust: 104.76%;
+}
+
+@font-face {
+  font-family: "Instrument Serif Cross-Platform Fallback";
+  src: local("Times New Roman"), local("Liberation Serif");
+  ascent-override: 117.94%;
+  descent-override: 36.93%;
+  line-gap-override: 0%;
+  size-adjust: 83.94%;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
-  --font-heading: "Instrument Serif", Georgia, serif;
+  --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-geist-mono, ui-monospace, monospace);
+  --font-heading: var(--font-instrument-serif, georgia, serif);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -124,7 +149,11 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      radial-gradient(circle at 12% 4%, oklch(0.96 0.05 70 / 0.65), transparent 34rem),
+      radial-gradient(
+        circle at 12% 4%,
+        oklch(0.96 0.05 70 / 0.65),
+        transparent 34rem
+      ),
       linear-gradient(to bottom, transparent, oklch(0.96 0.018 85 / 0.7));
   }
   html {
@@ -143,8 +172,22 @@
 }
 
 @layer utilities {
+  .stable-geist-fallback {
+    --font-geist-sans: "Geist", "Geist Cross-Platform Fallback", sans-serif !important;
+  }
+
+  .stable-instrument-fallback {
+    --font-instrument-serif: "Instrument Serif",
+      "Instrument Serif Cross-Platform Fallback", serif !important;
+  }
+
+  /* Restofront's compact labels use the brand's Geist face, not Factory Mono. */
+  .restaurant-fonts {
+    --font-geist-mono: var(--font-geist-sans) !important;
+  }
+
   .font-display {
-    font-family: var(--font-instrument-serif), Georgia, serif;
+    font-family: var(--font-instrument-serif, georgia, serif);
   }
 
   .text-balance {
@@ -153,8 +196,16 @@
 
   .paper-grid {
     background-image:
-      linear-gradient(to right, oklch(0.3 0.02 55 / 0.045) 1px, transparent 1px),
-      linear-gradient(to bottom, oklch(0.3 0.02 55 / 0.045) 1px, transparent 1px);
+      linear-gradient(
+        to right,
+        oklch(0.3 0.02 55 / 0.045) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        oklch(0.3 0.02 55 / 0.045) 1px,
+        transparent 1px
+      );
     background-size: 32px 32px;
   }
 }
