@@ -1,7 +1,10 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { beautyLeadDiscovery } from "@/lib/lead-generation/beauty";
 import { restaurantLeadDiscovery } from "@/lib/lead-generation/restaurant";
-import type { LeadDiscoveryAdapter } from "@/lib/lead-generation/types";
+import type {
+  LeadCategoryFit,
+  LeadDiscoveryAdapter,
+} from "@/lib/lead-generation/types";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
@@ -37,4 +40,19 @@ export function listOutreachVerticals(): VerticalId[] {
 
 export function listLeadDiscoveryAdapters(): LeadDiscoveryAdapter[] {
   return Object.values(leadDiscoveryRegistry);
+}
+
+export function evaluateLeadCategoryFit(
+  vertical: VerticalId,
+  categories: string[],
+): LeadCategoryFit {
+  const normalized = categories
+    .map((category) => category.trim().toLowerCase())
+    .filter(Boolean);
+  if (normalized.length === 0) return "unconfirmed";
+  const categoryPattern =
+    resolveLeadDiscoveryAdapter(vertical).eligibility.categoryPattern;
+  return normalized.some((category) => categoryPattern.test(category))
+    ? "matched"
+    : "mismatch";
 }

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import "server-only";
 import type { OutreachStatus } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
+import { lockOutreachSite } from "@/lib/outreach-lock";
 
 const INITIAL_TEMPLATE = "preview_ready";
 export const OUTREACH_DISPATCH_STALE_MS = 5 * 60_000;
@@ -12,6 +14,16 @@ export type InitialOutreachDispatch = {
   workflowRunId: string | null;
   attempt: number;
 };
+
+export class OutreachDispatchAuthorizationError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: "unknown" | "ineligible" | "evidence_required",
+  ) {
+    super(message);
+    this.name = "OutreachDispatchAuthorizationError";
+  }
+}
 
 export function isInitialOutreachDispatchRetryable(
   dispatch: {
@@ -45,6 +57,19 @@ export async function reserveInitialOutreachDispatch(input: {
   );
 
   return db.$transaction(async (tx) => {
+    await lockOutreachSite(tx, input.siteId);
+    const site = await tx.site.findUnique({
+      where: { id: input.siteId },
+      select: { attributes: true },
+    });
+    const eligibility = evaluateLeadOutreachEligibility(site?.attributes);
+    if (!eligibility.allowed) {
+      throw new OutreachDispatchAuthorizationError(
+        eligibility.message,
+        eligibility.reason,
+      );
+    }
+
     const dispatch = await tx.outreachDispatch.upsert({
       where: { idempotencyKey },
       update: {},

@@ -140,4 +140,33 @@ describe("website quality scoring", () => {
     expect(homepage.hasCatalogHint).toBe(true);
     expect(homepage.hasConversionHint).toBe(true);
   });
+
+  it("records a provider taxonomy mismatch without deciding operator eligibility", () => {
+    const homepage = parseHomepageSignals(
+      `<html><head>
+        <meta name="viewport" content="width=device-width">
+        <title>Studio Iris</title>
+      </head><body>
+        <a href="/services">Treatments</a>
+        <a href="https://www.fresha.com/studio-iris">Book appointment</a>
+      </body></html>`,
+      new URL("https://studio-iris.example/"),
+      null,
+      "BEAUTY",
+    );
+
+    expect(
+      scoreWebsiteQuality({
+        vertical: "BEAUTY",
+        hasWebsite: true,
+        homepage,
+        categories: ["restaurant"],
+      }),
+    ).toEqual({
+      score: 88,
+      reasons: [
+        "Listing categories do not confirm a beauty, hair, barber, nail, or spa business",
+      ],
+    });
+  });
 });

@@ -10,6 +10,11 @@ export const beautyLeadDiscovery = {
     nominatimQuery: (city) => `beauty salon in ${city}`,
     fallbackCategory: "beauty_salon",
   },
+  eligibility: {
+    categoryPattern:
+      /(?:^|_)(?:beauty_salon|hair_salon|hair_care|barber|nail_salon|spa)(?:_|$)/i,
+    categoryLabel: "beauty, hair, barber, nail, or spa business",
+  },
   homepage: {
     catalogPattern:
       /(?:href=["'][^"']*(?:\/services?\b|\/treatments?\b|\/prices?\b|\/price-list\b)[^"']*["']|\b(?:services|treatments|price list|haircuts|colouring|coloring|manicure|facial)\b)/i,

@@ -62,6 +62,19 @@ export type OperatorLeadDiscoveryView = {
 
 export type OperatorLeadEligibilityView = LeadEligibilityRecord;
 
+export type LeadOutreachEligibilityDecision =
+  | { allowed: true; record: LeadEligibilityRecord }
+  | {
+      allowed: false;
+      reason: "unknown" | "ineligible" | "evidence_required";
+      message: string;
+    };
+
+export const REQUIRED_OUTREACH_ELIGIBILITY_EVIDENCE_KEYS = [
+  "contact_basis",
+  "evidence_source",
+] as const;
+
 export type OperatorLocalSeoAuditView = {
   score: number;
   topFixes: Array<{ id: string; title: string }>;
@@ -165,6 +178,44 @@ export function parseLeadEligibility(
     asAttributeRecord(attributes)[LEAD_ELIGIBILITY_ATTRIBUTE_KEY],
   );
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Outreach is an operator decision, not an inference from discovery data.
+ * Category matches and public listings may be retained as evidence, but they
+ * cannot authorize contact on their own: the operator must explicitly record
+ * both the contact basis they are relying on and where that evidence came from.
+ */
+export function evaluateLeadOutreachEligibility(
+  attributes: unknown,
+): LeadOutreachEligibilityDecision {
+  const record = parseLeadEligibility(attributes);
+  if (!record || record.state === "UNKNOWN") {
+    return {
+      allowed: false,
+      reason: "unknown",
+      message:
+        "Set outreach eligibility to eligible and record the contact basis and evidence source.",
+    };
+  }
+  if (record.state === "INELIGIBLE") {
+    return {
+      allowed: false,
+      reason: "ineligible",
+      message: "This lead is explicitly ineligible for outreach.",
+    };
+  }
+  const missing = REQUIRED_OUTREACH_ELIGIBILITY_EVIDENCE_KEYS.filter(
+    (key) => !record.evidence[key]?.trim(),
+  );
+  if (missing.length > 0) {
+    return {
+      allowed: false,
+      reason: "evidence_required",
+      message: `Eligibility evidence must include ${missing.join(" and ")}.`,
+    };
+  }
+  return { allowed: true, record };
 }
 
 export function toOperatorLeadEligibilityView(

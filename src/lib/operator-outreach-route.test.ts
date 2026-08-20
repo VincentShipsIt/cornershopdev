@@ -19,6 +19,13 @@ const outreachTestModule = {
 
 let reviewed = true;
 let vertical = "RESTAURANT";
+let eligibilityState: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE" = "ELIGIBLE";
+let eligibilityEvidence: Record<string, string> = {
+  contact_basis: "Operator-recorded basis",
+  evidence_source: "Consent record reviewed 2026-08-20",
+};
+let revokeEligibilityAfterFirstRead = false;
+let siteReadCount = 0;
 let existingMessage: {
   id: string;
   status: string;
@@ -93,6 +100,34 @@ function whereMatches(
     return false;
   }
   return true;
+}
+
+function siteRecord() {
+  siteReadCount += 1;
+  const currentEligibilityState =
+    revokeEligibilityAfterFirstRead && siteReadCount > 1
+      ? "INELIGIBLE"
+      : eligibilityState;
+  return {
+    id: "site_1",
+    email: "owner@example.test",
+    status: "PREVIEW_READY",
+    vertical,
+    attributes: {
+      leadEligibility: {
+        state: currentEligibilityState,
+        evidence: eligibilityEvidence,
+        updatedAt: "2026-08-19T08:00:00.000Z",
+        updatedBy: "operator:operator_1",
+      },
+    },
+    updatedAt: new Date("2026-08-19T08:00:00.000Z"),
+    auditEvents: reviewed
+      ? [{ createdAt: new Date("2026-08-19T08:01:00.000Z") }]
+      : [],
+    outreachMessages: existingMessage ? [existingMessage] : [],
+    outreachDispatches: existingDispatch ? [existingDispatch] : [],
+  };
 }
 
 const outreachDispatchApi = {
@@ -170,18 +205,7 @@ mock.module("@/lib/outreach", () => outreachTestModule);
 mock.module("@/lib/db", () => ({
   getDb: () => ({
     site: {
-      findUnique: async () => ({
-        id: "site_1",
-        email: "owner@example.test",
-        status: "PREVIEW_READY",
-        vertical,
-        updatedAt: new Date("2026-08-19T08:00:00.000Z"),
-        auditEvents: reviewed
-          ? [{ createdAt: new Date("2026-08-19T08:01:00.000Z") }]
-          : [],
-        outreachMessages: existingMessage ? [existingMessage] : [],
-        outreachDispatches: existingDispatch ? [existingDispatch] : [],
-      }),
+      findUnique: async () => siteRecord(),
     },
     operatorSetting: {
       findUnique: async () => (paused ? { value: true } : null),
@@ -226,6 +250,9 @@ mock.module("@/lib/db", () => ({
         | Array<Promise<unknown>>
         | ((transaction: {
             $queryRaw: () => Promise<Array<{ acquired: boolean }>>;
+            site: {
+              findUnique: () => Promise<ReturnType<typeof siteRecord>>;
+            };
             outreachDispatch: typeof outreachDispatchApi;
             auditEvent: {
               create: (input: {
@@ -250,6 +277,7 @@ mock.module("@/lib/db", () => ({
         if (Array.isArray(operation)) return Promise.all(operation);
         return operation({
           $queryRaw: async () => [{ acquired: true }],
+          site: { findUnique: async () => siteRecord() },
           outreachDispatch: outreachDispatchApi,
           auditEvent: {
             create: async ({ data }) => {
@@ -297,6 +325,13 @@ describe("explicit operator outreach action", () => {
   beforeEach(() => {
     reviewed = true;
     vertical = "RESTAURANT";
+    eligibilityState = "ELIGIBLE";
+    eligibilityEvidence = {
+      contact_basis: "Operator-recorded basis",
+      evidence_source: "Consent record reviewed 2026-08-20",
+    };
+    revokeEligibilityAfterFirstRead = false;
+    siteReadCount = 0;
     existingMessage = null;
     existingDispatch = null;
     paused = false;
@@ -437,6 +472,47 @@ describe("explicit operator outreach action", () => {
 
     expect(response.status).toBe(409);
     expect(workflowStart).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown and explicitly ineligible leads before reserving", async () => {
+    eligibilityState = "UNKNOWN";
+    eligibilityEvidence = {};
+    const unknown = await POST(request("https://cornershop.dev"), context());
+    const unknownPayload = (await unknown.json()) as Record<string, unknown>;
+
+    eligibilityState = "INELIGIBLE";
+    eligibilityEvidence = {
+      contact_basis: "Operator marked contact ineligible",
+      evidence_source: "Manual review",
+    };
+    const ineligible = await POST(
+      request("https://cornershop.dev"),
+      context(),
+    );
+    const ineligiblePayload = (await ineligible.json()) as Record<
+      string,
+      unknown
+    >;
+
+    expect(unknown.status).toBe(409);
+    expect(unknownPayload).toMatchObject({ reason: "unknown" });
+    expect(ineligible.status).toBe(409);
+    expect(ineligiblePayload).toMatchObject({ reason: "ineligible" });
+    expect(workflowStart).not.toHaveBeenCalled();
+    expect(dispatchRow).toBeNull();
+  });
+
+  it("rechecks eligibility inside the reservation transaction", async () => {
+    eligibilityState = "ELIGIBLE";
+    revokeEligibilityAfterFirstRead = true;
+
+    const response = await POST(request("https://cornershop.dev"), context());
+    const payload = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(409);
+    expect(payload).toMatchObject({ reason: "ineligible" });
+    expect(workflowStart).not.toHaveBeenCalled();
+    expect(dispatchRow).toBeNull();
   });
 
   it("does not start again when the initial message already exists", async () => {

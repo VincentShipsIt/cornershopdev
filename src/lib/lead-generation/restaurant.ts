@@ -10,6 +10,11 @@ export const restaurantLeadDiscovery = {
     nominatimQuery: (city) => `restaurant in ${city}`,
     fallbackCategory: "restaurant",
   },
+  eligibility: {
+    categoryPattern:
+      /(?:^|_)(?:restaurant|cafe|cafeteria|bistro|brasserie|food_establishment)(?:_|$)/i,
+    categoryLabel: "restaurant or dining venue",
+  },
   homepage: {
     catalogPattern:
       /(?:href=["'][^"']*(?:\/menu\b|\/menus\b|\/carte\b|\/speise|\/carta\b)[^"']*["']|\b(?:menu|menus|la carte|carte|speisekarte)\b)/i,

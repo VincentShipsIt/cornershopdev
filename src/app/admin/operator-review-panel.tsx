@@ -154,7 +154,9 @@ export function OperatorReviewPanel({
           aria-label={`Eligibility evidence for ${slug}`}
           value={eligibilityEvidence}
           onChange={(event) => setEligibilityEvidence(event.target.value)}
-          placeholder={"source=public listing\nbasis=operator verified"}
+          placeholder={
+            "contact_basis=operator-recorded basis\nevidence_source=source or record reviewed"
+          }
           maxLength={4_000}
           rows={3}
           className="text-xs"

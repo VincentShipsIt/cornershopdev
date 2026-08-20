@@ -7,8 +7,10 @@ import { mutableLeadStatuses } from "@/lib/lead-status";
 import {
   markInitialOutreachDispatchFinished,
   markInitialOutreachDispatchStarted,
+  OutreachDispatchAuthorizationError,
   reserveInitialOutreachDispatch,
 } from "@/lib/outreach-dispatch";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import { evaluateOutreachEnvironment } from "@/lib/outreach-readiness";
@@ -139,6 +141,7 @@ export async function POST(
         email: true,
         status: true,
         vertical: true,
+        attributes: true,
         updatedAt: true,
         auditEvents: {
           where: { type: "site.review.completed" },
@@ -169,6 +172,13 @@ export async function POST(
     ) {
       return NextResponse.json(
         { error: "This lead is not eligible for outreach." },
+        { status: 409 },
+      );
+    }
+    const eligibility = evaluateLeadOutreachEligibility(site.attributes);
+    if (!eligibility.allowed) {
+      return NextResponse.json(
+        { error: eligibility.message, reason: eligibility.reason },
         { status: 409 },
       );
     }
@@ -305,6 +315,12 @@ export async function POST(
       return NextResponse.json(
         { error: error.issues[0]?.message ?? "Invalid outreach request." },
         { status: 400 },
+      );
+    }
+    if (error instanceof OutreachDispatchAuthorizationError) {
+      return NextResponse.json(
+        { error: error.message, reason: error.reason },
+        { status: 409 },
       );
     }
     console.error("[operator-outreach] failed", {

@@ -5,9 +5,15 @@ export type LeadDiscoveryAdapter = {
   adapterId: string;
   placeSearch: {
     googleQuery: (city: string) => string;
-    googleIncludedType: string;
+    /** Omit for verticals that deliberately span several incompatible place types. */
+    googleIncludedType: string | null;
     nominatimQuery: (city: string) => string;
     fallbackCategory: string;
+  };
+  eligibility: {
+    /** Confirms niche fit from provider taxonomy; never makes a legal decision. */
+    categoryPattern: RegExp;
+    categoryLabel: string;
   };
   homepage: {
     catalogPattern: RegExp;
@@ -23,3 +29,5 @@ export type LeadDiscoveryAdapter = {
     photoSubjects: string;
   };
 };
+
+export type LeadCategoryFit = "matched" | "unconfirmed" | "mismatch";

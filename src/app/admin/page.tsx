@@ -433,6 +433,7 @@ function SiteRow({
             outreachMessages={site.outreachMessages}
             outreachDispatch={site.outreachDispatch}
             reviewedAt={site.reviewedAt}
+            eligibility={site.eligibility}
             outreachPaused={outreachPaused}
             leadOutreachPaused={site.outreachPaused}
           />

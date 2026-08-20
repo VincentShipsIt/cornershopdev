@@ -121,10 +121,12 @@ export async function searchGooglePlaces(input: {
     const pageSize = Math.min(20, input.limit - places.length);
     const body: Record<string, unknown> = {
       textQuery: adapter.placeSearch.googleQuery(input.city),
-      includedType: adapter.placeSearch.googleIncludedType,
       pageSize,
       languageCode: "en",
     };
+    if (adapter.placeSearch.googleIncludedType) {
+      body.includedType = adapter.placeSearch.googleIncludedType;
+    }
     if (pageToken) body.pageToken = pageToken;
 
     const response = await input.fetchImpl(GOOGLE_TEXT_SEARCH_URL, {

@@ -8,7 +8,10 @@ import {
   discoverLocalPlaces,
   type PlaceDiscoveryResult,
 } from "@/lib/lead-discovery-places";
-import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import {
+  evaluateLeadCategoryFit,
+  resolveLeadDiscoveryAdapter,
+} from "@/lib/lead-generation/registry";
 import { auditLocalSeo, renderLocalSeoOutreachEmail } from "@/lib/local-seo-audit";
 import { resolveVerticalBySlug } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
@@ -68,7 +71,12 @@ export async function runLeadDiscovery(
       vertical: options.vertical,
       hasWebsite: Boolean(identity.sourceUrl),
       homepage,
+      categories: place.categories,
     });
+    const categoryFit = evaluateLeadCategoryFit(
+      options.vertical,
+      place.categories,
+    );
     const audit = auditLocalSeo({
       vertical: options.vertical,
       name: place.name,
@@ -95,6 +103,7 @@ export async function runLeadDiscovery(
       ...identity,
       score: quality.score,
       reasons: quality.reasons,
+      categoryFit,
       audit,
       outreachSubject: outreach.subject,
     });
@@ -122,6 +131,7 @@ export async function runLeadDiscovery(
       sourceUrl: candidate.sourceUrl,
       score: candidate.score,
       reasons: candidate.reasons,
+      categoryFit: candidate.categoryFit,
       auditScore: candidate.audit.score,
       topFixes: candidate.audit.topFixes.map((fix) => fix.title),
       previewAction: candidate.sourceUrl ? "generate" : "await_source",
@@ -167,6 +177,9 @@ export async function runLeadDiscovery(
           eligibilityEvidence: {
             discovery_adapter: adapter.adapterId,
             public_source: candidate.source,
+            category_fit: candidate.categoryFit,
+            listing_categories:
+              candidate.categories.join(", ").slice(0, 500) || "not provided",
           },
           generatePreview: Boolean(candidate.sourceUrl),
         }),

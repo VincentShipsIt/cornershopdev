@@ -3,7 +3,10 @@ import {
   storedImportSource,
 } from "@/lib/import-identity";
 import { Vertical } from "@/generated/prisma/enums";
-import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import {
+  evaluateLeadCategoryFit,
+  resolveLeadDiscoveryAdapter,
+} from "@/lib/lead-generation/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
 /**
@@ -99,20 +102,27 @@ export function scoreWebsiteQuality(input: {
   vertical?: VerticalId;
   hasWebsite: boolean;
   homepage: HomepageSignals | null;
+  categories?: string[];
 }): SiteQualityScore {
-  const adapter = resolveLeadDiscoveryAdapter(
-    input.vertical ?? Vertical.RESTAURANT,
-  );
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const reasons: string[] = [];
   let score = 100;
+  if (evaluateLeadCategoryFit(vertical, input.categories ?? []) === "mismatch") {
+    score -= 12;
+    reasons.push(
+      `Listing categories do not confirm a ${adapter.eligibility.categoryLabel}`,
+    );
+  }
 
   if (!input.hasWebsite) {
-    return clampScore(60, ["No public website listed"]);
+    return clampScore(score - 40, [...reasons, "No public website listed"]);
   }
 
   const homepage = input.homepage;
   if (!homepage || !homepage.isFetched) {
-    return clampScore(45, [
+    return clampScore(score - 55, [
+      ...reasons,
       "Website listed but the homepage did not respond",
     ]);
   }

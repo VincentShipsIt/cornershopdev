@@ -36,6 +36,7 @@ type StoredMessage = {
 const messages = new Map<string, StoredMessage>();
 let persistedContactEmail = "owner@chez-lea.test";
 let outreachPaused = false;
+let leadEligibilityState: "ELIGIBLE" | "INELIGIBLE" = "ELIGIBLE";
 const reviewedAt = "2026-08-19T08:01:00.000Z";
 let dispatchStatus: "QUEUED" | "SENT" = "QUEUED";
 let dispatchAttempt = 1;
@@ -84,6 +85,17 @@ const fakeDb = {
         slug: "chez-lea",
         name: "Chez Léa",
         vertical: "RESTAURANT",
+        attributes: {
+          leadEligibility: {
+            state: leadEligibilityState,
+            evidence: {
+              contact_basis: "Operator-recorded basis",
+              evidence_source: "Consent record reviewed 2026-08-20",
+            },
+            updatedAt: "2026-08-19T08:00:00.000Z",
+            updatedBy: "operator:one",
+          },
+        },
         email: persistedContactEmail,
         status: "PREVIEW_READY",
         updatedAt: new Date("2026-08-19T08:00:00.000Z"),
@@ -251,6 +263,7 @@ describe("outreach delivery idempotency", () => {
     messages.clear();
     persistedContactEmail = "owner@chez-lea.test";
     outreachPaused = false;
+    leadEligibilityState = "ELIGIBLE";
     dispatchStatus = "QUEUED";
     dispatchAttempt = 1;
     loseRetryResetCas = false;
@@ -444,6 +457,31 @@ describe("outreach delivery idempotency", () => {
 
     expect(messages).toHaveLength(2);
     expect(providerSend).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not call the provider when eligibility is revoked after queue", async () => {
+    leadEligibilityState = "INELIGIBLE";
+
+    await expect(
+      sendLeadEmail({
+        siteId: "site_1",
+        template: "preview_ready",
+        claimUrl:
+          "https://cornershop.dev/claim/chez-lea#claim_token=must-not-send",
+        to: persistedContactEmail,
+        actor: "operator:one",
+        expectedReviewedAt: reviewedAt,
+        claimInvitationId: "invitation_preview",
+        dispatchAuthorization: { dispatchId: "dispatch_1", attempt: 1 },
+      }),
+    ).rejects.toThrow("explicitly ineligible");
+
+    expect(providerSend).not.toHaveBeenCalled();
+    expect([...messages.values()][0]).toMatchObject({
+      status: "FAILED",
+      error: expect.stringContaining("explicitly ineligible"),
+      providerAttemptedAt: null,
+    });
   });
 
   it("preserves an ambiguous queued envelope when a later pre-provider check fails", async () => {

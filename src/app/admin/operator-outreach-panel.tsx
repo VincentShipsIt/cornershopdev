@@ -17,6 +17,7 @@ type Props = Pick<
   | "outreachMessages"
   | "outreachDispatch"
   | "reviewedAt"
+  | "eligibility"
 > & { outreachPaused: boolean; leadOutreachPaused: boolean };
 
 export function OperatorOutreachPanel({
@@ -26,6 +27,7 @@ export function OperatorOutreachPanel({
   outreachMessages,
   outreachDispatch,
   reviewedAt,
+  eligibility,
   outreachPaused,
   leadOutreachPaused,
 }: Props) {
@@ -167,12 +169,18 @@ export function OperatorOutreachPanel({
   const retryableInitial =
     initial?.status === "FAILED" && initial.retryable === true;
   const retryableDispatch = outreachDispatch?.retryable === true;
+  const missingEligibilityEvidence = ["contact_basis", "evidence_source"].filter(
+    (key) => !eligibility.evidence[key]?.trim(),
+  );
+  const eligibilityReady =
+    eligibility.state === "ELIGIBLE" && missingEligibilityEvidence.length === 0;
   const disabled =
     pending ||
     outreachPaused ||
     leadOutreachPaused ||
     !contactEmail ||
     !reviewedAt ||
+    !eligibilityReady ||
     (Boolean(initial) && !retryableInitial) ||
     (Boolean(outreachDispatch) && !retryableDispatch);
   const label = retryableInitial
@@ -183,6 +191,12 @@ export function OperatorOutreachPanel({
         ? "Outreach paused"
         : leadOutreachPaused
           ? "Lead paused"
+        : eligibility.state === "INELIGIBLE"
+          ? "Lead ineligible"
+          : eligibility.state !== "ELIGIBLE"
+            ? "Eligibility required"
+            : missingEligibilityEvidence.length > 0
+              ? "Evidence required"
         : !reviewedAt
           ? "Review first"
           : !contactEmail
@@ -199,6 +213,15 @@ export function OperatorOutreachPanel({
         {contactEmail ?? "No contact email"}
         {hasInboundReply ? " · Replied" : ""}
       </p>
+      {!eligibilityReady ? (
+        <p className="text-[11px] text-destructive">
+          {eligibility.state === "INELIGIBLE"
+            ? "Outreach blocked: this lead is explicitly ineligible."
+            : eligibility.state !== "ELIGIBLE"
+              ? "Outreach blocked until eligibility is recorded."
+              : `Outreach blocked until eligibility evidence includes ${missingEligibilityEvidence.join(" and ")}.`}
+        </p>
+      ) : null}
       <Button
         type="button"
         size="sm"

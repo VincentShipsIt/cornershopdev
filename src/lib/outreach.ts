@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { buildImportUrls } from "@/lib/import-identity";
 import { mutableLeadStatuses } from "@/lib/lead-status";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import {
   lockClaimInvitationById,
   lockOutreachDelivery,
@@ -337,6 +338,10 @@ export async function sendLeadEmail(
       });
       throw new OutreachDeliveryUnknownError();
     }
+    const reason =
+      error instanceof OutreachError
+        ? error.message
+        : "Outreach failed before provider delivery.";
     if (reservation.knownUnsent) {
       const failed = await db.outreachMessage.updateMany({
         where: {
@@ -349,7 +354,7 @@ export async function sendLeadEmail(
           status: "FAILED",
           deliveryLeaseId: null,
           deliveryLeaseExpiresAt: null,
-          error: "Outreach failed before provider delivery.",
+          error: reason,
         },
       });
       if (failed.count !== 1) {
@@ -358,10 +363,6 @@ export async function sendLeadEmail(
     } else {
       throw new OutreachDeliveryUnknownError();
     }
-    const reason =
-      error instanceof OutreachError
-        ? error.message
-        : "Outreach failed before provider delivery.";
     console.error("[outreach] send failed", {
       siteId: input.siteId,
       template: input.template,
@@ -867,6 +868,7 @@ async function assertReviewedLeadDelivery(
         email: true,
         status: true,
         vertical: true,
+        attributes: true,
         updatedAt: true,
         auditEvents: {
           where: { type: "site.review.completed" },
@@ -888,6 +890,7 @@ async function assertReviewedLeadDelivery(
       select: { key: true, value: true },
     }),
   ]);
+  const eligibility = evaluateLeadOutreachEligibility(site?.attributes);
   if (
     !site ||
     isOutreachPaused(pauseSettings, input.siteId) ||
@@ -900,12 +903,13 @@ async function assertReviewedLeadDelivery(
     !isOperatorReviewCurrent(
       site.auditEvents[0]?.createdAt ?? null,
       site.updatedAt,
-    )
+    ) ||
+    !eligibility.allowed
   ) {
-    throw new OutreachError(
-      "The reviewed lead became ineligible before delivery.",
-      409,
-    );
+    const reason = eligibility.allowed
+      ? "The reviewed lead became ineligible before delivery."
+      : `The reviewed lead became ineligible before delivery: ${eligibility.message}`;
+    throw new OutreachError(reason, 409);
   }
   if (input.template === "follow_up_1") {
     const initialKey = `lead-outreach:${input.siteId}:preview_ready`;

@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 import {
   compareOperatorSitesByDiscoveryScore,
   createLeadDiscoveryRecord,
+  createLeadEligibilityRecord,
+  evaluateLeadOutreachEligibility,
+  mergeLeadEligibilityAttributes,
   mergeOperatorLeadAttributes,
   parseLeadEligibility,
   parseLeadDiscovery,
@@ -68,6 +71,64 @@ describe("operator lead attributes", () => {
         "RESTAURANT",
       ),
     ).toBe("conflict");
+  });
+
+  it("fails outreach closed until eligibility and contact evidence are explicit", () => {
+    const unknown = mergeLeadEligibilityAttributes(
+      {},
+      createLeadEligibilityRecord({
+        state: "UNKNOWN",
+        evidence: {},
+        updatedBy: "operator:one",
+      }),
+    );
+    const ineligible = mergeLeadEligibilityAttributes(
+      {},
+      createLeadEligibilityRecord({
+        state: "INELIGIBLE",
+        evidence: {
+          contact_basis: "Operator determined contact is not permitted",
+          evidence_source: "Manual review",
+        },
+        updatedBy: "operator:one",
+      }),
+    );
+    const discoveryOnly = mergeLeadEligibilityAttributes(
+      {},
+      createLeadEligibilityRecord({
+        state: "ELIGIBLE",
+        evidence: { public_source: "https://example.test/listing" },
+        updatedBy: "operator:one",
+      }),
+    );
+
+    expect(evaluateLeadOutreachEligibility(unknown)).toMatchObject({
+      allowed: false,
+      reason: "unknown",
+    });
+    expect(evaluateLeadOutreachEligibility(ineligible)).toMatchObject({
+      allowed: false,
+      reason: "ineligible",
+    });
+    expect(evaluateLeadOutreachEligibility(discoveryOnly)).toMatchObject({
+      allowed: false,
+      reason: "evidence_required",
+    });
+    expect(
+      evaluateLeadOutreachEligibility(
+        mergeLeadEligibilityAttributes(
+          {},
+          createLeadEligibilityRecord({
+            state: "ELIGIBLE",
+            evidence: {
+              contact_basis: "Operator-recorded basis",
+              evidence_source: "Consent record reviewed 2026-08-20",
+            },
+            updatedBy: "operator:one",
+          }),
+        ),
+      ),
+    ).toMatchObject({ allowed: true });
   });
 
   it("sorts scored sites worst-first and keeps unscored sites after them", () => {

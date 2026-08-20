@@ -109,6 +109,17 @@ const site = {
     | "LIVE"
     | "PAUSED",
   organizationId: null,
+  attributes: {
+    leadEligibility: {
+      state: "ELIGIBLE",
+      evidence: {
+        contact_basis: "Operator-recorded basis",
+        evidence_source: "Consent record reviewed 2026-08-20",
+      },
+      updatedAt: "2026-08-19T08:00:00.000Z",
+      updatedBy: "operator:operator_1",
+    },
+  },
   updatedAt: new Date(clock),
 };
 
