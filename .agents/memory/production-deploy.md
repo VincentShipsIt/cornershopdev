@@ -7,8 +7,9 @@ status: durable
 
 Host `i-00e74422e719396c3` (us-west-1), single container `api-cornershop-dev`
 behind `shipshit-caddy`. Single-origin: `cornershop.dev`, `restofront.com`,
-platform subdomains, and customer custom domains all hit that container
-(`PUBLIC_APP_IP` `52.8.153.188`). This is not a Vercel frontend. Do not
+their routed storefront hostnames, and customer custom domains hit that container.
+`domains.cornershop.dev` is an intentional Caddy `404` and is not proxied to
+the app (`PUBLIC_APP_IP` `52.8.153.188`). This is not a Vercel frontend. Do not
 split it — see `hosting-single-origin.md`.
 
 Production application data and Workflow state both use the PostgreSQL database
@@ -113,7 +114,8 @@ elsewhere" is false.
 
 ## Vercel is not this app
 
-The leftover Vercel Git project `restofrontcom` was disconnected 2026-08-19
-and deleted 2026-08-20. It never served `restofront.com` or `cornershop.dev`.
-Do not recreate it. Do not `vercel link` this repo. Detail:
+The leftover Vercel Git project `restofrontcom` was disconnected 2026-08-19.
+The operator reports deleting it on 2026-08-20; that account-side action is
+not independently observable from this repository. It never served
+`restofront.com` or `cornershop.dev`. Do not recreate it. Do not `vercel link` this repo. Detail:
 `hosting-single-origin.md`.

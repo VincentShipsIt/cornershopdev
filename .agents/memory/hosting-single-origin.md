@@ -7,7 +7,7 @@ scope: production hosting — Caddy/EC2 vs Vercel
 # Hosting — single-origin on Caddy, not Vercel
 
 Do not re-open "should the UI live on Vercel?" unless Vincent explicitly
-reopens it. Decision recorded 2026-08-20.
+reopens it. Decision recorded 2026-08-19 and effective 2026-08-20.
 
 ## Verdict
 
@@ -24,6 +24,7 @@ behind `shipshit-caddy`. That is intentional, not a leftover.
 |---|---|---|
 | `restofront.com` / `www` | AWS `52.8.153.188`, Caddy → `api-cornershop-dev` | Restofront marketing / product |
 | `cornershop.dev` / `www` / `api` | Same box, same container | Factory UI + API |
+| `domains.cornershop.dev` | Same Caddy instance | Intentional `404`; never proxied to the app |
 | `<slug>.restofront.com` | Same box, on-demand TLS | Customer site |
 | Customer custom domain | Same box, on-demand TLS after verify | Customer site |
 
@@ -63,8 +64,10 @@ built that Vercel project. It never owned `restofront.com` or
 `cornershop.dev` DNS. Builds failed (`BETTER_AUTH_SECRET` missing).
 
 2026-08-19: Git disconnected, preview deploys off, PR comments off.
-2026-08-20: project **deleted**. Do not recreate it. Do not `vercel link`
-this repo. There is no `cornershopdev` Vercel project.
+The operator reports that the project was deleted on 2026-08-20. That
+external account action is not independently observable from this repository.
+Do not recreate it or `vercel link` this repo. There is no intended
+`cornershopdev` Vercel project.
 
 Historical GitHub "Vercel" commit statuses on old SHAs can stay red.
 They are not a current deploy.
