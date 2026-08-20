@@ -66,10 +66,11 @@ next validated save or publish persists the current safe representation.
 `Site.email` is only the sourced public business mailbox. Operator-provided
 owner/outreach recipients are stored separately in private
 `Site.leadContactEmail` and are never projected into a draft or published
-snapshot. The privacy migration moves legacy prospect/preview email values to
-that private field, then clears the privacy-ambiguous legacy public column for
-every lifecycle state until source evidence or an owner-reviewed save
-repopulates it.
+snapshot. The privacy migration preserves every legacy email value in that
+private field before clearing the privacy-ambiguous public column for every
+lifecycle state; outreach eligibility remains limited to prospect/preview
+rows. Source evidence or an owner-reviewed save can later repopulate the public
+business field.
 
 ## Bounds and non-goals
 

@@ -84,6 +84,7 @@ describe("source navigation security", () => {
     ["https://attacker.example/menu", "/menu"],
     ["https://source.example/other", "/menu"],
     ["http://source.example/menu", "/menu"],
+    ["https://[", "/menu"],
   ])(
     "rejects destination %s that does not authenticate intent %s",
     (destinationUrl, url) => {

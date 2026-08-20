@@ -7,6 +7,15 @@ const opengraphRoute = await Bun.file(
 ).text();
 
 describe("Open Graph remote hero boundary", () => {
+  it("uses the patched Sharp/libvips runtime", async () => {
+    const sharpPackage = await Bun.file(
+      new URL("../../node_modules/sharp/package.json", import.meta.url),
+    ).json();
+
+    expect(sharpPackage.version).toBe("0.35.3");
+    expect(sharp.versions.vips).toBe("8.18.3");
+  });
+
   it("routes the metadata image through the bounded public-image fetcher", async () => {
     const validPng = new Uint8Array(
       await Bun.file(

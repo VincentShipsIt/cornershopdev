@@ -65,7 +65,7 @@ type PromptVerticalConfig = Pick<
 type ImagePromptVerticalConfig = Pick<VerticalConfig, "imageEnhancement">;
 
 export const SHARED_SKELETON = `Rules:
-- Never invent booking, ordering, delivery, address, phone, opening-hour, availability, allergen, service, or price facts.
+- Never invent booking, ordering, delivery, address, phone, email, opening-hour, availability, allergen, service, or price facts.
 - Existing booking, ordering, and delivery systems must remain external links; do not rename their providers.
 - Preserve all factual catalog entries and prices that can be recovered.
 - Put only explicitly stated opening times in businessHours; use [] when none are stated.
@@ -84,6 +84,27 @@ export const SHARED_SKELETON = `Rules:
  */
 export function aiIsConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY);
+}
+
+export function selectSourceBackedEmail(
+  reconstructedEmail: string | undefined,
+  modelEmail: string | undefined,
+  pageText: string,
+): string {
+  const reconstructed = reconstructedEmail?.trim();
+  if (reconstructed) return reconstructed;
+  const candidate = modelEmail?.trim();
+  return candidate && pageText.toLowerCase().includes(candidate.toLowerCase())
+    ? candidate
+    : "";
+}
+
+export function selectCatalogSource<T>(
+  hasReconstructedCatalog: boolean,
+  reconstruct: () => T,
+  modelCatalog: () => T,
+): T {
+  return hasReconstructedCatalog ? reconstruct() : modelCatalog();
 }
 
 function getOpenRouter() {
@@ -334,12 +355,15 @@ export async function generateSiteDraft<
   const normalizedAttributes = vertical.normalizeGeneratedAttributes
     ? vertical.normalizeGeneratedAttributes(attributes, template)
     : attributes;
-  const deterministic = deterministicDraft(source, vertical);
   return vertical.draftSchema.parse({
     ...output,
     slug: slugify(output.name),
     sourceUrl: source.sourceUrl,
-    email: source.email ?? output.email ?? "",
+    email: selectSourceBackedEmail(
+      source.email,
+      output.email,
+      source.pageText,
+    ),
     logoUrl: source.logoUrl ?? null,
     faviconUrl: source.faviconUrl ?? null,
     heroImageUrl: source.heroImageUrl,
@@ -363,10 +387,11 @@ export async function generateSiteDraft<
         ? source.businessHours
         : output.businessHours,
     autoEnhanceImages: true,
-    catalogSections:
-      source.catalogSections && source.catalogSections.length > 0
-        ? deterministic.catalogSections
-        : output.catalogSections.map((section) => ({
+    catalogSections: selectCatalogSource(
+      Boolean(source.catalogSections && source.catalogSections.length > 0),
+      () => deterministicDraft(source, vertical).catalogSections,
+      () =>
+        output.catalogSections.map((section) => ({
             ...section,
             items: section.items.map((item) => ({
               ...item,
@@ -375,6 +400,7 @@ export async function generateSiteDraft<
               imageProvenance: null,
             })),
           })),
+    ),
     integrations:
       source.links.length > 0 ? source.links : output.integrations,
     translations: output.translations.map((translation) => ({

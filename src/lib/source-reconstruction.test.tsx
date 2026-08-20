@@ -127,7 +127,7 @@ describe("deterministic source reconstruction", () => {
         html: `
           <html lang="en">
             <head>
-              <meta name="description" content="A cafe with malformed &#x110000; and &#999999999999999999999; entities.">
+              <meta name="description" content="A cafe with malformed &#x110000; and &#999999999999999999999; entities, plus &#60;img src=x onerror=alert(1)&#62; encoded markup.">
             </head>
             <body><h1>Entity Cafe</h1></body>
           </html>
@@ -140,7 +140,7 @@ describe("deterministic source reconstruction", () => {
     });
 
     expect(reconstructed.description).toBe(
-      "A cafe with malformed � and � entities.",
+      "A cafe with malformed � and � entities, plus encoded markup.",
     );
     await expect(
       generateSiteDraft(
@@ -154,7 +154,7 @@ describe("deterministic source reconstruction", () => {
         restaurantConfig,
       ),
     ).resolves.toMatchObject({
-      description: "A cafe with malformed � and � entities.",
+      description: "A cafe with malformed � and � entities, plus encoded markup.",
     });
   });
 

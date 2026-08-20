@@ -84,7 +84,7 @@ describe("site contact privacy", () => {
     expect(markup).not.toContain(leadContactEmail);
   });
 
-  it("backfills unclaimed recipients and clears every privacy-ambiguous legacy public email", async () => {
+  it("privately preserves every legacy recipient and clears every privacy-ambiguous public email", async () => {
     const migration = await Bun.file(
       new URL(
         "../../prisma/migrations/20260820200000_site_contact_privacy_and_catalog_availability/migration.sql",
@@ -93,9 +93,8 @@ describe("site contact privacy", () => {
     ).text();
 
     expect(migration).toContain('"leadContactEmail" = "email"');
-    expect(migration).toContain(
-      '"status" IN (\'PROSPECT\', \'PREVIEW_READY\')',
-    );
+    expect(migration).toContain('AND "leadContactEmail" IS NULL;');
+    expect(migration).not.toContain('"status" IN');
     expect(migration).toContain(
       'UPDATE "Site"\nSET "email" = NULL\nWHERE "email" IS NOT NULL;',
     );

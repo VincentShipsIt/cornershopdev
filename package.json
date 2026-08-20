@@ -44,7 +44,7 @@
     "react-dom": "19.2.4",
     "redis": "^6.1.0",
     "resend": "^6.17.2",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "shadcn": "^4.13.1",
     "stripe": "^22.3.2",
     "svix": "^1.99.1",
@@ -77,5 +77,8 @@
   "trustedDependencies": [
     "sharp",
     "unrs-resolver"
-  ]
+  ],
+  "overrides": {
+    "sharp": "^0.35.3"
+  }
 }

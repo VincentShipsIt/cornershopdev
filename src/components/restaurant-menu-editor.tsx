@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { RestaurantDraft } from "@/lib/restaurant";
 import {
+  restaurantAvailabilityLabel,
   SUPPORTED_MENU_CURRENCIES,
   type MenuValidationIssue,
   type RestaurantMenuMutation,
@@ -458,9 +459,9 @@ export function RestaurantMenuEditor({
                                 <Label
                                   htmlFor={`available-${sectionIndex}-${itemIndex}`}
                                 >
-                                  {canonicalItem.available === null
-                                    ? "Availability unknown"
-                                    : "Available"}
+                                  {restaurantAvailabilityLabel(
+                                    canonicalItem.available,
+                                  )}
                                 </Label>
                                 <Switch
                                   id={`available-${sectionIndex}-${itemIndex}`}

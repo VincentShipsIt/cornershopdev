@@ -1107,7 +1107,12 @@ function stringValue(value: unknown): string {
 }
 
 function cleanText(value: string): string {
-  return decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+  const stripped = value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ");
+  // Entity decoding can reveal markup only after the first stripping pass.
+  return decodeHtml(stripped).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function decodeHtml(value: string): string {

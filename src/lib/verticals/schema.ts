@@ -106,7 +106,13 @@ export const catalogSectionSchema = z.object({
 });
 
 export const safeExternalHttpsUrlSchema = z.url().superRefine((value, context) => {
-  const url = new URL(value);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    // z.url() owns the malformed-absolute issue.
+    return;
+  }
   if (url.protocol !== "https:") {
     context.addIssue({
       code: "custom",
@@ -420,7 +426,13 @@ export function assertSourceNavigationDestinations(
 
   draft.sourceData.navigation.forEach((navigation, index) => {
     if (!navigation.destinationUrl) return;
-    const destination = new URL(navigation.destinationUrl);
+    let destination: URL;
+    try {
+      destination = new URL(navigation.destinationUrl);
+    } catch {
+      // The nested URL schema owns the malformed-absolute issue.
+      return;
+    }
     const expectedDestination = source
       ? new URL(navigation.url, source).toString()
       : null;
