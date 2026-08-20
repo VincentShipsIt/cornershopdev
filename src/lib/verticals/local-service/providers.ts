@@ -29,16 +29,18 @@ function provider(
 export const localServiceLinkKeywordHints: LinkClassificationHint[] = [
   {
     type: "contact",
-    pattern: /whatsapp|wa\.me|message us|chat with us/i,
+    pattern:
+      /whatsapp|wa\.me|message us|chat with us|nous contacter|contactez-nous|nous écrire|écrivez-nous|nous joindre/i,
   },
   {
     type: "quote",
     pattern:
-      /quote|estimate|enquiry|inquiry|jobber|housecall|servicem8|tradify|checkatrade|mybuilder|ratedpeople|bark/i,
+      /quote|estimate|estimation|devis|enquiry|inquiry|jobber|housecall|servicem8|tradify|checkatrade|mybuilder|ratedpeople|bark/i,
   },
   {
     type: "booking",
-    pattern: /book|schedule|appointment|callout/i,
+    pattern:
+      /book|schedule|appointment|callout|rendez-vous|planifier|réserver|reservation/i,
   },
   {
     type: "social",
@@ -47,4 +49,4 @@ export const localServiceLinkKeywordHints: LinkClassificationHint[] = [
 ];
 
 export const localServiceRelevantPathPattern =
-  /(?:service|services|plumb|electric|build|repair|maintenance|project|portfolio|gallery|work|credential|certif|licen[cs]|insurance|insured|area|location|coverage|emergency|callout|contact|quote|estimate|about|team)/i;
+  /(?:service|services|plumb|plomberie|electric|électric|build|construction|repair|réparation|depannage|dépannage|maintenance|artisan|project|projet|portfolio|gallery|galerie|work|travaux|realisation|réalisation|credential|qualification|certif|licen[cs]|insurance|insured|assurance|area|zone|location|coverage|couverture|emergency|urgence|callout|contact|quote|estimate|estimation|devis|about|a-propos|équipe|equipe)/i;

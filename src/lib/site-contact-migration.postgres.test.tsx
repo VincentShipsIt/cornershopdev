@@ -26,6 +26,7 @@ const reconstructionMigration =
 const privacyMigration =
   "20260820200000_site_contact_privacy_and_catalog_availability";
 const foodRetailMigration = "20260820210000_food_retail_vertical";
+const localServiceMigration = "20260820220000_local_service_vertical";
 
 describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
   test(
@@ -129,6 +130,18 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
         await applyMigration(upgrade, privacyMigration);
         await applyMigration(upgrade, foodRetailMigration);
 
+        const preLocalVerticalValues = await enumValues(upgrade, "Vertical");
+        const preLocalIntegrationValues = await enumValues(
+          upgrade,
+          "IntegrationType",
+        );
+        expect(preLocalVerticalValues).toContain(Vertical.FOOD_RETAIL);
+        expect(preLocalVerticalValues).not.toContain("LOCAL_SERVICE");
+        expect(preLocalIntegrationValues).not.toContain("QUOTE");
+        expect(preLocalIntegrationValues).not.toContain("CONTACT");
+
+        await applyMigration(upgrade, localServiceMigration);
+
         const contacts = await upgrade.query<{
           email: string | null;
           leadContactEmail: string | null;
@@ -215,6 +228,19 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
         expect(verticalValues.rows.map((row) => row.value)).toContain(
           Vertical.FOOD_RETAIL,
         );
+        expect(verticalValues.rows.map((row) => row.value)).toContain(
+          Vertical.LOCAL_SERVICE,
+        );
+        const integrationValues = await upgrade.query<{ value: string }>(
+          `SELECT enumlabel AS value
+           FROM pg_enum
+           JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+           WHERE pg_type.typname = 'IntegrationType'
+           ORDER BY enumsortorder`,
+        );
+        expect(integrationValues.rows.map((row) => row.value)).toEqual(
+          expect.arrayContaining(["QUOTE", "CONTACT"]),
+        );
       } finally {
         await upgrade?.end().catch(() => undefined);
         await admin.query(
@@ -240,4 +266,16 @@ async function applyMigration(
     "utf8",
   );
   await client.query(sql);
+}
+
+async function enumValues(client: Client, typeName: string): Promise<string[]> {
+  const result = await client.query<{ value: string }>(
+    `SELECT enumlabel AS value
+     FROM pg_enum
+     JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+     WHERE pg_type.typname = $1
+     ORDER BY enumsortorder`,
+    [typeName],
+  );
+  return result.rows.map((row) => row.value);
 }

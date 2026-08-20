@@ -450,7 +450,7 @@ function classifyLink(
   );
 }
 
-function extractLinks(
+export function extractSourceLinks(
   html: string,
   baseUrl: URL,
   providers: ProviderDefinition[],
@@ -608,7 +608,7 @@ export async function inspectSource(
     .slice(0, MAX_SOURCE_TEXT_CHARS);
   const links = [html, ...discoveredPages.map((page) => page.html)]
     .flatMap((pageHtml) =>
-      extractLinks(
+      extractSourceLinks(
         pageHtml,
         finalUrl,
         vertical.providers,

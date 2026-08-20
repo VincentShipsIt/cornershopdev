@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import {
   ExternalLink,
@@ -49,6 +49,24 @@ const linkTypes: LocalServiceSiteDraft["integrations"][number]["type"][] = [
   "social",
 ];
 
+export function reconcileLocalServiceDraftAfterSave(input: {
+  submittedDraft: LocalServiceSiteDraft;
+  persistedDraft: LocalServiceSiteDraft;
+  currentDraft: LocalServiceSiteDraft;
+  submittedMutationVersion: number;
+  currentMutationVersion: number;
+  savedRevision: number;
+}) {
+  const hadNewerEdits =
+    input.currentMutationVersion !== input.submittedMutationVersion;
+  return {
+    draft: hadNewerEdits ? input.currentDraft : input.persistedDraft,
+    revision: input.savedRevision,
+    dirty: hadNewerEdits,
+    hadNewerEdits,
+  };
+}
+
 export function LocalServiceDashboard({
   initialDraft,
   initialRevision,
@@ -62,26 +80,31 @@ export function LocalServiceDashboard({
   brand: BrandIdentity;
   canSwitchWorkspace: boolean;
 }) {
-  const [draft, setDraft] = useState(initialDraft);
+  const [draft, setDraftState] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
+  const mutationVersionRef = useRef(0);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedRevision, setSavedRevision] = useState(initialRevision);
+  const savedRevisionRef = useRef(initialRevision);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function change(mutator: (next: LocalServiceSiteDraft) => void) {
-    setDraft((current) => {
-      const next = structuredClone(current);
-      mutator(next);
-      return next;
-    });
+    const next = structuredClone(draftRef.current);
+    mutator(next);
+    draftRef.current = next;
+    mutationVersionRef.current += 1;
+    setDraftState(next);
     setDirty(true);
     setNotice(null);
     setError(null);
   }
 
   async function save(): Promise<boolean> {
-    const parsed = localServiceSiteDraftSchema.safeParse(draft);
+    const submittedDraft = draftRef.current;
+    const submittedMutationVersion = mutationVersionRef.current;
+    const parsed = localServiceSiteDraftSchema.safeParse(submittedDraft);
     if (!parsed.success) {
       setError(
         parsed.error.issues
@@ -94,12 +117,12 @@ export function LocalServiceDashboard({
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`/api/sites/${draft.slug}`, {
+      const response = await fetch(`/api/sites/${submittedDraft.slug}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...parsed.data,
-          expectedRevision: savedRevision,
+          expectedRevision: savedRevisionRef.current,
         }),
       });
       const result = (await response.json()) as {
@@ -107,13 +130,30 @@ export function LocalServiceDashboard({
         revision?: number;
       };
       if (!response.ok) throw new Error(result.error ?? "Save failed");
-      if (typeof result.revision !== "number") {
+      if (
+        typeof result.revision !== "number" ||
+        !Number.isInteger(result.revision)
+      ) {
         throw new Error("Save succeeded without a draft revision");
       }
-      setDraft(parsed.data);
-      setSavedRevision(result.revision);
-      setDirty(false);
-      setNotice("Private draft saved");
+      const reconciled = reconcileLocalServiceDraftAfterSave({
+        submittedDraft,
+        persistedDraft: parsed.data,
+        currentDraft: draftRef.current,
+        submittedMutationVersion,
+        currentMutationVersion: mutationVersionRef.current,
+        savedRevision: result.revision,
+      });
+      draftRef.current = reconciled.draft;
+      savedRevisionRef.current = reconciled.revision;
+      setDraftState(reconciled.draft);
+      setSavedRevision(reconciled.revision);
+      setDirty(reconciled.dirty);
+      setNotice(
+        reconciled.hadNewerEdits
+          ? `Draft revision ${reconciled.revision} saved; newer edits remain unsaved`
+          : "Private draft saved",
+      );
       return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Save failed");

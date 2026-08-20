@@ -32,6 +32,17 @@ credentials, licences, insurance, guarantees, project outcomes, WhatsApp
 numbers, quote tools, and prices. Deterministic imports default every trust and
 availability field to empty or `not-stated`.
 
+Prompt instructions are not the trust boundary. After any configured model
+returns, `bindGeneratedLocalServiceDraftToEvidence` replaces identity, locale,
+branding, contact details, hours, integrations, catalog/services, prices,
+availability, emergency posture, areas, credentials, insurance, trust signals,
+and projects with the deterministic reconstruction. The model may only choose
+whether an already source-backed project gallery is shown. LOCAL_SERVICE does
+not yet have `current`/`stale`/`draft` translation review state, so generated
+translation overlays are discarded rather than stored with an implied approval.
+They may be introduced only alongside explicit owner review and publication
+gates.
+
 ## Rendering and SEO
 
 The shared renderer consumes a vertical-neutral `businessDetails` projection.
@@ -80,6 +91,8 @@ Focused tests cover:
 - fixture and schema round-tripping;
 - field bounds and project-image URL safety;
 - conservative deterministic defaults;
+- malicious model output stripped back to source-backed or conservative values,
+  including generated factual translations;
 - provider classification for WhatsApp and quote tools;
 - registry, slug, asset namespace, and launch-readiness behavior;
 - LocalBusiness subtype, services, areas, hours, actions, and script escaping;
@@ -88,6 +101,8 @@ Focused tests cover:
   draft generation, and the shared preview renderer, including sourced subtype,
   language, logo/favicon, palette, contact details, hours, navigation, services,
   pricing evidence, and the absence of invented emergency/trust claims;
+- deferred owner-save reconciliation that advances the server revision without
+  overwriting newer local edits;
 
 Run the complete repository gates on the Mac Studio and in required GitHub CI:
 

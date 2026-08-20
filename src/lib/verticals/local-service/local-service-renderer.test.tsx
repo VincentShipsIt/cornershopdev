@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ImportStudio } from "@/app/create/import-studio";
-import { LocalServiceDashboard } from "@/app/dashboard/local-service-dashboard";
+import {
+  LocalServiceDashboard,
+  reconcileLocalServiceDraftAfterSave,
+} from "@/app/dashboard/local-service-dashboard";
 import { SiteRenderer } from "@/components/site-renderer";
 import { generateSiteDraft } from "@/lib/ai/site-generation";
 import { FACTORY_BRAND } from "@/lib/brand";
-import type { ExtractedSite } from "@/lib/importer";
+import {
+  extractSourceLinks,
+  type ExtractedSite,
+} from "@/lib/importer";
 import { reconstructSource } from "@/lib/source-reconstruction";
 import { Vertical } from "@/generated/prisma/enums";
 import { localServiceConfig } from "@/lib/verticals/local-service/config";
@@ -71,6 +77,44 @@ describe("local-service surfaces", () => {
     expect(html).not.toContain(">Publish<");
   });
 
+  it("preserves post-dispatch edits and advances the revision after a deferred save", async () => {
+    const submittedDraft = structuredClone(sampleLocalServiceSiteDraft);
+    let currentDraft = submittedDraft;
+    let currentMutationVersion = 0;
+    let releaseResponse: (() => void) | undefined;
+    const deferredResponse = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    const completeComponentSave = async () => {
+      await deferredResponse;
+      return reconcileLocalServiceDraftAfterSave({
+        submittedDraft,
+        persistedDraft: localServiceConfig.draftSchema.parse(submittedDraft),
+        currentDraft,
+        submittedMutationVersion: 0,
+        currentMutationVersion,
+        savedRevision: 8,
+      });
+    };
+
+    const saving = completeComponentSave();
+    currentDraft = {
+      ...submittedDraft,
+      description:
+        "Typing after the request was dispatched must remain in the local-service editor.",
+    };
+    currentMutationVersion += 1;
+    releaseResponse?.();
+    const reconciled = await saving;
+
+    expect(reconciled.draft.description).toContain(
+      "must remain in the local-service editor",
+    );
+    expect(reconciled.revision).toBe(8);
+    expect(reconciled.dirty).toBe(true);
+    expect(reconciled.hadNewerEdits).toBe(true);
+  });
+
   it("reconstructs a sourced French plumber preview without a model or invented claims", async () => {
     delete process.env.OPENROUTER_API_KEY;
     const sourceUrl = new URL("https://atelier-riviere.example/");
@@ -86,18 +130,17 @@ describe("local-service surfaces", () => {
         accentForeground: "#ffffff",
       },
     });
+    const links = extractSourceLinks(
+      fixture,
+      sourceUrl,
+      localServiceConfig.providers,
+      localServiceConfig.crawl.linkKeywordHints,
+    );
     const extracted: ExtractedSite = {
       source: sourceUrl.toString(),
       sourceUrl: sourceUrl.toString(),
       pageText: fixture,
-      links: [
-        {
-          type: "quote",
-          label: "Demander un devis",
-          provider: null,
-          url: "https://atelier-riviere.example/contact",
-        },
-      ],
+      links,
       ...reconstructed,
     };
 
@@ -152,6 +195,24 @@ describe("local-service surfaces", () => {
               },
             },
           ],
+        },
+      ],
+      integrations: [
+        {
+          type: "quote",
+          label: "Demander un devis",
+          provider: null,
+          url: "https://atelier-riviere.example/devis",
+          enabled: true,
+          venueId: null,
+        },
+        {
+          type: "contact",
+          label: "WhatsApp",
+          provider: "WhatsApp",
+          url: "https://wa.me/33472102030",
+          enabled: true,
+          venueId: null,
         },
       ],
     });

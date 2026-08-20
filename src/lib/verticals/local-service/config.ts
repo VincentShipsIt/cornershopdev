@@ -43,6 +43,35 @@ const availabilityLabels: Record<
   "by-appointment": "By appointment",
 };
 
+/**
+ * LOCAL_SERVICE treats model output as an untrusted presentation proposal.
+ * Every operational or reputational fact is replaced with the deterministic
+ * reconstruction before persistence. The only retained model choice is whether
+ * to show an already source-backed project gallery; it cannot create a project
+ * or make a claim on its own.
+ */
+export function bindGeneratedLocalServiceDraftToEvidence({
+  generated,
+  deterministic,
+}: {
+  generated: LocalServiceSiteDraft;
+  deterministic: LocalServiceSiteDraft;
+}): LocalServiceSiteDraft {
+  return {
+    ...deterministic,
+    attributes: {
+      ...deterministic.attributes,
+      showProjectGallery:
+        deterministic.attributes.projects.length > 0 &&
+        generated.attributes.showProjectGallery,
+    },
+    // There is no owner-review status on local-service translations yet. Until
+    // that contract exists, generated overlays are discarded rather than
+    // persisting model-authored service or trust wording as reviewed copy.
+    translations: deterministic.translations,
+  };
+}
+
 export const localServiceDictionaryExtensions = {
   en: {
     language: "Language",
@@ -207,6 +236,7 @@ export const localServiceConfig = {
       attributes.projects.length > 0 &&
       (attributes.showProjectGallery || template.showProjectImagesByDefault),
   }),
+  bindGeneratedDraftToEvidence: bindGeneratedLocalServiceDraftToEvidence,
   deterministicItemAttributes: (item) => ({
     pricingModel: item.price === null ? "not-stated" : "fixed",
     priceUnit: "",
