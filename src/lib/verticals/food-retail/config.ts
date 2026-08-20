@@ -150,6 +150,7 @@ export const foodRetailConfig = {
     ...attributes,
     showProductImages: template.showProductImagesByDefault,
   }),
+  generatedTranslationStatus: "draft",
   providers: foodRetailProviders,
   crawl: {
     relevantPathPattern: foodRetailRelevantPathPattern,

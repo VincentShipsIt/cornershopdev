@@ -74,6 +74,45 @@ describe("FOOD_RETAIL vertical", () => {
     );
   });
 
+  it("rejects translated claims that are absent from the canonical source", () => {
+    const adversarialDrafts = [
+      (() => {
+        const draft = structuredClone(sampleFoodRetailDraft);
+        draft.attributes.pickupDetails = "";
+        draft.translations[0].attributes.pickupDetails =
+          "Retrait garanti en dix minutes";
+        return draft;
+      })(),
+      (() => {
+        const draft = structuredClone(sampleFoodRetailDraft);
+        draft.catalogSections[0].items[0].attributes.seasonalAvailability = "";
+        draft.translations[0].catalogSections[0].items[0].attributes.seasonalAvailability =
+          "Disponible uniquement ce week-end";
+        return draft;
+      })(),
+      (() => {
+        const draft = structuredClone(sampleFoodRetailDraft);
+        draft.catalogSections[0].items[0].attributes.preorderNote = "";
+        draft.translations[0].catalogSections[0].items[0].attributes.preorderNote =
+          "Précommande obligatoire";
+        return draft;
+      })(),
+      (() => {
+        const draft = structuredClone(sampleFoodRetailDraft);
+        draft.translations[0].catalogSections[0].items[0].attributes.allergens.push(
+          "fruits à coque",
+        );
+        return draft;
+      })(),
+    ];
+
+    for (const draft of adversarialDrafts) {
+      expect(() =>
+        localizeSiteDraft(foodRetailSiteDraftSchema.parse(draft), "fr"),
+      ).toThrow();
+    }
+  });
+
   it("registers commerce links but never booking providers", () => {
     expect(foodRetailProviders.some((provider) => provider.type === "ordering"))
       .toBe(true);

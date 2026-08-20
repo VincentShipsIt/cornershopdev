@@ -21,6 +21,7 @@ import {
   FOOD_RETAIL_NEW_LINK_LABEL,
   markFoodRetailTranslationReviewed,
   markFoodRetailTranslationsStale,
+  reconcileFoodRetailDraftAfterSave,
   updateFoodRetailTranslation,
 } from "@/lib/verticals/food-retail/editor";
 import { foodRetailSiteDraftSchema, type FoodRetailSiteDraft } from "@/lib/verticals/food-retail/schema";
@@ -183,7 +184,8 @@ export function FoodRetailDashboard({
   }
 
   async function saveDraft(): Promise<boolean> {
-    const parsed = foodRetailSiteDraftSchema.safeParse(draft);
+    const submittedDraft = draft;
+    const parsed = foodRetailSiteDraftSchema.safeParse(submittedDraft);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Check the draft fields");
       return false;
@@ -211,7 +213,13 @@ export function FoodRetailDashboard({
       ) {
         throw new Error("Save response did not include a draft revision");
       }
-      setDraft(parsed.data);
+      setDraft((current) =>
+        reconcileFoodRetailDraftAfterSave(
+          submittedDraft,
+          parsed.data,
+          current,
+        ),
+      );
       setRevision(result.revision);
       setNotice("Draft saved privately.");
       return true;

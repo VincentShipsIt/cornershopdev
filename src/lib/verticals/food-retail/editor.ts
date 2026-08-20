@@ -117,3 +117,16 @@ export function hasUnreviewedFoodRetailTranslations(draft: {
     (translation) => translation.status !== "current",
   );
 }
+
+/**
+ * A successful save acknowledges the submitted snapshot. If the owner has
+ * edited since that snapshot left the browser, those newer edits remain the
+ * active draft instead of being replaced by the older parsed payload.
+ */
+export function reconcileFoodRetailDraftAfterSave(
+  submitted: FoodRetailSiteDraft,
+  persisted: FoodRetailSiteDraft,
+  current: FoodRetailSiteDraft,
+): FoodRetailSiteDraft {
+  return current === submitted ? persisted : current;
+}

@@ -154,6 +154,72 @@ export const foodRetailSiteDraftSchema = z
         }
       });
     });
+    draft.translations.forEach((translation, translationIndex) => {
+      if (
+        Boolean(translation.attributes.pickupDetails.trim()) !==
+        Boolean(draft.attributes.pickupDetails.trim())
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["translations", translationIndex, "attributes", "pickupDetails"],
+          message:
+            "Translated pickup details must match the canonical claim presence",
+        });
+      }
+
+      translation.catalogSections.forEach((translatedSection, sectionIndex) => {
+        translatedSection.items.forEach((translatedItem, itemIndex) => {
+          const canonicalItem =
+            draft.catalogSections[sectionIndex]?.items[itemIndex];
+          if (!canonicalItem) return;
+          const translatedAttributes = translatedItem.attributes;
+          const canonicalAttributes = canonicalItem.attributes;
+          const attributePath = [
+            "translations",
+            translationIndex,
+            "catalogSections",
+            sectionIndex,
+            "items",
+            itemIndex,
+            "attributes",
+          ];
+
+          if (
+            Boolean(translatedAttributes.seasonalAvailability.trim()) !==
+            Boolean(canonicalAttributes.seasonalAvailability.trim())
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [...attributePath, "seasonalAvailability"],
+              message:
+                "Translated seasonal availability must match the canonical claim presence",
+            });
+          }
+          if (
+            Boolean(translatedAttributes.preorderNote.trim()) !==
+            Boolean(canonicalAttributes.preorderNote.trim())
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [...attributePath, "preorderNote"],
+              message:
+                "Translated preorder notes must match the canonical claim presence",
+            });
+          }
+          if (
+            translatedAttributes.allergens.length !==
+            canonicalAttributes.allergens.length
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [...attributePath, "allergens"],
+              message:
+                "Translated allergen labels must match the canonical allergen count",
+            });
+          }
+        });
+      });
+    });
   });
 
 export type FoodShopType = z.infer<typeof foodShopTypeSchema>;

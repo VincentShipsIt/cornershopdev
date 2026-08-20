@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FoodRetailDashboard } from "@/app/dashboard/food-retail-dashboard";
 import { FACTORY_BRAND } from "@/lib/brand";
+import { normalizeGeneratedTranslationOverlays } from "@/lib/ai/site-generation";
 import {
   appendFoodRetailCategoryTranslations,
   appendFoodRetailIntegrationTranslations,
@@ -9,8 +10,10 @@ import {
   FOOD_RETAIL_NEW_LINK_LABEL,
   hasUnreviewedFoodRetailTranslations,
   markFoodRetailTranslationReviewed,
+  reconcileFoodRetailDraftAfterSave,
   updateFoodRetailTranslation,
 } from "@/lib/verticals/food-retail/editor";
+import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
 import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
 import { foodRetailSiteDraftSchema } from "@/lib/verticals/food-retail/schema";
 
@@ -133,5 +136,53 @@ describe("food-retail bilingual dashboard editing", () => {
     const parsed = foodRetailSiteDraftSchema.parse(generated);
     expect(parsed.translations[0].status).toBe("draft");
     expect(hasUnreviewedFoodRetailTranslations(parsed)).toBe(true);
+  });
+
+  it("overrides a model-generated current status with draft", () => {
+    const malicious = sampleFoodRetailDraft.translations.map((translation) => ({
+      ...translation,
+      status: "current" as const,
+    }));
+
+    const normalized = normalizeGeneratedTranslationOverlays(
+      malicious,
+      foodRetailConfig,
+    );
+    const parsed = foodRetailSiteDraftSchema.parse({
+      ...sampleFoodRetailDraft,
+      translations: normalized,
+    });
+
+    expect(parsed.translations[0].status).toBe("draft");
+    expect(hasUnreviewedFoodRetailTranslations(parsed)).toBe(true);
+  });
+
+  it("preserves edits made while the dashboard save response is deferred", async () => {
+    const submitted = structuredClone(sampleFoodRetailDraft);
+    const persisted = foodRetailSiteDraftSchema.parse(submitted);
+    let current = submitted;
+    let releaseResponse: (() => void) | undefined;
+    const deferredResponse = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    const completeSave = async () => {
+      await deferredResponse;
+      current = reconcileFoodRetailDraftAfterSave(
+        submitted,
+        persisted,
+        current,
+      );
+    };
+
+    const saving = completeSave();
+    current = {
+      ...submitted,
+      description:
+        "Typing that happened after the save request must remain in the editor.",
+    };
+    releaseResponse?.();
+    await saving;
+
+    expect(current.description).toContain("must remain in the editor");
   });
 });

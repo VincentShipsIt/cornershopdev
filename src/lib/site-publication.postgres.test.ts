@@ -473,6 +473,52 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     ).toEqual(before);
   });
 
+  test("refuses to publish a translated pickup claim absent from canonical evidence", async () => {
+    const adversarial = structuredClone(sampleFoodRetailDraft);
+    adversarial.slug = foodSlug;
+    adversarial.attributes.pickupDetails = "";
+    adversarial.translations[0].status = "current";
+    adversarial.translations[0].attributes.pickupDetails =
+      "Retrait garanti en dix minutes";
+    await db.site.update({
+      where: { id: foodSiteId },
+      data: {
+        attributes: adversarial.attributes,
+        translations: adversarial.translations,
+        status: "CLAIMED",
+      },
+    });
+    const before = await db.site.findUniqueOrThrow({
+      where: { id: foodSiteId },
+      select: {
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true, auditEvents: true } },
+      },
+    });
+
+    await expect(
+      publishSiteDraft({
+        siteId: foodSiteId,
+        slug: foodSlug,
+        vertical: Vertical.FOOD_RETAIL,
+        actor,
+        changeSummary: "Invented translated pickup must not publish",
+      }),
+    ).rejects.toThrow(
+      "Translated pickup details must match the canonical claim presence",
+    );
+
+    expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: foodSiteId },
+        select: {
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true, auditEvents: true } },
+        },
+      }),
+    ).toEqual(before);
+  });
+
   test("versions and audits authorized integration saves without publishing", async () => {
     const before = await db.site.findUniqueOrThrow({
       where: { id: siteId },

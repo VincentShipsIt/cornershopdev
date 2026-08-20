@@ -309,17 +309,33 @@ export async function generateSiteDraft<
     })),
     integrations:
       source.links.length > 0 ? source.links : output.integrations,
-    translations: output.translations.map((translation) => ({
-      ...translation,
-      integrationLabels:
-        source.links.length > 0
-          ? source.links.map(
-              (link, index) =>
-                translation.integrationLabels[index] ?? link.label,
-            )
-          : translation.integrationLabels,
-    })),
+    translations: normalizeGeneratedTranslationOverlays(
+      output.translations.map((translation) => ({
+        ...translation,
+        integrationLabels:
+          source.links.length > 0
+            ? source.links.map(
+                (link, index) =>
+                  translation.integrationLabels[index] ?? link.label,
+              )
+            : translation.integrationLabels,
+      })),
+      vertical,
+    ),
   });
+}
+
+export function normalizeGeneratedTranslationOverlays<
+  TTranslation extends { integrationLabels: string[] },
+>(
+  translations: TTranslation[],
+  vertical: Pick<VerticalConfig, "generatedTranslationStatus">,
+): TTranslation[] {
+  if (!vertical.generatedTranslationStatus) return translations;
+  return translations.map((translation) => ({
+    ...translation,
+    status: vertical.generatedTranslationStatus,
+  }));
 }
 
 export type SiteImageEnhancementRequest = {

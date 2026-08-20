@@ -271,6 +271,11 @@ export type VerticalConfig<
     attributes: TAttributes,
     template: TTemplate,
   ) => TAttributes;
+  /**
+   * Trust state applied after model output has passed the vertical schema.
+   * Models may propose copy, but they cannot mark that copy owner-reviewed.
+   */
+  generatedTranslationStatus?: "draft";
   providers: ProviderDefinition[];
   crawl: {
     relevantPathPattern: RegExp;
