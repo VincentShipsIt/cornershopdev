@@ -1,5 +1,6 @@
 const publicMagicLinkSignInPath = "/api/auth/sign-in/magic-link";
 const publicMagicLinkVerifyPath = "/api/auth/magic-link/verify";
+const publicSignOutPath = "/api/auth/sign-out";
 const internalCheckoutBootstrapPath = "/api/auth/checkout/bootstrap";
 const internalWorkspaceSelectionPath = "/api/auth/workspace/select";
 
@@ -13,6 +14,7 @@ export function isBlockedDirectBetterAuthRoute(
   return (
     (normalizedMethod === "POST" &&
       normalizedPath === publicMagicLinkSignInPath) ||
+    (normalizedMethod === "POST" && normalizedPath === publicSignOutPath) ||
     (normalizedMethod === "POST" &&
       (normalizedPath === internalCheckoutBootstrapPath ||
         normalizedPath === internalWorkspaceSelectionPath)) ||

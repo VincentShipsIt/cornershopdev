@@ -4,7 +4,7 @@ import { verifiedMagicLinkResponse } from "@/lib/auth-evidence-responses";
 import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
 import { markMagicLinkConsumed } from "@/lib/magic-links";
-import { isSameOriginMutation } from "@/lib/request-origin";
+import { isTrustedSameOriginFormPost } from "@/lib/request-origin";
 import {
   PENDING_MAGIC_LINK_COOKIE,
   pendingMagicLinkCookieOptions,
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+  if (!isTrustedSameOriginFormPost(request)) {
     return NextResponse.json(
       { error: "Invalid request origin" },
       { status: 403 },
