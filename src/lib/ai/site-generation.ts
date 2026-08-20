@@ -226,7 +226,7 @@ export function deterministicDraft<
           description: item.description,
           price: item.price,
           currency: item.currency ?? "EUR",
-          available: true,
+          available: item.availability,
           attributes: vertical.itemAttributeDefaults,
           imageUrl: item.imageUrl,
           originalImageUrl: item.imageUrl,

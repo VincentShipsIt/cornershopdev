@@ -458,11 +458,13 @@ export function RestaurantMenuEditor({
                                 <Label
                                   htmlFor={`available-${sectionIndex}-${itemIndex}`}
                                 >
-                                  Available
+                                  {canonicalItem.available === null
+                                    ? "Availability unknown"
+                                    : "Available"}
                                 </Label>
                                 <Switch
                                   id={`available-${sectionIndex}-${itemIndex}`}
-                                  checked={canonicalItem.available}
+                                  checked={canonicalItem.available === true}
                                   onCheckedChange={(available) =>
                                     onMutation({
                                       type: "update-item",
@@ -559,9 +561,11 @@ export function RestaurantMenuEditor({
                             ? "No price"
                             : `${canonicalItem.price} ${canonicalItem.currency}`}
                           {" · "}
-                          {canonicalItem.available
-                            ? "available"
-                            : "unavailable"}
+                          {canonicalItem.available === null
+                            ? "availability unknown"
+                            : canonicalItem.available
+                              ? "available"
+                              : "unavailable"}
                         </p>
                       )}
                     </div>

@@ -30,8 +30,9 @@ after the session is revalidated against that site's organization membership.
 `/admin` is the platform operator console. It requires both a database
 `SUPERADMIN` role and an email listed in `SUPERADMIN_EMAILS`. It shows signups,
 subscriptions, request totals, portfolio traffic and conversion summaries, and
-bounded per-site operational rows. Restaurant contact email and outreach status
-are visible only in this dual-gated console. Lead creation never sends mail: an
+bounded per-site operational rows. The private owner/outreach recipient is
+stored separately from the sourced public business email and is visible only in
+this dual-gated console. Lead creation never sends mail: an
 operator must review the persisted preview, confirm the initial Restofront
 email, and can pause every workflow before its next send.
 
@@ -169,7 +170,9 @@ reconstruction run locally without a model. JSON-LD, metadata, explicit contact
 links, semantic address markup, source navigation, logos/favicons, and CSS/meta
 colours are recovered with bounded parsers. Every accepted fact keeps its source
 URL, extraction method, and excerpt. Structured menu/product/service candidates
-are accepted only when deterministic schema evidence exists.
+are accepted only when deterministic schema evidence exists. Each JSON-LD
+entity keeps its owning page URL for provenance and relative asset resolution;
+catalog availability remains unknown unless the source explicitly states it.
 
 The persisted draft keeps the repaired palette, logo, favicon, contact details,
 hours, canonical language, source navigation, authentic asset URLs, and the

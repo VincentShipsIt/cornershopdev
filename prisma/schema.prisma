@@ -194,6 +194,9 @@ model Site {
   address                  String?
   phone                    String?
   email                    String?
+  /// Private operator-reviewed owner/outreach recipient. Never project this
+  /// field into a draft, published version, or public site response.
+  leadContactEmail         String?
   sourceUrl                String?
   sourceKey                String?                   @unique
   logoUrl                  String?
@@ -369,7 +372,8 @@ model CatalogItem {
   originalImageUrl String?
   imageProvenance  ImageProvenance?
   attributes       Json             @default("{}")
-  available        Boolean          @default(true)
+  /// Null means the source made no availability claim.
+  available        Boolean?
   position         Int              @default(0)
   sectionId        String
   section          CatalogSection   @relation(fields: [sectionId], references: [id], onDelete: Cascade)

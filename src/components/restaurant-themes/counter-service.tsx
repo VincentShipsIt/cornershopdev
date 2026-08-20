@@ -164,32 +164,34 @@ export function CounterServiceTheme({
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {section.items.filter((item) => item.available).map((item) => (
-                    <article
-                      key={item.name}
-                      className="grid min-h-44 grid-cols-[1fr_auto] gap-5 rounded-[1.4rem] border-2 border-current bg-[var(--theme-surface)] p-5"
-                    >
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-lg font-black">{item.name}</h4>
-                          {itemBadges(item.attributes).map((label) => (
-                            <span
-                              key={label}
-                              className="rounded-full bg-[var(--theme-fg)] px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em] text-[var(--theme-bg)]"
-                            >
-                              {label}
-                            </span>
-                          ))}
+                  {section.items
+                    .filter((item) => item.available !== false)
+                    .map((item) => (
+                      <article
+                        key={item.name}
+                        className="grid min-h-44 grid-cols-[1fr_auto] gap-5 rounded-[1.4rem] border-2 border-current bg-[var(--theme-surface)] p-5"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-lg font-black">{item.name}</h4>
+                            {itemBadges(item.attributes).map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full bg-[var(--theme-fg)] px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em] text-[var(--theme-bg)]"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="mt-3 text-sm leading-6 opacity-70">
+                            {item.description}
+                          </p>
                         </div>
-                        <p className="mt-3 text-sm leading-6 opacity-70">
-                          {item.description}
-                        </p>
-                      </div>
-                      <span className="font-mono text-sm font-bold">
-                        {formatPrice(item.price, item.currency, locale)}
-                      </span>
-                    </article>
-                  ))}
+                        <span className="font-mono text-sm font-bold">
+                          {formatPrice(item.price, item.currency, locale)}
+                        </span>
+                      </article>
+                    ))}
                 </div>
               </section>
             ))}

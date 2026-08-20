@@ -30,6 +30,7 @@ export type PersistableSiteDraft = {
   description: string;
   address: string;
   phone: string;
+  /** Sourced public business mailbox. Operator recipients never enter drafts. */
   email?: string;
   sourceUrl: string | null;
   logoUrl?: string | null;
@@ -73,7 +74,7 @@ export type PersistableSiteDraft = {
       description: string;
       price: number | null;
       currency: string;
-      available: boolean;
+      available: boolean | null;
       attributes: Record<string, unknown>;
       imageUrl: string | null;
       originalImageUrl?: string | null;
@@ -329,7 +330,9 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 where: { id: existing.id },
                 data: {
                   ...siteScalarData(draft, input.vertical, sourceKey),
-                  ...(input.contactEmail ? { email: input.contactEmail } : {}),
+                  ...(input.contactEmail
+                    ? { leadContactEmail: input.contactEmail }
+                    : {}),
                   ...siteRelationReplaceData(draft, input.vertical),
                 },
                 select: { id: true, slug: true },
@@ -338,7 +341,9 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 data: {
                   slug,
                   ...siteScalarData(draft, input.vertical, sourceKey),
-                  ...(input.contactEmail ? { email: input.contactEmail } : {}),
+                  ...(input.contactEmail
+                    ? { leadContactEmail: input.contactEmail }
+                    : {}),
                   integrations: { create: integrationCreateData(draft) },
                   catalogSections: {
                     create: catalogSectionCreateData(draft, input.vertical),

@@ -113,7 +113,7 @@ export function SiteRenderer({
     .flatMap((section) => section.items)
     .filter(
       (item): item is typeof item & { imageUrl: string } =>
-        item.available && Boolean(item.imageUrl),
+        item.available !== false && Boolean(item.imageUrl),
     )
     .slice(0, 4);
   const immersiveHero = template.heroLayout === "immersive";
@@ -460,38 +460,41 @@ export function SiteRenderer({
                 ) : null}
               </div>
               <div className="space-y-6">
-                {section.items.filter((item) => item.available).map((item) => (
-                  <div
-                    key={item.name}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="min-w-0 break-words font-medium">
-                          {item.name}
-                        </h4>
-                        {/* The vertical turns its own item attributes into plain
-                            strings, so the renderer never learns what they mean. */}
-                        {(
-                          config.presentation.itemBadges?.(item.attributes) ?? []
-                        ).map((label: string) => (
-                          <span
-                            key={label}
-                            className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
-                          >
-                            {label}
-                          </span>
-                        ))}
+                {section.items
+                  .filter((item) => item.available !== false)
+                  .map((item) => (
+                    <div
+                      key={item.name}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="min-w-0 break-words font-medium">
+                            {item.name}
+                          </h4>
+                          {/* The vertical turns its own item attributes into plain
+                              strings, so the renderer never learns what they mean. */}
+                          {(
+                            config.presentation.itemBadges?.(item.attributes) ??
+                            []
+                          ).map((label: string) => (
+                            <span
+                              key={label}
+                              className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-1 max-w-xl text-sm leading-6 opacity-75">
+                          {item.description}
+                        </p>
                       </div>
-                      <p className="mt-1 max-w-xl text-sm leading-6 opacity-75">
-                        {item.description}
-                      </p>
+                      <span className="whitespace-nowrap font-mono text-sm">
+                        {formatPrice(item.price, item.currency, locale)}
+                      </span>
                     </div>
-                    <span className="whitespace-nowrap font-mono text-sm">
-                      {formatPrice(item.price, item.currency, locale)}
-                    </span>
-                  </div>
-                ))}
+                  ))}
               </div>
             </section>
           ))}

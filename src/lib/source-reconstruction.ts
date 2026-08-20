@@ -57,6 +57,7 @@ export type ExtractedCatalogItem = {
   description: string;
   price: number | null;
   currency: string | null;
+  availability: boolean | null;
   imageUrl: string | null;
 };
 
@@ -98,6 +99,11 @@ export type ReconstructedPage = {
 
 type JsonRecord = Record<string, unknown>;
 
+type SourcedJsonRecord = {
+  value: JsonRecord;
+  sourceUrl: URL;
+};
+
 type Candidate = {
   value: string;
   method: ReconstructionEvidenceMethod;
@@ -127,13 +133,19 @@ export function reconstructSource(input: {
   const homepageUrl = input.homepage.url;
   const evidence: ReconstructionEvidence[] = [];
   const brandAssets: ExtractedBrandAsset[] = [];
-  const jsonEntities = pages.flatMap((page) =>
-    extractJsonLd(page.html).flatMap(flattenJsonEntities),
-  ).slice(0, MAX_JSON_LD_ENTITIES);
-  const business = selectBusinessEntity(jsonEntities, homepageUrl);
+  const jsonEntities = pages
+    .flatMap((page) =>
+      extractJsonLd(page.html)
+        .flatMap(flattenJsonEntities)
+        .map((value) => ({ value, sourceUrl: page.url })),
+    )
+    .slice(0, MAX_JSON_LD_ENTITIES);
+  const sourcedBusiness = selectBusinessEntity(jsonEntities, homepageUrl);
+  const business = sourcedBusiness?.value ?? null;
+  const businessSourceUrl = sourcedBusiness?.sourceUrl ?? homepageUrl;
 
   const name = firstCandidate([
-    jsonStringCandidate(business?.name, "json-ld", homepageUrl, business),
+    jsonStringCandidate(business?.name, "json-ld", businessSourceUrl, business),
     metaCandidate(input.homepage, "og:site_name"),
     metaCandidate(input.homepage, "application-name"),
     metaCandidate(input.homepage, "og:title"),
@@ -144,7 +156,7 @@ export function reconstructSource(input: {
     jsonStringCandidate(
       business?.description,
       "json-ld",
-      homepageUrl,
+      businessSourceUrl,
       business,
     ),
     metaCandidate(input.homepage, "og:description"),
@@ -152,7 +164,7 @@ export function reconstructSource(input: {
     firstParagraphCandidate(input.homepage),
   ]);
   const address = firstCandidate([
-    jsonAddressCandidate(business?.address, homepageUrl, business),
+    jsonAddressCandidate(business?.address, businessSourceUrl, business),
     itemPropAddressCandidate(input.homepage),
     elementCandidate(input.homepage, "address"),
   ]);
@@ -160,20 +172,25 @@ export function reconstructSource(input: {
     jsonStringCandidate(
       business?.telephone,
       "json-ld",
-      homepageUrl,
+      businessSourceUrl,
       business,
     ),
     contactLinkCandidate(pages, "tel:"),
     itemPropCandidate(input.homepage, "telephone"),
   ]);
   const email = firstCandidate([
-    jsonStringCandidate(business?.email, "json-ld", homepageUrl, business),
+    jsonStringCandidate(
+      business?.email,
+      "json-ld",
+      businessSourceUrl,
+      business,
+    ),
     contactLinkCandidate(pages, "mailto:"),
     itemPropCandidate(input.homepage, "email"),
   ]);
   const businessHours = extractBusinessHours(
     business,
-    homepageUrl,
+    businessSourceUrl,
     pages,
     evidence,
   );
@@ -186,7 +203,7 @@ export function reconstructSource(input: {
 
   const jsonLogo = resolveAssetCandidate(
     assetValue(business?.logo),
-    homepageUrl,
+    businessSourceUrl,
     "json-ld",
     business,
   );
@@ -194,7 +211,7 @@ export function reconstructSource(input: {
   const favicon = extractFaviconCandidate(input.homepage);
   const jsonHero = resolveAssetCandidate(
     assetValue(business?.image),
-    homepageUrl,
+    businessSourceUrl,
     "json-ld",
     business,
   );
@@ -366,9 +383,9 @@ function flattenJsonEntities(value: unknown): JsonRecord[] {
 }
 
 function selectBusinessEntity(
-  entities: JsonRecord[],
+  entities: SourcedJsonRecord[],
   homepageUrl: URL,
-): JsonRecord | null {
+): SourcedJsonRecord | null {
   const preferredTypes = new Set([
     "restaurant",
     "localbusiness",
@@ -381,14 +398,20 @@ function selectBusinessEntity(
   ]);
   return (
     entities
-      .filter((entity) => jsonTypes(entity).some((type) => preferredTypes.has(type)))
+      .filter(({ value }) =>
+        jsonTypes(value).some((type) => preferredTypes.has(type)),
+      )
       .sort((left, right) =>
-        businessScore(right, homepageUrl) - businessScore(left, homepageUrl)
+        businessScore(right, homepageUrl) - businessScore(left, homepageUrl),
       )[0] ?? null
   );
 }
 
-function businessScore(entity: JsonRecord, homepageUrl: URL): number {
+function businessScore(
+  sourced: SourcedJsonRecord,
+  homepageUrl: URL,
+): number {
+  const { value: entity, sourceUrl } = sourced;
   let score = typeof entity.name === "string" ? 5 : 0;
   if (entity.address) score += 3;
   if (entity.telephone) score += 2;
@@ -396,7 +419,9 @@ function businessScore(entity: JsonRecord, homepageUrl: URL): number {
   if (entity.logo) score += 1;
   if (typeof entity.url === "string") {
     try {
-      if (new URL(entity.url, homepageUrl).origin === homepageUrl.origin) score += 2;
+      if (new URL(entity.url, sourceUrl).origin === homepageUrl.origin) {
+        score += 2;
+      }
     } catch {
       // Ignore malformed schema URLs.
     }
@@ -729,16 +754,15 @@ function extractNavigation(
 }
 
 function extractCatalogSections(
-  entities: JsonRecord[],
+  entities: SourcedJsonRecord[],
   pages: ReconstructedPage[],
   evidence: ReconstructionEvidence[],
   brandAssets: ExtractedBrandAsset[],
 ): ExtractedCatalogSection[] {
-  const sourceUrl = pages[0]?.url ?? new URL("https://invalid.example");
   const sections: ExtractedCatalogSection[] = [];
   const assigned = new Set<JsonRecord>();
 
-  for (const entity of entities) {
+  for (const { value: entity, sourceUrl } of entities) {
     const types = jsonTypes(entity);
     if (!types.some((type) => ["menusection", "offercatalog", "itemlist"].includes(type))) continue;
     const children = [
@@ -764,11 +788,15 @@ function extractCatalogSections(
   }
 
   const standalone = entities
-    .filter((entity) =>
-      !assigned.has(entity) &&
-      jsonTypes(entity).some((type) => ["menuitem", "product", "service"].includes(type)),
+    .filter(({ value }) =>
+      !assigned.has(value) &&
+      jsonTypes(value).some((type) =>
+        ["menuitem", "product", "service"].includes(type),
+      ),
     )
-    .map((entity) => catalogItem(entity, sourceUrl, evidence, brandAssets))
+    .map(({ value, sourceUrl }) =>
+      catalogItem(value, sourceUrl, evidence, brandAssets),
+    )
     .filter((item): item is ExtractedCatalogItem => Boolean(item));
   if (standalone.length > 0 && sections.length < MAX_CATALOG_SECTIONS) {
     sections.push({
@@ -832,14 +860,30 @@ function extractMicrodataCatalogItems(
       : null;
     const currency = supportedCurrencies.has(rawCurrency) ? rawCurrency : null;
     const rawImage = microdataProperty(match[0], "image");
+    const availability = catalogAvailability(
+      microdataProperty(match[0], "availability"),
+    );
     const image = resolveAssetCandidate(rawImage || null, page.url, "html", match[0]);
     addAsset(brandAssets, "content", image);
     addEvidence(evidence, "catalog.item", candidate(name, "html", page.url, match[0]));
+    if (availability !== null) {
+      addEvidence(
+        evidence,
+        "catalog.availability",
+        candidate(
+          availability ? "in stock" : "unavailable",
+          "html",
+          page.url,
+          match[0],
+        ),
+      );
+    }
     items.push({
       name: boundedText(name, 120),
       description: boundedText(description, 320),
       price: parsedPrice !== null && currency ? parsedPrice : null,
       currency,
+      availability,
       imageUrl: image?.value ?? null,
     });
   }
@@ -885,16 +929,46 @@ function catalogItem(
   const rawCurrency = stringValue(offer?.priceCurrency ?? nested.priceCurrency ?? entity.priceCurrency).toUpperCase();
   const currency = supportedCurrencies.has(rawCurrency) ? rawCurrency : null;
   const price = parsedPrice !== null && currency ? parsedPrice : null;
+  const availability = catalogAvailability(
+    offer?.availability ?? nested.availability ?? entity.availability,
+  );
   const image = resolveAssetCandidate(assetValue(nested.image), sourceUrl, "json-ld", nested);
   addAsset(brandAssets, "content", image);
   addEvidence(evidence, "catalog.item", candidate(name, "json-ld", sourceUrl, nested));
+  if (availability !== null) {
+    addEvidence(
+      evidence,
+      "catalog.availability",
+      candidate(
+        availability ? "in stock" : "unavailable",
+        "json-ld",
+        sourceUrl,
+        offer?.availability ?? nested.availability ?? entity.availability,
+      ),
+    );
+  }
   return {
     name,
     description: boundedText(stringValue(nested.description), 320),
     price,
     currency,
+    availability,
     imageUrl: image?.value ?? null,
   };
+}
+
+function catalogAvailability(value: unknown): boolean | null {
+  const raw = typeof value === "string"
+    ? value
+    : isRecord(value)
+      ? stringValue(value["@id"] ?? value.url ?? value.name)
+      : "";
+  const status = raw.split(/[\/#]/).pop()?.toLowerCase().replace(/[^a-z]/g, "");
+  if (status === "instock") return true;
+  if (["outofstock", "soldout", "discontinued"].includes(status ?? "")) {
+    return false;
+  }
+  return null;
 }
 
 function asJsonRecords(value: unknown): JsonRecord[] {

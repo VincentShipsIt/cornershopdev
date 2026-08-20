@@ -54,7 +54,8 @@ export type SiteCatalogItemView = {
   description: string;
   price: number | null;
   currency: string;
-  available: boolean;
+  /** Null means the source or owner has not made an availability claim. */
+  available: boolean | null;
   imageUrl: string | null;
   attributes: Record<string, unknown>;
 };

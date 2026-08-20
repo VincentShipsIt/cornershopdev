@@ -217,6 +217,7 @@ export async function issueClaimInvitation(input: {
               vertical: true,
               sourceUrl: true,
               email: true,
+              leadContactEmail: true,
               status: true,
               organizationId: true,
               updatedAt: true,
@@ -241,8 +242,8 @@ export async function issueClaimInvitation(input: {
             if (
               pauseSetting?.value === true ||
               site.vertical !== "RESTAURANT" ||
-              !site.email ||
-              normalizeAccountEmail(site.email) !== email ||
+              !site.leadContactEmail ||
+              normalizeAccountEmail(site.leadContactEmail) !== email ||
               latestReview?.toISOString() !==
                 input.outreachDispatch.reviewedAt ||
               !isOperatorReviewCurrent(latestReview, site.updatedAt)

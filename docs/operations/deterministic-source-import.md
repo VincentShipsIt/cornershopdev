@@ -20,7 +20,9 @@ separate boundaries:
 - Hours: JSON-LD `openingHoursSpecification` or `openingHours` values.
 - Catalog candidates: schema.org `MenuSection`, `MenuItem`, `OfferCatalog`,
   `Product`, or `Service` entities. Unsupported or currency-less prices remain
-  unset; missing items are never generated.
+  unset; missing items are never generated. Availability is nullable and stays
+  unknown unless structured evidence explicitly says `InStock`, `OutOfStock`,
+  `SoldOut`, or `Discontinued`.
 - Branding: JSON-LD and explicit logo/favicon/hero markup plus CSS custom
   properties and `theme-color` metadata. Colour pairs are normalized and
   repaired to WCAG contrast thresholds before rendering.
@@ -36,6 +38,17 @@ and bounded excerpt in `Site.sourceData`. The same record also stores source
 navigation and authentic brand/content asset URLs. `Site.logoUrl`,
 `Site.faviconUrl`, `Site.draftPalette`, contact columns, hours, and structured
 catalog rows feed private previews and immutable published snapshots.
+JSON-LD entities retain the exact page that owned their script, so relative
+assets and field provenance resolve against a discovered child page rather
+than being reassigned to the homepage.
+
+`Site.email` is only the sourced public business mailbox. Operator-provided
+owner/outreach recipients are stored separately in private
+`Site.leadContactEmail` and are never projected into a draft or published
+snapshot. The privacy migration moves legacy prospect/preview email values to
+that private field, then clears the privacy-ambiguous legacy public column for
+every lifecycle state until source evidence or an owner-reviewed save
+repopulates it.
 
 ## Bounds and non-goals
 

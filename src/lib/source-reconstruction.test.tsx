@@ -72,6 +72,7 @@ describe("deterministic source reconstruction", () => {
             description: "Noisettes torréfiées et moutarde ancienne",
             price: 11,
             currency: "EUR",
+            availability: null,
             imageUrl: "https://cdn.maisonsafran.example/poireaux.jpg",
           },
           {
@@ -79,6 +80,7 @@ describe("deterministic source reconstruction", () => {
             description: "Câpres et herbes fraîches",
             price: 8.5,
             currency: "EUR",
+            availability: null,
             imageUrl: null,
           },
         ],
@@ -122,11 +124,84 @@ describe("deterministic source reconstruction", () => {
             description: "Lavado, corte personalizado y acabado",
             price: 35,
             currency: "EUR",
+            availability: null,
             imageUrl: null,
           },
         ],
       },
     ]);
+  });
+
+  it("keeps child-page JSON-LD provenance and resolves relative assets against that page", () => {
+    const childUrl = new URL("https://atelier.example/services/menu/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: "<html lang=\"en\"><head><title>Atelier</title></head><body><h1>Atelier</h1></body></html>",
+        url: new URL("https://atelier.example/"),
+      },
+      pages: [
+        {
+          url: childUrl,
+          html: `<script type="application/ld+json">
+            {
+              "@graph": [
+                {
+                  "@type": "LocalBusiness",
+                  "name": "Atelier Services",
+                  "description": "Evidence-backed services from the discovered child page.",
+                  "image": "media/hero.jpg"
+                },
+                {
+                  "@type": "Service",
+                  "name": "Signature consultation",
+                  "description": "A sixty minute consultation.",
+                  "image": "images/consultation.jpg",
+                  "offers": {
+                    "price": "75",
+                    "priceCurrency": "EUR",
+                    "availability": "https://schema.org/InStock"
+                  }
+                }
+              ]
+            }
+          </script>`,
+        },
+      ],
+      fallbackName: "atelier.example",
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.name).toBe("Atelier Services");
+    expect(reconstructed.heroImageUrl).toBe(
+      "https://atelier.example/services/menu/media/hero.jpg",
+    );
+    expect(reconstructed.catalogSections[0]?.items[0]).toMatchObject({
+      name: "Signature consultation",
+      availability: true,
+      imageUrl:
+        "https://atelier.example/services/menu/images/consultation.jpg",
+    });
+    expect(reconstructed.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "name",
+          sourceUrl: childUrl.toString(),
+        }),
+        expect.objectContaining({
+          field: "catalog.item",
+          sourceUrl: childUrl.toString(),
+        }),
+      ]),
+    );
+    expect(reconstructed.brandAssets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://atelier.example/services/menu/images/consultation.jpg",
+          sourceUrl: childUrl.toString(),
+        }),
+      ]),
+    );
   });
 
   it("repairs text and accent contrast while retaining normalized source colours", () => {
@@ -183,6 +258,9 @@ describe("deterministic source reconstruction", () => {
     expect(draft.defaultLocale).toBe("fr");
     expect(draft.sourceData.evidence.length).toBeGreaterThan(5);
     expect(draft.catalogSections[0]?.items).toHaveLength(2);
+    expect(
+      draft.catalogSections[0]?.items.map((item) => item.available),
+    ).toEqual([null, null]);
     expect(persisted).toMatchObject({
       email: "bonjour@maisonsafran.example",
       logoUrl: "https://cdn.maisonsafran.example/logo.svg",

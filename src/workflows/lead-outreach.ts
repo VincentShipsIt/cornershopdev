@@ -220,12 +220,16 @@ async function emit(event: LeadOutreachEvent): Promise<void> {
  * two never drift.
  */
 export function isLeadEligibleForOutreach(
-  site: { status: string; email: string | null } | null,
+  site: { status: string; leadContactEmail: string | null } | null,
   paused: boolean,
   latestOutreachStatus: string | null = null,
   hasInboundReply = false,
 ): boolean {
-  if (!site || !mutableLeadStatuses.has(site.status) || !site.email) {
+  if (
+    !site ||
+    !mutableLeadStatuses.has(site.status) ||
+    !site.leadContactEmail
+  ) {
     return false;
   }
   if (paused || hasInboundReply) return false;
@@ -263,7 +267,7 @@ async function readEligibleLead(
       where: { id: siteId },
       select: {
         slug: true,
-        email: true,
+        leadContactEmail: true,
         status: true,
         vertical: true,
         updatedAt: true,
@@ -308,13 +312,13 @@ async function readEligibleLead(
     return null;
   }
   // Non-null by construction: `isLeadEligibleForOutreach` only returns true
-  // when `site` and `site.email` are both non-null.
+  // when `site` and `site.leadContactEmail` are both non-null.
   return { slug: site!.slug, email: expectedRecipient.trim().toLowerCase() };
 }
 
 export function isReviewedRestofrontLead(
   site: {
-    email: string | null;
+    leadContactEmail: string | null;
     status: string;
     vertical: string;
     updatedAt: Date;
@@ -330,7 +334,7 @@ export function isReviewedRestofrontLead(
       !paused &&
       site.vertical === Vertical.RESTAURANT &&
       mutableLeadStatuses.has(site.status) &&
-      site.email?.trim().toLowerCase() ===
+      site.leadContactEmail?.trim().toLowerCase() ===
         expectedRecipient.trim().toLowerCase() &&
       latestReview?.toISOString() === expectedReviewedAt &&
       isOperatorReviewCurrent(latestReview, site.updatedAt),

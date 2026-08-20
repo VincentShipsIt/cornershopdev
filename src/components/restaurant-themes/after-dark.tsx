@@ -181,32 +181,34 @@ export function AfterDarkTheme({
                   </p>
                 </div>
                 <div className="divide-y divide-current/15">
-                  {section.items.filter((item) => item.available).map((item) => (
-                    <div
-                      key={item.name}
-                      className="grid grid-cols-[1fr_auto] gap-5 py-5"
-                    >
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-semibold">{item.name}</h4>
-                          {itemBadges(item.attributes).map((label) => (
-                            <span
-                              key={label}
-                              className="rounded-full border border-current/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.11em] opacity-65"
-                            >
-                              {label}
-                            </span>
-                          ))}
+                  {section.items
+                    .filter((item) => item.available !== false)
+                    .map((item) => (
+                      <div
+                        key={item.name}
+                        className="grid grid-cols-[1fr_auto] gap-5 py-5"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold">{item.name}</h4>
+                            {itemBadges(item.attributes).map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full border border-current/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.11em] opacity-65"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-sm leading-6 opacity-62">
+                            {item.description}
+                          </p>
                         </div>
-                        <p className="mt-2 text-sm leading-6 opacity-62">
-                          {item.description}
-                        </p>
+                        <span className="font-mono text-sm">
+                          {formatPrice(item.price, item.currency, locale)}
+                        </span>
                       </div>
-                      <span className="font-mono text-sm">
-                        {formatPrice(item.price, item.currency, locale)}
-                      </span>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </section>
             ))}

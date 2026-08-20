@@ -84,7 +84,8 @@ const fakeDb = {
         slug: "chez-lea",
         name: "Chez Léa",
         vertical: "RESTAURANT",
-        email: persistedContactEmail,
+        email: "bonjour@chez-lea.test",
+        leadContactEmail: persistedContactEmail,
         status: "PREVIEW_READY",
         updatedAt: new Date("2026-08-19T08:00:00.000Z"),
         auditEvents: [
@@ -270,7 +271,7 @@ describe("outreach delivery idempotency", () => {
     persistedContactEmail = intake.leads[0]!.contactEmail!;
     const site = {
       status: "PREVIEW_READY",
-      email: persistedContactEmail,
+      leadContactEmail: persistedContactEmail,
       vertical: "RESTAURANT",
       updatedAt: new Date("2026-08-19T08:00:00.000Z"),
       auditEvents: [
