@@ -18,6 +18,7 @@ import {
 import { HomepageTransformation } from "@/components/homepage-transformation";
 import { ImportForm } from "@/components/import-form";
 import { SiteHeader } from "@/components/site-header";
+import { nicheFontVariables } from "@/components/fonts/niche-font-scope";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -133,12 +134,15 @@ export default async function NichePage({
 
   const { marketing } = resolveVerticalConfig(id);
   const slug = verticalSlug(id);
+  const fontVariables = nicheFontVariables(id);
   // Every route out of this page carries the niche, so a lead is attached to the
   // vertical that produced it before the studio ever opens.
   const createHref = `/create?vertical=${slug}`;
   const headerLinks = [
     { href: "#how-it-works", label: "How it works" },
-    ...(marketing.themeGallery ? [marketing.themeGallery] : []),
+    ...(marketing.themeGallery
+      ? [{ ...marketing.themeGallery, prefetch: false }]
+      : []),
     { href: "#features", label: "What stays yours" },
     { href: "#pricing", label: "Pricing" },
   ];
@@ -156,6 +160,7 @@ export default async function NichePage({
         brand={{ ...marketing.brand }}
         links={headerLinks}
         createHref={createHref}
+        fontVariables={fontVariables}
       />
       <main>
         <section className="paper-grid overflow-hidden border-b">
@@ -190,6 +195,7 @@ export default async function NichePage({
               {marketing.themeGallery ? (
                 <Link
                   href={marketing.themeGallery.href}
+                  prefetch={false}
                   className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary"
                 >
                   {marketing.themeGallery.label}

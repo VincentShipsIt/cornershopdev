@@ -78,6 +78,9 @@ type ClaimInvitation = {
   tokenHash: string;
   outreachKey: string | null;
   proofMethod: string;
+  approvalEvidenceRef: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
   expiresAt: Date;
   verifiedAt: Date | null;
   acceptedAt: Date | null;
@@ -676,6 +679,26 @@ describe("mocked Restofront operator delivery flow", () => {
         reviewedAt: reviewPayload.createdAt,
         stage: "preview_ready",
       },
+    });
+    const replayedInvitation = await issueClaimInvitation({
+      siteSlug: site.slug,
+      email: site.email!,
+      proofMethod: "OPERATOR_APPROVAL",
+      actor: "operator:operator_1",
+      outreachKey: `lead-outreach:${site.id}:preview_ready`,
+      outreachDispatch: {
+        id: dispatch!.id,
+        attempt: dispatch!.attempt,
+        recipient: dispatch!.recipient,
+        reviewedAt: reviewPayload.createdAt,
+        stage: "preview_ready",
+      },
+    });
+    expect(replayedInvitation.id).toBe(issued.id);
+    expect(invitation).toMatchObject({
+      approvalEvidenceRef: `outreach-dispatch:${dispatch!.id}`,
+      approvedBy: "operator:operator_1",
+      approvedAt: expect.any(Date),
     });
     const sent = await sendLeadEmail({
       siteId: site.id,

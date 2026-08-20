@@ -10,6 +10,8 @@ import {
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
   restaurantAvailabilityLabel,
+  reconcileAcceptedSourceMonitoringDraft,
+  reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
   validateRestaurantMenuDraft,
 } from "@/lib/restaurant-menu-editor";
@@ -161,5 +163,52 @@ describe("restaurant menu CRUD", () => {
     expect(hasUnreviewedRestaurantTranslations(edited)).toBe(true);
     const reviewed = markRestaurantTranslationReviewed(edited, "en");
     expect(hasUnreviewedRestaurantTranslations(reviewed)).toBe(false);
+  });
+
+  it("never overwrites owner edits typed while regeneration is in flight", () => {
+    const requested = multilingualDraft();
+    const current = structuredClone(requested);
+    current.name = "Name typed while AI was running";
+    current.translations[0].description =
+      "Translation typed while AI was running";
+    const regenerated = structuredClone(requested);
+    regenerated.translations[0].description = "AI regenerated description";
+
+    expect(
+      reconcileRegeneratedRestaurantDraft(requested, current, regenerated),
+    ).toEqual({ draft: current, preservedClientEdits: true });
+    expect(
+      reconcileRegeneratedRestaurantDraft(requested, requested, regenerated),
+    ).toEqual({ draft: regenerated, preservedClientEdits: false });
+  });
+
+  it("reconciles a deferred monitored mutation with edits typed after dispatch", async () => {
+    const requested = multilingualDraft();
+    let current = structuredClone(requested);
+    let resolveRequest!: (draft: typeof requested) => void;
+    const request = new Promise<typeof requested>((resolve) => {
+      resolveRequest = resolve;
+    });
+    const completion = request.then((acceptedServerDraft) =>
+      reconcileAcceptedSourceMonitoringDraft(
+        requested,
+        current,
+        acceptedServerDraft,
+      ),
+    );
+
+    current = structuredClone(current);
+    current.name = "Owner edit typed after PATCH dispatch";
+    const accepted = structuredClone(requested);
+    accepted.address = "Address accepted from source monitoring";
+    resolveRequest(accepted);
+
+    expect(await completion).toEqual({
+      draft: {
+        ...accepted,
+        name: "Owner edit typed after PATCH dispatch",
+      },
+      preservedClientEdits: true,
+    });
   });
 });

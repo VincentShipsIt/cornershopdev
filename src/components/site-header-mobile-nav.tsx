@@ -32,12 +32,14 @@ export function SiteHeaderMobileNav({
   createHref,
   ctaLabel,
   inverse = false,
+  fontVariables,
 }: {
   brand: BrandIdentity & { href?: string };
   links: SiteHeaderLink[];
   createHref: string;
   ctaLabel: string;
   inverse?: boolean;
+  fontVariables: string;
 }) {
   return (
     <Sheet>
@@ -52,22 +54,25 @@ export function SiteHeaderMobileNav({
       </SheetTrigger>
       <SheetContent
         className={cn(
-          "p-6",
+          "p-6 font-sans",
+          fontVariables,
           inverse
             ? "border-white/10 bg-[#080808] text-white [&_[data-slot=sheet-close]]:text-white"
             : "",
         )}
       >
         <SheetHeader>
-          <SheetTitle className={cn("text-left", inverse ? "text-white" : "")}>
-            <Brand {...brand} inverse={inverse} />
+          <SheetTitle
+            className={cn("font-sans text-left", inverse ? "text-white" : "")}
+          >
+            <Brand {...brand} inverse={inverse} prefetch={false} />
           </SheetTitle>
         </SheetHeader>
         <nav className="mt-10 flex flex-col gap-5 text-lg">
           {links.map((link) => (
             <SheetClose
               key={link.href}
-              render={<Link href={link.href} />}
+              render={<Link href={link.href} prefetch={link.prefetch} />}
               nativeButton={false}
             >
               {link.label}

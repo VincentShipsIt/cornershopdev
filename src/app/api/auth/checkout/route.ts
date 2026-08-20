@@ -2,13 +2,18 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizeAccountEmail } from "@/lib/account-email";
-import { authRequestUrl } from "@/lib/auth-request-url";
+import {
+  authMutationRedirectResponse,
+  authRequestUrl,
+  internalAuthMutationHeaders,
+} from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
 import {
   CHECKOUT_RETURN_COOKIE,
   verifyHashedToken,
 } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 
 const querySchema = z.object({
   sessionId: z.string().startsWith("cs_").max(256),
@@ -52,6 +57,7 @@ export async function GET(request: Request) {
           organization: {
             select: {
               memberships: {
+                where: ownerMembershipWhere(),
                 select: {
                   userId: true,
                   user: { select: { email: true } },
@@ -98,12 +104,10 @@ export async function GET(request: Request) {
     );
   }
 
-  const headers = new Headers(request.headers);
-  headers.set("content-type", "application/json");
-  return auth.handler(
+  const bootstrap = await auth.handler(
     new Request(authRequestUrl("/api/auth/checkout/bootstrap", request), {
       method: "POST",
-      headers,
+      headers: internalAuthMutationHeaders(request),
       body: JSON.stringify({
         sessionId,
         claimInvitationId,
@@ -111,5 +115,10 @@ export async function GET(request: Request) {
       }),
       redirect: "manual",
     }),
+  );
+  if (poll || !bootstrap.ok) return bootstrap;
+  return authMutationRedirectResponse(
+    bootstrap,
+    authRequestUrl("/dashboard?checkout=success", request),
   );
 }

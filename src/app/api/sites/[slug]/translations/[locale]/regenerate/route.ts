@@ -4,10 +4,19 @@ import { fromRestaurantDraft, localeSchema } from "@/lib/restaurant";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { getRestaurantDraft } from "@/lib/restaurants";
 import { limitTranslationRegeneration } from "@/lib/rate-limit";
-import { updateSiteDraft } from "@/lib/site-persistence";
+import {
+  DraftRevisionConflictError,
+  updateSiteDraft,
+} from "@/lib/site-persistence";
+import { regenerateAndPersistRestaurantTranslation } from "@/lib/translation-regeneration";
+import { z } from "zod";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const regenerationRequestSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+});
 
 export async function POST(
   request: Request,
@@ -38,6 +47,19 @@ export async function POST(
     return Response.json({ error: "Unsupported locale" }, { status: 400 });
   }
 
+  const requestBody = regenerationRequestSchema.safeParse(
+    await request.json().catch(() => null),
+  );
+  if (!requestBody.success) {
+    return Response.json(
+      {
+        error: "Reload the current draft revision before regenerating.",
+        code: "DRAFT_REVISION_REQUIRED",
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     if (access.site.vertical !== "RESTAURANT") {
       return Response.json(
@@ -56,21 +78,29 @@ export async function POST(
     ) {
       return Response.json({ error: "Translation not found" }, { status: 404 });
     }
-    const regenerated = await regenerateRestaurantTranslation(
+    const regenerated = await regenerateAndPersistRestaurantTranslation({
+      slug: access.site.slug,
+      locale: locale.data,
+      vertical: access.site.vertical,
+      actor: access.user,
+      expectedRevision: requestBody.data.expectedRevision,
       draft,
-      locale.data,
-    );
-    await updateSiteDraft(
-      access.site.slug,
-      fromRestaurantDraft(regenerated),
-      access.site.vertical,
-      {
-        actor: access.user,
-        auditType: "site.translation.regenerated",
-      },
-    );
-    return Response.json({ ok: true, draft: regenerated });
+      regenerate: regenerateRestaurantTranslation,
+      toPersistableDraft: fromRestaurantDraft,
+      persist: updateSiteDraft,
+    });
+    return Response.json({ ok: true, ...regenerated });
   } catch (error) {
+    if (error instanceof DraftRevisionConflictError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: "DRAFT_REVISION_CONFLICT",
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 },
+      );
+    }
     const unavailable =
       error instanceof Error &&
       error.message === "Translation regeneration is not configured";

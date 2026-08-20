@@ -1,9 +1,13 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { verifiedMagicLinkResponse } from "@/lib/auth-evidence-responses";
 import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
-import { markMagicLinkConsumed } from "@/lib/magic-links";
-import { isSameOriginMutation } from "@/lib/request-origin";
+import {
+  isMagicLinkConsumable,
+  markMagicLinkConsumed,
+} from "@/lib/magic-link-consumption";
+import { isTrustedSameOriginFormPost } from "@/lib/request-origin";
 import {
   PENDING_MAGIC_LINK_COOKIE,
   pendingMagicLinkCookieOptions,
@@ -42,7 +46,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isSameOriginMutation(request, { requireOrigin: true })) {
+  if (!isTrustedSameOriginFormPost(request)) {
     return NextResponse.json(
       { error: "Invalid request origin" },
       { status: 403 },
@@ -51,6 +55,21 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get(PENDING_MAGIC_LINK_COOKIE)?.value;
   if (!token || !process.env.DATABASE_URL) {
     return signInError(request);
+  }
+  try {
+    if (!(await isMagicLinkConsumable(token))) {
+      const response = signInError(request);
+      response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
+      return response;
+    }
+  } catch {
+    const unavailable = NextResponse.json(
+      { error: "Sign-in could not be completed. Request a new link." },
+      { status: 503 },
+    );
+    unavailable.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
+    unavailable.headers.set("Cache-Control", "private, no-store");
+    return unavailable;
   }
 
   const verifyUrl = authRequestUrl("/api/auth/magic-link/verify", request);
@@ -89,12 +108,9 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  await markMagicLinkConsumed(token).catch(() => undefined);
-  const response = new NextResponse(verification.body, {
-    status: verification.status,
-    headers: verification.headers,
-  });
-  response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
-  response.headers.set("Cache-Control", "private, no-store");
-  return response;
+  return verifiedMagicLinkResponse(
+    token,
+    verification,
+    markMagicLinkConsumed,
+  );
 }

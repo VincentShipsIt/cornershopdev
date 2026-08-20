@@ -106,7 +106,9 @@ The canonical site is available at `/preview/[slug]`; translations use
 ## Stack
 
 - Next.js 16 App Router and React 19
-- Bun
+- Bun 1.3.14 for installs, Prisma/Workflow migrations, and operator tooling;
+  pinned Node.js 24.19.0 LTS for Next.js builds and the production standalone
+  server
 - Tailwind CSS v4 and shadcn/ui
 - Prisma 7 with PostgreSQL and the `pg` driver adapter
 - Vercel AI SDK 6 with OpenRouter for structured text generation and optional
@@ -143,6 +145,8 @@ and credential rotation are documented in
 The one-price offer, evidence gates, founder-cost worksheet, second-lead
 qualification, and 30-day decision record for the first paid restaurant are in
 [`docs/operations/first-customer-validation.md`](docs/operations/first-customer-validation.md).
+The read-only production evidence command and its fail-closed manifest are in
+[`docs/operations/first-customer-production-exercise.md`](docs/operations/first-customer-production-exercise.md).
 The bearer-authenticated `/api/health/ready` route verifies PostgreSQL, Redis,
 Amazon S3, billing, and the operator-alert outbox without returning secret
 values. Each application
@@ -259,13 +263,15 @@ Test-mode verification, the exact event allowlist, retry/replay behavior,
 Customer Portal setup, and the production activation blockers are documented
 in [`docs/operations/stripe-billing.md`](docs/operations/stripe-billing.md).
 Checkout requires a valid hashed claim invitation; a public preview URL alone
-cannot authorize billing or ownership.
+cannot authorize billing or ownership. Launch Checkout offers only the Starter
+founding subscription; the deployment-time Stripe preflight proves that it is
+the active, tax-exclusive EUR 49.00 monthly Price.
 
 ### Owner sign-in
 
 - `CLAIM_TOKEN_SECRET` with at least 32 random characters
-- `BETTER_AUTH_SECRET` with at least 32 random characters (preferred; the
-  claim secret is a rollout fallback)
+- `BETTER_AUTH_SECRET` with at least 32 random characters, dedicated to session
+  signing and distinct from `CLAIM_TOKEN_SECRET` in production
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
 

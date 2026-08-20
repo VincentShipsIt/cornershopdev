@@ -8,6 +8,8 @@ import {
   verifyHashedToken,
 } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
+import { secureCookieRequired } from "@/lib/first-customer-test-mode";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 
 const checkoutBootstrapSchema = z.object({
   sessionId: z.string().startsWith("cs_").max(256),
@@ -44,6 +46,7 @@ export function checkoutAuthPlugin(): BetterAuthPlugin {
                   organization: {
                     select: {
                       memberships: {
+                        where: ownerMembershipWhere(),
                         select: {
                           userId: true,
                           user: { select: { email: true } },
@@ -128,15 +131,14 @@ export function checkoutAuthPlugin(): BetterAuthPlugin {
           await setSessionCookie(ctx, { session, user });
           ctx.setCookie(CHECKOUT_RETURN_COOKIE, "", {
             httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
+            secure: secureCookieRequired(),
             sameSite: "lax",
             maxAge: 0,
             path: "/",
           });
 
           const url = "/dashboard?checkout=success";
-          if (ctx.body.poll) return ctx.json({ ready: true, url });
-          throw ctx.redirect(new URL(url, ctx.context.baseURL).toString());
+          return ctx.json({ ready: true, url });
         },
       ),
     },

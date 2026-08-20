@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, LoaderCircle, RotateCw, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CLAIM_INVITATION_MAX_RETRIES } from "@/lib/claim-delivery-policy";
 import type { OperatorSiteRow } from "@/lib/operator-dashboard";
 
 export function ClaimInvitationForm({
@@ -19,6 +20,9 @@ export function ClaimInvitationForm({
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [approvalEvidenceRef, setApprovalEvidenceRef] = useState(
+    invitation?.approvalEvidenceRef ?? "",
+  );
 
   async function send(action: "issue" | "resend") {
     setSending(true);
@@ -33,6 +37,8 @@ export function ClaimInvitationForm({
           email,
           action,
           invitationId: invitation?.id,
+          approvalEvidenceRef:
+            action === "issue" ? approvalEvidenceRef : undefined,
         }),
       });
       const result = (await response.json()) as {
@@ -89,6 +95,13 @@ export function ClaimInvitationForm({
   const sendAction =
     hasPreviousInvitation && sameRecipient ? ("resend" as const) : ("issue" as const);
   const checkoutStarted = invitation?.state === "CHECKOUT_STARTED";
+  const retryExhausted =
+    sendAction === "resend" &&
+    (invitation?.retryCount ?? 0) >= CLAIM_INVITATION_MAX_RETRIES;
+  const deliveryNotRetryable =
+    sendAction === "resend" && !invitation?.retryable;
+  const approvalEvidenceValid =
+    approvalEvidenceRef.length >= 8 && approvalEvidenceRef.length <= 160;
   const sendLabel = sent
     ? "Sent"
     : sendAction === "resend"
@@ -113,6 +126,13 @@ export function ClaimInvitationForm({
           onChange={(event) => {
             setEmail(event.target.value);
             setSent(false);
+            if (
+              invitation &&
+              event.target.value.trim().toLowerCase() !==
+                invitation.email.trim().toLowerCase()
+            ) {
+              setApprovalEvidenceRef("");
+            }
           }}
           placeholder="approved@business.com"
           className="h-8 min-w-44"
@@ -121,7 +141,14 @@ export function ClaimInvitationForm({
           type="button"
           variant="outline"
           size="sm"
-          disabled={!email || sending || checkoutStarted}
+          disabled={
+            !email ||
+            sending ||
+            checkoutStarted ||
+            retryExhausted ||
+            deliveryNotRetryable ||
+            (sendAction === "issue" && !approvalEvidenceValid)
+          }
           onClick={() => void send(sendAction)}
         >
           {sending ? (
@@ -148,11 +175,59 @@ export function ClaimInvitationForm({
           </Button>
         ) : null}
       </div>
+      {sendAction === "issue" ? (
+        <>
+          <label
+            className="mt-2 block text-[11px] font-medium"
+            htmlFor={`claim-approval-evidence-${siteSlug}`}
+          >
+            Ownership approval evidence reference
+          </label>
+          <Input
+            id={`claim-approval-evidence-${siteSlug}`}
+            value={approvalEvidenceRef}
+            onChange={(event) => setApprovalEvidenceRef(event.target.value)}
+            placeholder="crm:owner-consent-1234"
+            minLength={8}
+            maxLength={160}
+            pattern="[A-Za-z0-9][A-Za-z0-9._:/#-]+"
+            className="mt-1 h-8 min-w-56"
+          />
+          <p className="mt-1 max-w-64 text-[11px] text-muted-foreground">
+            Required for concierge approval. Store only a non-sensitive CRM,
+            ticket, or consent-record reference.
+          </p>
+        </>
+      ) : invitation?.approvalEvidenceRef ? (
+        <p className="mt-1 max-w-64 text-[11px] text-muted-foreground">
+          Approval evidence: {invitation.approvalEvidenceRef}
+        </p>
+      ) : null}
+      {invitation ? (
+        <p className="mt-1 max-w-64 text-[11px] text-muted-foreground">
+          Delivery: {humanize(invitation.deliveryStatus)} · attempt{" "}
+          {invitation.deliveryAttempts} · retries {invitation.retryCount}/
+          {CLAIM_INVITATION_MAX_RETRIES}
+          {invitation.deliveryFailureCode
+            ? ` · ${humanize(invitation.deliveryFailureCode)}`
+            : ""}
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-1 max-w-64 text-[11px] text-destructive">{error}</p>
       ) : checkoutStarted ? (
         <p className="mt-1 text-[11px] text-muted-foreground">
           Revoke the checkout-bound invitation before replacing it.
+        </p>
+      ) : retryExhausted ? (
+        <p className="mt-1 text-[11px] text-destructive">
+          Delivery retry limit reached. Verify the address and issue a new
+          approved invitation.
+        </p>
+      ) : deliveryNotRetryable ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Retry becomes available only after Resend records a failed, bounced,
+          or suppressed delivery.
         </p>
       ) : (
         <p className="mt-1 text-[11px] text-muted-foreground">

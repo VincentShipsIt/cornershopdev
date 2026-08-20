@@ -58,7 +58,17 @@ export type LoadedSite = {
   vertical: VerticalId;
   config: ErasedVerticalConfig;
   draft: unknown;
+  revision: number;
   theme: SiteThemeView;
+};
+
+/**
+ * Shared server-to-client contract for an owner editor's initial full-replace
+ * save. Every vertical must send this revision back as `expectedRevision`.
+ */
+export type OwnerDraftDto<TDraft> = {
+  draft: TDraft;
+  revision: number;
 };
 
 /**
@@ -153,6 +163,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     vertical: site.vertical,
     config,
     draft,
+    revision: site.draftRevision,
     theme: editableTheme(
       site.vertical,
       config,

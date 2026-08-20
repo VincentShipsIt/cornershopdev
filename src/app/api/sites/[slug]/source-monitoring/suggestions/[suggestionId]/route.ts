@@ -1,17 +1,30 @@
 import { z } from "zod";
+import { Vertical } from "@/generated/prisma/enums";
 import { accessFailureResponse } from "@/lib/authorization";
+import {
+  restaurantSiteDraftSchema,
+  toRestaurantDraft,
+} from "@/lib/restaurant";
 import {
   reviewSourceMonitoringSuggestion,
   SourceMonitoringConflictError,
 } from "@/lib/source-monitoring";
 import { getSourceMonitoringAccess } from "@/lib/source-monitoring-access";
 import { isSameOriginMutation } from "@/lib/request-origin";
+import { DraftRevisionConflictError } from "@/lib/site-persistence";
 
-const reviewSchema = z.object({
-  action: z.enum(["accept", "reject"]),
-  editedValue: z.unknown().optional(),
-  note: z.string().trim().max(500).optional(),
-});
+const reviewSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("accept"),
+    editedValue: z.unknown().optional(),
+    note: z.string().trim().max(500).optional(),
+    expectedRevision: z.number().int().min(0),
+  }),
+  z.object({
+    action: z.literal("reject"),
+    note: z.string().trim().max(500).optional(),
+  }),
+]);
 
 export async function PATCH(
   request: Request,
@@ -39,8 +52,27 @@ export async function PATCH(
       actor: access.actor,
       ...parsed.data,
     });
-    return Response.json(result);
+    const ownerDraft =
+      result.status === "ACCEPTED" &&
+      result.vertical === Vertical.RESTAURANT
+        ? toRestaurantDraft(restaurantSiteDraftSchema.parse(result.draft))
+        : undefined;
+    return Response.json({
+      status: result.status,
+      ...(result.revision === undefined ? {} : { revision: result.revision }),
+      ...(ownerDraft === undefined ? {} : { draft: ownerDraft }),
+    });
   } catch (error) {
+    if (error instanceof DraftRevisionConflictError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: "DRAFT_REVISION_CONFLICT",
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 },
+      );
+    }
     if (error instanceof SourceMonitoringConflictError) {
       return Response.json({ error: error.message }, { status: 409 });
     }
