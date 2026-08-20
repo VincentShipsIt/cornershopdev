@@ -43,6 +43,17 @@ export type ResendWebhookSummary = {
   events: string[] | null;
 };
 
+export function isOutreachPreflightReady(checks: {
+  configurationReady: boolean;
+  migrationApplied: boolean;
+  schemaReady: boolean;
+  workflowDatabaseReachable: boolean;
+  deliveryWebhookRegistered: boolean;
+  inboundWebhookRegistered: boolean;
+}): boolean {
+  return Object.values(checks).every(Boolean);
+}
+
 export function evaluateOutreachEnvironment(
   env: Environment,
   options: { expectedAppOrigin?: string } = {},

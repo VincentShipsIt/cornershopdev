@@ -1,0 +1,14 @@
+{
+  "Comment": "Route Restofront platform site subdomains to the Cornershopdev Caddy edge",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "*.restofront.com.",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [{ "Value": "52.8.153.188" }]
+      }
+    }
+  ]
+}

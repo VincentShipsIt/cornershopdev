@@ -268,8 +268,8 @@ instructions are in
 
 Before release, run the read-only outreach preflight inside the reviewed
 container. It checks the committed migration, registered Restofront sender and
-reply-to, Workflow configuration, and the enabled Resend delivery webhook. It
-prints only check names, booleans, the public webhook endpoint, and timestamps;
+reply-to, Workflow configuration, and the enabled Resend delivery and inbound
+webhooks. It prints only check names, booleans, the public webhook endpoint, and timestamps;
 it never prints secret values and never sends an email.
 
 ```bash
@@ -291,9 +291,15 @@ and belongs to a restaurant.
 
 The app is single-origin. Caddy on the EC2 application host terminates TLS for
 every ingress the factory operates — `cornershop.dev`, `www`, `api`, `domains`,
-and each customer storefront via on-demand TLS — and reverse-proxies all of them
-to the one application container. No niche gets its own platform subdomain; a
-niche brings only the storefront domain its customers actually type.
+each claimed site's platform subdomain, and each customer storefront via
+on-demand TLS — and reverse-proxies all of them to the one application
+container. Restaurant sites use `<slug>.restofront.com`; verticals without a
+launched niche domain fall back to `<slug>.cornershop.dev`. Wildcard DNS and TLS
+are release gates, not assumptions.
+
+The production state model, exact release procedure, deployed-SHA evidence, and
+current external blockers are documented in
+[`docs/operations/production-release.md`](docs/operations/production-release.md).
 
 Leave `CORNERSHOPDEV_API_ORIGIN` empty. It exists for a future split deployment,
 where it makes `next.config.ts` proxy `/api/*` to a separate API origin. Setting

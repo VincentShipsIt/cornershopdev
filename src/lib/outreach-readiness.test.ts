@@ -3,6 +3,7 @@ import {
   evaluateOutreachEnvironment,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
+  isOutreachPreflightReady,
   REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
   REQUIRED_RESEND_WEBHOOK_EVENTS,
 } from "@/lib/outreach-readiness";
@@ -165,6 +166,27 @@ describe("Resend webhook readiness", () => {
         ],
         expected,
       ),
+    ).toBe(false);
+  });
+});
+
+describe("complete outreach preflight", () => {
+  const readyChecks = {
+    configurationReady: true,
+    migrationApplied: true,
+    schemaReady: true,
+    workflowDatabaseReachable: true,
+    deliveryWebhookRegistered: true,
+    inboundWebhookRegistered: true,
+  };
+
+  it("requires the inbound webhook as well as delivery, schema, and Workflow", () => {
+    expect(isOutreachPreflightReady(readyChecks)).toBe(true);
+    expect(
+      isOutreachPreflightReady({
+        ...readyChecks,
+        inboundWebhookRegistered: false,
+      }),
     ).toBe(false);
   });
 });

@@ -9,6 +9,15 @@ and [#47](https://github.com/VincentShipsIt/cornershopdev/issues/47)
 
 **Current decision:** `HOLD — do not invite or charge`
 
+**2026-08-20 truth update:** The safe draft/publish, claiming, billing,
+authentication, platform-subdomain, and outreach implementations are merged to
+main, but production still runs `feb674d6a39ea716ab8287aab6eeb42c183cb7b9`.
+Wildcard DNS and required outreach/auth configuration are absent. These merged
+capabilities therefore remain unavailable for first-customer acceptance. See
+[`production-release.md`](production-release.md) for the current evidence and
+release blockers. Issue #47 must remain open until the real commercial and
+customer-domain evidence below exists.
+
 This is the commercial and operational exit plan for the first paid Restofront
 restaurant. It separates verified platform evidence from evidence that can only
 come from an authorized restaurant owner and a real payment. A working preview,
@@ -53,9 +62,9 @@ owner uploads, or explicitly permissioned customer imagery may go live.
 | Existing booking/ordering destinations preserved | Working in product design | Compare the source and published URLs before launch; no customer-path evidence exists yet. |
 | Custom domain and SSL | Working platform capability | Must be proven on a domain the restaurant has authorized. A platform or Restofront domain does not count. |
 | Booking-request inbox and first-party analytics | Deployed in PR #59 | Analytics activate only on a verified customer domain; no customer-domain data exists yet. |
-| Safe private Save and atomic Publish | Upcoming, blocked by #18 | Do not imply that edits are isolated from the public site until #18 passes. |
-| Secure, owner-bound invitation | Upcoming, blocked by #13 | Do not send a claim URL or accept an email as ownership proof. |
-| Durable one-plan billing lifecycle | Upcoming, blocked by #8 and #13 | Do not initiate a live checkout until the authorized claim and webhook lifecycle pass. |
+| Safe private Save and atomic Publish | Merged on main; not production-deployed | Do not imply that production has the implementation until a SHA-bound release deploy proves it. |
+| Secure, owner-bound invitation | Merged on main; not production-deployed | Do not send a claim URL until production config/deploy gates pass and a real owner authorizes the exercise. |
+| Durable one-plan billing lifecycle | Merged on main; not production-deployed | Do not initiate a live checkout until the exact release is deployed and the customer authorizes a live charge. |
 
 Public Restofront marketing and the claim UI sell this same €49/month founding
 plan and authentic-image policy. Live Stripe still has to match: set the Starter

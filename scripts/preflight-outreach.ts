@@ -4,6 +4,7 @@ import {
   evaluateOutreachEnvironment,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
+  isOutreachPreflightReady,
   OUTREACH_MIGRATION,
 } from "@/lib/outreach-readiness";
 
@@ -31,12 +32,14 @@ try {
         false,
         false,
       ];
-  const ready =
-    configuration.ready &&
-    database.migrationApplied &&
-    database.schemaReady &&
-    workflowDatabaseReachable &&
-    webhookRegistered;
+  const ready = isOutreachPreflightReady({
+    configurationReady: configuration.ready,
+    migrationApplied: database.migrationApplied,
+    schemaReady: database.schemaReady,
+    workflowDatabaseReachable,
+    deliveryWebhookRegistered: webhookRegistered,
+    inboundWebhookRegistered,
+  });
 
   console.log(
     JSON.stringify(

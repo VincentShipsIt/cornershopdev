@@ -81,9 +81,10 @@ https://cornershop.dev/api/webhooks/resend
 ```
 
 Subscribe it to `email.sent`, `email.delivered`, `email.bounced`,
-`email.complained`, `email.failed`, and `email.suppressed`. Before approving a
-release, run the read-only preflight inside the exact candidate image with its
-deployment env:
+`email.complained`, `email.failed`, and `email.suppressed`. Also register
+`https://cornershop.dev/api/webhooks/resend/inbound` for `email.received`.
+Before approving a release, run the read-only preflight inside the exact
+candidate image with its deployment env:
 
 ```bash
 docker run --rm \
@@ -95,14 +96,15 @@ docker run --rm \
 ```
 
 The command opens read-only PostgreSQL transactions to verify
-`20260819084000_outreach_operator_safety`, its required tables/columns/index,
-and Workflow database reachability; lists Resend webhook metadata; and validates
-the registered Restofront identity (`Vincent from Restofrontapp` with replies
-to `vincent@restofront.com`). It performs no database writes, configuration
-changes, or email sends. Output contains only check names, booleans, the public
-webhook endpoint, and timestamps—never database URLs, API keys, signing
-secrets, or provider error bodies. A failed check is a release blocker; do not
-weaken the preflight or mark it ready from configuration screenshots.
+`20260819120000_outreach_inbound_mailbox`, its required tables/columns/index,
+and Workflow database reachability; lists Resend webhook metadata for both
+endpoints; and validates the registered Restofront identity (`Vincent from
+Restofrontapp` with replies to `vincent@restofront.com`). It performs no
+database writes, configuration changes, or email sends. Output contains only
+check names, booleans, the public webhook endpoint, and timestamps—never
+database URLs, API keys, signing secrets, or provider error bodies. A failed
+check is a release blocker; do not weaken the preflight or mark it ready from
+configuration screenshots.
 
 ## Image storage round trip
 
@@ -288,13 +290,15 @@ Preview first and Production only with explicit approval.
 
 ## Deployment
 
-The manually dispatched GitHub Actions workflow builds the Docker image without
+A published stable GitHub release builds the Docker image without
 production secrets, uploads the immutable image archive to the private
 deployment bucket, and assumes the repository-scoped AWS OIDC role. Merging to
-`main` never deploys automatically. An operator dispatches production only after
-the scoped IAM policy, SSM parameters, host bootstrap, and DNS prerequisites are
-reviewed and ready. The role may upload only Cornershopdev artifacts and send only
-`AWS-RunShellScript` commands to the production instance.
+`main` and manually dispatching CI never deploy automatically. Publish the
+release only after the scoped IAM policy, SSM parameters, host bootstrap, and
+DNS prerequisites are reviewed and ready. The role may upload only
+Cornershopdev artifacts and send only `AWS-RunShellScript` commands to the
+production instance. See `production-release.md` for the complete state model
+and exact gates.
 
 The host deployment script:
 
@@ -302,7 +306,10 @@ The host deployment script:
 2. Starts or verifies the isolated Redis container.
 3. Loads the exact image artifact and starts a candidate.
 4. Waits for `/api/health/ready`.
-5. Swaps container names, reloads Caddy, and rolls back on failure.
+5. Verifies migrations, outreach configuration, and wildcard DNS in the exact
+   candidate.
+6. Swaps container names, reloads Caddy, verifies public on-demand TLS, and
+   rolls back on failure.
 
 The authorization migration intentionally changes the signed session payload
 from an email address to the immutable database user id. Existing browser

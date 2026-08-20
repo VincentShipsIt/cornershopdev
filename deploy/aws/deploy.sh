@@ -14,16 +14,24 @@ fi
 readonly container="api-cornershop-dev"
 readonly candidate="${container}-candidate"
 readonly previous="${container}-previous"
+readonly deployed_sha="${image_name#cornershopdev:}"
+readonly expected_bootstrap_sha256="6bcc109b5e8d64592d31e56bc39b3881b5b7f62168595388d7c73fd966d8a9a3"
+readonly expected_caddy_fragment_sha256="a8c0ebf55d1b8e0f62ea677276f56c1fe79730985be8146882fe8134aa209520"
+readonly expected_host_launcher_sha256="75aa0e06cf621dd7c9c742b6a73e45a1d8c23dc7720feab08547253f1e934abc"
 
 install -d -m 700 /etc/cornershopdev /var/lib/cornershopdev
 environment_file="/etc/cornershopdev/production.env"
 temporary_environment="$(mktemp /etc/cornershopdev/production.env.XXXXXX)"
 artifact_file="$(mktemp /var/lib/cornershopdev/image.XXXXXX.tar.gz)"
-trap 'rm -f "$temporary_environment" "$artifact_file"' EXIT
+bootstrap_file="$(mktemp /var/lib/cornershopdev/bootstrap.XXXXXX.sh)"
+caddy_fragment_file="$(mktemp /var/lib/cornershopdev/Caddyfile.XXXXXX.fragment)"
+host_launcher_file="$(mktemp /var/lib/cornershopdev/launcher.XXXXXX.sh)"
+trap 'rm -f "$temporary_environment" "$artifact_file" "$bootstrap_file" "$caddy_fragment_file" "$host_launcher_file"' EXIT
 umask 077
 
 required_parameters=(
   AWS_REGION
+  BETTER_AUTH_SECRET
   CLAIM_TOKEN_SECRET
   CUSTOM_DOMAIN_CNAME
   DATABASE_URL
@@ -52,7 +60,6 @@ optional_parameters=(
   AI_GATEWAY_API_KEY
   AI_IMAGE_MODEL
   AI_TEXT_MODEL
-  BETTER_AUTH_SECRET
   EMAIL_FROM
   EMAIL_REPLY_TO
   OPENROUTER_API_KEY
@@ -71,6 +78,41 @@ read_parameter() {
     --output text
 }
 
+download_verified_companion() {
+  local uri="$1"
+  local destination="$2"
+  local expected_sha256="$3"
+  local label="$4"
+  aws s3 cp \
+    "$uri" \
+    "$destination" \
+    --region us-west-1 \
+    --only-show-errors
+  local actual_sha256
+  actual_sha256="$(sha256sum "$destination" | awk '{print $1}')"
+  if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+    echo "${label} checksum mismatch" >&2
+    exit 1
+  fi
+}
+
+companion_prefix="${artifact_uri%.tar.gz}"
+download_verified_companion \
+  "${companion_prefix}.bootstrap-host.sh" \
+  "$bootstrap_file" \
+  "$expected_bootstrap_sha256" \
+  "Host bootstrap"
+download_verified_companion \
+  "${companion_prefix}.Caddyfile.fragment" \
+  "$caddy_fragment_file" \
+  "$expected_caddy_fragment_sha256" \
+  "Caddy fragment"
+download_verified_companion \
+  "${companion_prefix}.host-launcher.sh" \
+  "$host_launcher_file" \
+  "$expected_host_launcher_sha256" \
+  "Host launcher"
+
 for key in "${required_parameters[@]}"; do
   value="$(read_parameter "$key")"
   if [[ -z "$value" || "$value" == "None" ]]; then
@@ -80,12 +122,22 @@ for key in "${required_parameters[@]}"; do
   printf '%s=%s\n' "$key" "$value" >>"$temporary_environment"
 done
 
+# Deployment provenance is supplied by the immutable image name, not by SSM.
+# Scripts and evidence may read it, but operators cannot configure a different
+# SHA than the artifact the launcher verified and Docker loaded.
+printf '%s=%s\n' "DEPLOYED_GIT_SHA" "$deployed_sha" >>"$temporary_environment"
+
 for key in "${optional_parameters[@]}"; do
   if value="$(read_parameter "$key" 2>/dev/null)" && [[ -n "$value" && "$value" != "None" ]]; then
     printf '%s=%s\n' "$key" "$value" >>"$temporary_environment"
   fi
 done
 install -m 600 "$temporary_environment" "$environment_file"
+echo "release-state configuration-loaded sha=${deployed_sha}"
+
+chmod 500 "$bootstrap_file" "$host_launcher_file"
+"$bootstrap_file" "$host_launcher_file" "$caddy_fragment_file"
+echo "release-state caddy-configured sha=${deployed_sha}"
 
 docker network inspect shipshit >/dev/null
 docker volume create cornershopdev-redis-data >/dev/null
@@ -137,6 +189,19 @@ wait_for_health() {
 }
 
 wait_for_health "$candidate"
+candidate_image="$(docker inspect --format '{{.Config.Image}}' "$candidate")"
+if [[ "$candidate_image" != "$image_name" ]]; then
+  echo "Candidate image does not match the reviewed artifact" >&2
+  exit 1
+fi
+docker exec "$candidate" bun run db:migrate:status
+echo "release-state migrations-applied sha=${deployed_sha}"
+docker exec "$candidate" \
+  bun run operator:preflight-outreach --environment production
+echo "release-state outreach-configured sha=${deployed_sha}"
+docker exec "$candidate" \
+  bun run operator:preflight-platform-edge --phase dns
+echo "release-state wildcard-dns-ready sha=${deployed_sha}"
 docker rm -f "$previous" >/dev/null 2>&1 || true
 if docker inspect "$container" >/dev/null 2>&1; then
   docker stop "$container" >/dev/null
@@ -160,13 +225,28 @@ if ! reload_caddy || ! wait_for_health "$container"; then
   exit 1
 fi
 
+if ! docker exec "$container" \
+  bun run operator:preflight-platform-edge --phase tls; then
+  echo "Platform TLS preflight failed after cutover; rolling back" >&2
+  docker rm -f "$container" >/dev/null 2>&1 || true
+  if docker inspect "$previous" >/dev/null 2>&1; then
+    docker rename "$previous" "$container"
+    docker start "$container" >/dev/null
+    reload_caddy
+  fi
+  exit 1
+fi
+echo "release-state platform-tls-ready sha=${deployed_sha}"
+
+echo "release-state production-deployed sha=${deployed_sha}"
+
 docker rm -f "$previous" >/dev/null 2>&1 || true
 
 monitor_service="/etc/systemd/system/cornershopdev-public-health.service"
 monitor_timer="/etc/systemd/system/cornershopdev-public-health.timer"
 temporary_monitor_service="$(mktemp /etc/systemd/system/cornershopdev-public-health.service.XXXXXX)"
 temporary_monitor_timer="$(mktemp /etc/systemd/system/cornershopdev-public-health.timer.XXXXXX)"
-trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_service" "$temporary_monitor_timer"' EXIT
+trap 'rm -f "$temporary_environment" "$artifact_file" "$bootstrap_file" "$caddy_fragment_file" "$host_launcher_file" "$temporary_monitor_service" "$temporary_monitor_timer"' EXIT
 
 {
   printf '%s\n' '[Unit]'
