@@ -21,8 +21,9 @@ COPY prisma ./prisma
 COPY prisma.config.ts ./
 RUN bun install --frozen-lockfile
 # Fail the image build on the production musl architecture if Sharp's native
-# decoder cannot load and perform the operation used by Open Graph rendering.
-RUN bun -e 'import sharp from "sharp"; const image = await sharp({ create: { width: 1, height: 1, channels: 3, background: "#000000" } }).jpeg().toBuffer(); if (image.length === 0) throw new Error("Sharp runtime smoke test failed")'
+# decoder cannot load and perform the encode/decode path used by the Node Open
+# Graph runtime.
+RUN node --input-type=module -e 'import sharp from "sharp"; const encoded = await sharp({ create: { width: 1, height: 1, channels: 3, background: "#000000" } }).jpeg().toBuffer(); const decoded = await sharp(encoded).resize(1, 1).toBuffer(); if (encoded.length === 0 || decoded.length === 0) throw new Error("Sharp runtime smoke test failed")'
 
 FROM dependencies AS builder
 WORKDIR /app

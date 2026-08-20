@@ -34,12 +34,36 @@ describe("model-assisted source facts", () => {
         "Hello@Example.com",
         "For bookings email hello@example.com today.",
       ),
-    ).toBe("Hello@Example.com");
+    ).toBe("hello@example.com");
     expect(
       selectSourceBackedEmail(
         "",
         "invented@example.com",
         "Call the business for bookings.",
+      ),
+    ).toBe("");
+  });
+
+  it("matches complete validated source addresses rather than substrings", () => {
+    expect(
+      selectSourceBackedEmail(
+        "",
+        "foo@example.com",
+        "Contact info@foo@example.com or bookings@example.com.",
+      ),
+    ).toBe("");
+    expect(
+      selectSourceBackedEmail(
+        "",
+        "BOOKINGS@EXAMPLE.COM",
+        "Contact info@foo@example.com or bookings@example.com.",
+      ),
+    ).toBe("bookings@example.com");
+    expect(
+      selectSourceBackedEmail(
+        "not an email",
+        "bookings@example.com?subject=unsafe",
+        "Contact bookings@example.com.",
       ),
     ).toBe("");
   });

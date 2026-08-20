@@ -155,12 +155,17 @@ export const integrationSchema = z.object({
 });
 
 function isPrivateIntegrationHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const normalized = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   const ipv6 = normalized.includes(":");
   if (
     normalized === "localhost" ||
     normalized.endsWith(".localhost") ||
     normalized.endsWith(".local") ||
+    normalized.endsWith(".internal") ||
+    normalized === "metadata.google.internal" ||
     ipv6
   ) {
     return true;

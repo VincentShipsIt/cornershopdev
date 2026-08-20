@@ -325,7 +325,7 @@ export function safeSourceAssetUrl(
 ): string | null {
   try {
     const url = new URL(decodeHtml(value), baseUrl);
-    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    const hostname = normalizedHostname(url.hostname);
     if (url.protocol !== "https:" || url.username || url.password) return null;
     if (url.port && url.port !== "443") return null;
     if (
@@ -343,6 +343,13 @@ export function safeSourceAssetUrl(
   } catch {
     return null;
   }
+}
+
+function normalizedHostname(hostname: string): string {
+  return hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
 }
 
 function extractJsonLd(html: string): unknown[] {
@@ -795,21 +802,50 @@ function extractCatalogSections(
 ): ExtractedCatalogSection[] {
   const sections: ExtractedCatalogSection[] = [];
   const assigned = new Set<JsonRecord>();
+  const visitedSections = new Set<JsonRecord>();
 
-  for (const { value: entity, sourceUrl } of entities) {
-    const types = jsonTypes(entity);
-    if (!types.some((type) => ["menusection", "offercatalog", "itemlist"].includes(type))) continue;
+  const collectSection = (entity: JsonRecord, sourceUrl: URL): void => {
+    if (
+      sections.length >= MAX_CATALOG_SECTIONS ||
+      visitedSections.has(entity) ||
+      !isCatalogSectionEntity(entity)
+    ) {
+      return;
+    }
+    visitedSections.add(entity);
+
     const children = [
+      entity.hasMenuSection,
+      entity.hasOfferCatalog,
       entity.hasMenuItem,
       entity.itemListElement,
       entity.itemOffered,
     ].flatMap(asJsonRecords);
-    const items = children
+    const nestedSections = children.flatMap((child) => {
+      if (isCatalogSectionEntity(child)) return [child];
+      return isRecord(child.itemOffered) &&
+        isCatalogSectionEntity(child.itemOffered)
+        ? [child.itemOffered]
+        : [];
+    });
+
+    // OfferCatalog trees describe section hierarchy. Consume their nested
+    // containers before considering leaf records so a named catalog can never
+    // become a purchasable item merely because it has a name.
+    for (const nestedSection of nestedSections) {
+      assigned.add(nestedSection);
+      collectSection(nestedSection, sourceUrl);
+    }
+
+    const itemChildren = children.filter(
+      (child) => !isCatalogSectionEntity(child),
+    );
+    const items = itemChildren
       .map((child) => catalogItem(child, sourceUrl, evidence, brandAssets))
       .filter((item): item is ExtractedCatalogItem => Boolean(item))
       .slice(0, MAX_CATALOG_ITEMS_PER_SECTION);
-    if (items.length === 0) continue;
-    children.forEach((child) => {
+    if (items.length === 0) return;
+    itemChildren.forEach((child) => {
       assigned.add(child);
       if (isRecord(child.itemOffered)) assigned.add(child.itemOffered);
     });
@@ -818,15 +854,17 @@ function extractCatalogSections(
       description: boundedText(stringValue(entity.description), 240),
       items,
     });
+  };
+
+  for (const { value: entity, sourceUrl } of entities) {
+    collectSection(entity, sourceUrl);
     if (sections.length >= MAX_CATALOG_SECTIONS) break;
   }
 
   const standalone = entities
     .filter(({ value }) =>
       !assigned.has(value) &&
-      jsonTypes(value).some((type) =>
-        ["menuitem", "product", "service"].includes(type),
-      ),
+      isCatalogItemEntity(value),
     )
     .map(({ value, sourceUrl }) =>
       catalogItem(value, sourceUrl, evidence, brandAssets),
@@ -951,6 +989,12 @@ function catalogItem(
     : isRecord(entity.itemOffered)
       ? entity.itemOffered
       : entity;
+  if (
+    isCatalogSectionEntity(nested) ||
+    (!isCatalogItemEntity(entity) && !isCatalogItemEntity(nested))
+  ) {
+    return null;
+  }
   const name = boundedText(stringValue(nested.name) || stringValue(entity.name), 120);
   if (!name) return null;
   const offer = asJsonRecords(nested.offers ?? entity.offers)[0] ?? null;
@@ -989,6 +1033,18 @@ function catalogItem(
     availability,
     imageUrl: image?.value ?? null,
   };
+}
+
+function isCatalogSectionEntity(entity: JsonRecord): boolean {
+  return jsonTypes(entity).some((type) =>
+    ["menu", "menusection", "offercatalog"].includes(type),
+  );
+}
+
+function isCatalogItemEntity(entity: JsonRecord): boolean {
+  return jsonTypes(entity).some((type) =>
+    ["menuitem", "product", "service", "offer"].includes(type),
+  );
 }
 
 function catalogAvailability(value: unknown): boolean | null {

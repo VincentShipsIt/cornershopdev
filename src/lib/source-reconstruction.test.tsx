@@ -385,6 +385,144 @@ describe("deterministic source reconstruction", () => {
     );
   });
 
+  it("rejects generic article and navigation ItemLists as catalog evidence", () => {
+    const sourceUrl = new URL("https://editorial.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `<script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "ItemList",
+                "name": "Latest stories",
+                "itemListElement": [
+                  { "@type": "Article", "name": "Summer openings" }
+                ]
+              },
+              {
+                "@type": "ItemList",
+                "name": "Primary navigation",
+                "itemListElement": [
+                  { "@type": "SiteNavigationElement", "name": "About us" }
+                ]
+              }
+            ]
+          }
+        </script><h1>Editorial House</h1>`,
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.catalogSections).toEqual([]);
+    expect(
+      reconstructed.evidence.some((entry) => entry.field === "catalog.item"),
+    ).toBe(false);
+  });
+
+  it("reconstructs typed nested OfferCatalog and Menu sections without selling their containers", () => {
+    const sourceUrl = new URL("https://typed-catalog.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `<script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "LocalBusiness",
+            "name": "Typed Catalog",
+            "hasOfferCatalog": {
+              "@type": "OfferCatalog",
+              "name": "All offerings",
+              "itemListElement": [
+                {
+                  "@type": "OfferCatalog",
+                  "name": "Consultations",
+                  "itemListElement": [
+                    {
+                      "@type": "Service",
+                      "name": "Colour consultation",
+                      "offers": {
+                        "@type": "Offer",
+                        "price": "45",
+                        "priceCurrency": "EUR"
+                      }
+                    },
+                    {
+                      "@type": "Product",
+                      "name": "Care kit"
+                    }
+                  ]
+                },
+                {
+                  "@type": "Menu",
+                  "name": "Dinner menu",
+                  "hasMenuSection": {
+                    "@type": "MenuSection",
+                    "name": "Dinner plates",
+                    "hasMenuItem": {
+                      "@type": "MenuItem",
+                      "name": "Market plate"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        </script>`,
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.catalogSections).toEqual([
+      {
+        name: "Consultations",
+        description: "",
+        items: [
+          {
+            name: "Colour consultation",
+            description: "",
+            price: 45,
+            currency: "EUR",
+            availability: null,
+            imageUrl: null,
+          },
+          {
+            name: "Care kit",
+            description: "",
+            price: null,
+            currency: null,
+            availability: null,
+            imageUrl: null,
+          },
+        ],
+      },
+      {
+        name: "Dinner plates",
+        description: "",
+        items: [
+          {
+            name: "Market plate",
+            description: "",
+            price: null,
+            currency: null,
+            availability: null,
+            imageUrl: null,
+          },
+        ],
+      },
+    ]);
+    expect(
+      reconstructed.catalogSections.flatMap((section) =>
+        section.items.map((item) => item.name),
+      ),
+    ).not.toContain("All offerings");
+  });
+
   it("repairs text and accent contrast while retaining normalized source colours", () => {
     const palette = repairPalette(
       { background: "#fff8e8", foreground: "#fffdf8", accent: "#f4d03f" },
@@ -406,11 +544,47 @@ describe("deterministic source reconstruction", () => {
     "https://0x7f000001/logo.png",
     "https://0177.0.0.1/logo.png",
     "https://127.1/logo.png",
+    "https://localhost./logo.png",
+    "https://sub.localhost./logo.png",
+    "https://printer.local./logo.png",
+    "https://service.internal./logo.png",
+    "https://metadata.google.internal./latest/meta-data/",
+    "https://192.168.1.1./logo.png",
     "https://169.254.169.254/latest/meta-data/",
     "https://[::1]/logo.png",
     "data:image/png;base64,abc",
   ])("rejects unsafe source asset URL %s", (value) => {
     expect(safeSourceAssetUrl(value, new URL("https://example.com"))).toBeNull();
+  });
+
+  it("drops terminal-dot private brand assets during direct extraction", () => {
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `
+          <html lang="en">
+            <head>
+              <meta property="og:image" content="https://localhost./hero.png">
+              <link rel="icon" href="https://sub.localhost./favicon.png">
+            </head>
+            <body>
+              <h1>Safe Brand</h1>
+              <img class="logo" src="https://printer.local./logo.png" alt="Safe Brand logo">
+            </body>
+          </html>
+        `,
+        url: new URL("https://safe-brand.example/"),
+      },
+      fallbackName: "safe-brand.example",
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed).toMatchObject({
+      logoUrl: null,
+      faviconUrl: null,
+      heroImageUrl: null,
+      brandAssets: [],
+    });
   });
 
   it("runs fixture HTML through the no-model draft and customer renderer", async () => {

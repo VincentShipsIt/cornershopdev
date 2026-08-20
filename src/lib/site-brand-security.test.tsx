@@ -143,7 +143,60 @@ describe("site brand image security", () => {
     "https://user:pass@images.example/logo.svg",
     "https://images.example:8443/logo.svg",
     "https://127.0.0.1/logo.svg",
+    "https://localhost./logo.svg",
+    "https://sub.localhost./logo.svg",
+    "https://printer.local./logo.svg",
+    "https://service.internal./logo.svg",
+    "https://metadata.google.internal./logo.svg",
+    "https://192.168.1.1./logo.svg",
   ])("rejects unsafe brand image %s before CSS rendering", (logoUrl) => {
     expect(siteImageUrlSchema.safeParse(logoUrl).success).toBe(false);
   });
+
+  it.each([
+    ["preview", false],
+    ["live", true],
+  ] as const)(
+    "blocks terminal-dot private assets before %s rendering",
+    (_surface, analyticsEnabled) => {
+      for (const logoUrl of [
+        "https://localhost./logo.svg",
+        "https://sub.localhost./logo.svg",
+        "https://service.internal./logo.svg",
+        "https://192.168.1.1./logo.svg",
+      ]) {
+        const parsed = restaurantSiteDraftSchema.safeParse({
+          ...sampleSiteDraft,
+          logoUrl,
+          faviconUrl: logoUrl,
+          heroImageUrl: logoUrl,
+          sourceData: {
+            navigation: [],
+            brandAssets: [
+              {
+                type: "logo",
+                url: logoUrl,
+                sourceUrl: "https://source.example/",
+                provenance: "official",
+                evidence: "meta",
+              },
+            ],
+            evidence: [],
+          },
+        });
+
+        expect(parsed.success).toBe(false);
+        expect(() => {
+          if (!parsed.success) throw new Error("unsafe persisted draft");
+          return renderToStaticMarkup(
+            <SiteRenderer
+              draft={parsed.data}
+              vertical={restaurantConfig.id}
+              analyticsEnabled={analyticsEnabled}
+            />,
+          );
+        }).toThrow("unsafe persisted draft");
+      }
+    },
+  );
 });

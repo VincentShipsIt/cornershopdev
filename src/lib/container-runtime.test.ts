@@ -38,6 +38,11 @@ describe("production container runtime", () => {
       "node node_modules/next/dist/bin/next build",
     );
     expect(packageJson).not.toContain('&& next build"');
+    expect(dockerfile).toContain(
+      'RUN node --input-type=module -e \'import sharp from "sharp";',
+    );
+    expect(dockerfile).toContain("sharp(encoded).resize(1, 1).toBuffer()");
+    expect(dockerfile).not.toContain("RUN bun -e 'import sharp");
   });
 
   it("boots and exercises the candidate image in CI", () => {

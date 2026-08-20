@@ -1,5 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, Output } from "ai";
+import { normalizeAccountEmail } from "@/lib/account-email";
 import type { ExtractedSite } from "@/lib/importer";
 import { slugify } from "@/lib/restaurant";
 import type { RestaurantDraft } from "@/lib/restaurant";
@@ -91,12 +92,29 @@ export function selectSourceBackedEmail(
   modelEmail: string | undefined,
   pageText: string,
 ): string {
-  const reconstructed = reconstructedEmail?.trim();
+  const reconstructed = normalizedEmail(reconstructedEmail);
   if (reconstructed) return reconstructed;
-  const candidate = modelEmail?.trim();
-  return candidate && pageText.toLowerCase().includes(candidate.toLowerCase())
-    ? candidate
-    : "";
+  const candidate = normalizedEmail(modelEmail);
+  if (!candidate) return "";
+
+  const sourceEmails = new Set(
+    Array.from(
+      pageText.matchAll(
+        /(?<![a-z0-9.!#$%&'*+/=?^_`{|}~@-])[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?![a-z0-9@-])/gi,
+      ),
+      (match) => normalizedEmail(match[0]),
+    ).filter((email): email is string => Boolean(email)),
+  );
+  return sourceEmails.has(candidate) ? candidate : "";
+}
+
+function normalizedEmail(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return normalizeAccountEmail(value);
+  } catch {
+    return null;
+  }
 }
 
 export function selectCatalogSource<T>(
