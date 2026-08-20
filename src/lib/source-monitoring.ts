@@ -524,6 +524,8 @@ export async function reviewSourceMonitoringSuggestion(input: {
 }): Promise<{
   status: "ACCEPTED" | "REJECTED";
   revision?: number;
+  draft?: unknown;
+  vertical?: Vertical;
 }> {
   const db = getDb();
   return db.$transaction(
@@ -610,7 +612,17 @@ export async function reviewSourceMonitoringSuggestion(input: {
         "ACCEPTED",
         input.editedValue !== undefined,
       );
-      return { status: "ACCEPTED", revision };
+      const accepted = await transaction.site.findUniqueOrThrow({
+        where: { id: site.id },
+        include: siteDraftRelations,
+      });
+      const projectedAccepted = projectSiteDraft(accepted);
+      return {
+        status: "ACCEPTED",
+        revision,
+        draft: projectedAccepted.draft,
+        vertical: accepted.vertical,
+      };
     },
     { isolationLevel: "Serializable" },
   );

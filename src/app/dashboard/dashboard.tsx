@@ -71,6 +71,7 @@ import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
+  reconcileAcceptedSourceMonitoringDraft,
   reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
   validateRestaurantMenuDraft,
@@ -578,6 +579,26 @@ export function Dashboard({
     setSaved(false);
     setMenuSaveError(null);
     setMenuValidationIssues([]);
+  }
+
+  function applyAcceptedSourceMonitoringDraft(input: {
+    revision: number;
+    draft: unknown;
+  }) {
+    const acceptedServerDraft = restaurantDraftSchema.parse(input.draft);
+    const reconciled = reconcileAcceptedSourceMonitoringDraft(
+      persistedDraft,
+      draftRef.current,
+      acceptedServerDraft,
+    );
+    setPersistedDraft(acceptedServerDraft);
+    setDraft(reconciled.draft);
+    setSavedRevision(input.revision);
+    setSaved(!reconciled.preservedClientEdits);
+    setMenuValidationIssues(validateRestaurantMenuDraft(reconciled.draft));
+    setIntegrationValidationIssues(
+      validateRestaurantIntegrations(reconciled.draft),
+    );
   }
 
   function mutateIntegration(
@@ -1104,6 +1125,7 @@ export function Dashboard({
                   JSON.stringify(draft) !==
                   JSON.stringify(persistedDraft)
                 }
+                onAcceptedDraft={applyAcceptedSourceMonitoringDraft}
               />
             </TabsContent>
 

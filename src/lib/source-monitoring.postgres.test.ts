@@ -158,9 +158,14 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
       action: "accept",
       expectedRevision: beforeRevision,
     });
-    expect(reviewed).toEqual({
+    expect(reviewed).toMatchObject({
       status: "ACCEPTED",
       revision: beforeRevision + 1,
+      vertical: "RESTAURANT",
+      draft: {
+        address: "New address",
+        phone: "2222",
+      },
     });
     expect(
       await db.site.findUniqueOrThrow({

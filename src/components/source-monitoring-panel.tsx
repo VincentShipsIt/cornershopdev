@@ -20,12 +20,14 @@ export function SourceMonitoringPanel({
   demo = false,
   draftRevision,
   hasUnsavedChanges,
+  onAcceptedDraft,
 }: {
   siteSlug: string;
   initial: SourceMonitoringDashboardDto;
   demo?: boolean;
   draftRevision: number;
   hasUnsavedChanges: boolean;
+  onAcceptedDraft?: (input: { revision: number; draft: unknown }) => void;
 }) {
   const [suggestions, setSuggestions] = useState(initial.suggestions);
   const [editing, setEditing] = useState<Record<string, string>>(() =>
@@ -67,13 +69,16 @@ export function SourceMonitoringPanel({
       const result = (await response.json()) as {
         error?: string;
         revision?: number;
+        draft?: unknown;
       };
+      const acceptedRevision = result.revision;
       if (!response.ok) {
         throw new Error(result.error ?? "Suggestion review failed");
       }
       if (
         action === "accept" &&
-        (!Number.isInteger(result.revision) || result.revision === undefined)
+        (typeof acceptedRevision !== "number" ||
+          !Number.isInteger(acceptedRevision))
       ) {
         throw new Error("Suggestion review did not return a draft revision");
       }
@@ -81,9 +86,18 @@ export function SourceMonitoringPanel({
         current.filter((suggestion) => suggestion.id !== id),
       );
       if (action === "accept") {
-        // The accepted server mutation can touch any draft field. Reload both
-        // the draft and its revision so a later full save cannot overwrite it.
-        window.location.reload();
+        if (typeof acceptedRevision !== "number") {
+          throw new Error("Suggestion review did not return a draft revision");
+        }
+        if (onAcceptedDraft) {
+          if (result.draft === undefined) {
+            throw new Error("Suggestion review did not return the accepted draft");
+          }
+          onAcceptedDraft({ revision: acceptedRevision, draft: result.draft });
+        } else {
+          // The operator surface has no local draft editor to reconcile.
+          window.location.reload();
+        }
       }
     } catch (caught) {
       setError(

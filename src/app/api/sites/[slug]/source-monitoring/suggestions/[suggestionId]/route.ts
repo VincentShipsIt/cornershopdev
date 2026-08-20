@@ -1,5 +1,10 @@
 import { z } from "zod";
+import { Vertical } from "@/generated/prisma/enums";
 import { accessFailureResponse } from "@/lib/authorization";
+import {
+  restaurantSiteDraftSchema,
+  toRestaurantDraft,
+} from "@/lib/restaurant";
 import {
   reviewSourceMonitoringSuggestion,
   SourceMonitoringConflictError,
@@ -47,7 +52,16 @@ export async function PATCH(
       actor: access.actor,
       ...parsed.data,
     });
-    return Response.json(result);
+    const ownerDraft =
+      result.status === "ACCEPTED" &&
+      result.vertical === Vertical.RESTAURANT
+        ? toRestaurantDraft(restaurantSiteDraftSchema.parse(result.draft))
+        : undefined;
+    return Response.json({
+      status: result.status,
+      ...(result.revision === undefined ? {} : { revision: result.revision }),
+      ...(ownerDraft === undefined ? {} : { draft: ownerDraft }),
+    });
   } catch (error) {
     if (error instanceof DraftRevisionConflictError) {
       return Response.json(

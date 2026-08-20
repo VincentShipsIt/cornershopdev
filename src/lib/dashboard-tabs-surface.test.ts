@@ -74,6 +74,14 @@ describe("dashboard tab and settings surface", () => {
     expect(sourceMonitoringPanel).toContain(
       "expectedRevision: draftRevision",
     );
-    expect(sourceMonitoringPanel).toContain("window.location.reload()");
+    expect(dashboard).toContain(
+      "onAcceptedDraft={applyAcceptedSourceMonitoringDraft}",
+    );
+    expect(sourceMonitoringPanel).toContain(
+      "onAcceptedDraft({ revision: acceptedRevision, draft: result.draft })",
+    );
+    expect(sourceMonitoringPanel).toContain(
+      "The operator surface has no local draft editor to reconcile.",
+    );
   });
 });

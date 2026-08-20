@@ -9,6 +9,7 @@ import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
+  reconcileAcceptedSourceMonitoringDraft,
   reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
   validateRestaurantMenuDraft,
@@ -170,5 +171,35 @@ describe("restaurant menu CRUD", () => {
     expect(
       reconcileRegeneratedRestaurantDraft(requested, requested, regenerated),
     ).toEqual({ draft: regenerated, preservedClientEdits: false });
+  });
+
+  it("reconciles a deferred monitored mutation with edits typed after dispatch", async () => {
+    const requested = multilingualDraft();
+    let current = structuredClone(requested);
+    let resolveRequest!: (draft: typeof requested) => void;
+    const request = new Promise<typeof requested>((resolve) => {
+      resolveRequest = resolve;
+    });
+    const completion = request.then((acceptedServerDraft) =>
+      reconcileAcceptedSourceMonitoringDraft(
+        requested,
+        current,
+        acceptedServerDraft,
+      ),
+    );
+
+    current = structuredClone(current);
+    current.name = "Owner edit typed after PATCH dispatch";
+    const accepted = structuredClone(requested);
+    accepted.address = "Address accepted from source monitoring";
+    resolveRequest(accepted);
+
+    expect(await completion).toEqual({
+      draft: {
+        ...accepted,
+        name: "Owner edit typed after PATCH dispatch",
+      },
+      preservedClientEdits: true,
+    });
   });
 });
