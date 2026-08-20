@@ -256,7 +256,16 @@ export type VerticalConfig<
     // Short pills printed under a catalog item. Restaurants surface dietary
     // labels here, beauty surfaces duration or "with any stylist" — the renderer
     // only ever sees strings, which is what keeps `dietaryLabels` out of it.
-    itemBadges?: (attributes: TItemAttributes, locale: string) => string[];
+    itemBadges?: (
+      attributes: TItemAttributes,
+      locale: string,
+      available: boolean | null,
+    ) => string[];
+    /** A vertical may separate storefront inclusion from factual availability. */
+    isItemVisible?: (item: {
+      available: boolean | null;
+      attributes: TItemAttributes;
+    }) => boolean;
     /** Optional sourced pickup/fulfilment note rendered beside location data. */
     fulfillmentNote?: (
       attributes: TAttributes,
@@ -271,6 +280,19 @@ export type VerticalConfig<
     attributes: TAttributes,
     template: TTemplate,
   ) => TAttributes;
+  /** Removes unsupported model-only item claims before persistence. */
+  normalizeGeneratedItem?: (item: {
+    available: boolean | null;
+    attributes: TItemAttributes;
+  }) => {
+    available: boolean | null;
+    attributes: TItemAttributes;
+  };
+  /** Adds facts that came directly from deterministic source extraction. */
+  deterministicItemAttributes?: (item: {
+    availability: boolean | null;
+    availabilitySourceUrl?: string | null;
+  }) => TItemAttributes;
   /**
    * Trust state applied after model output has passed the vertical schema.
    * Models may propose copy, but they cannot mark that copy owner-reviewed.

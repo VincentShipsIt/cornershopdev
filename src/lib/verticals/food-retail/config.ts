@@ -84,7 +84,7 @@ export const foodRetailConfig = {
   },
   itemAttributesSchema: foodRetailItemAttributesSchema,
   itemAttributeDefaults: {
-    stockStatus: null,
+    visible: true,
     stockSourceUrl: null,
     seasonalAvailability: "",
     preorderRequired: null,
@@ -114,16 +114,13 @@ export const foodRetailConfig = {
     },
     buildEyebrow: (attributes, site) =>
       `${shopTypeLabels[attributes.shopType].en} · ${site.address ?? "Local"}`,
-    itemBadges: (attributes, locale) => {
+    itemBadges: (attributes, locale, available) => {
       const localeLanguage = language(locale);
       const badges: string[] = [];
-      if (attributes.stockSourceUrl && attributes.stockStatus === "in-stock") {
+      if (attributes.stockSourceUrl && available === true) {
         badges.push(localeLanguage === "fr" ? "En stock" : "In stock");
       }
-      if (
-        attributes.stockSourceUrl &&
-        attributes.stockStatus === "out-of-stock"
-      ) {
+      if (attributes.stockSourceUrl && available === false) {
         badges.push(localeLanguage === "fr" ? "Rupture de stock" : "Out of stock");
       }
       if (attributes.seasonalAvailability) {
@@ -140,6 +137,7 @@ export const foodRetailConfig = {
       }
       return badges;
     },
+    isItemVisible: (item) => item.attributes.visible,
     fulfillmentNote: (attributes) => attributes.pickupDetails || null,
   },
   templates: {
@@ -149,6 +147,24 @@ export const foodRetailConfig = {
   normalizeGeneratedAttributes: (attributes, template) => ({
     ...attributes,
     showProductImages: template.showProductImagesByDefault,
+  }),
+  normalizeGeneratedItem: (item) => ({
+    ...item,
+    available: null,
+    attributes: {
+      ...item.attributes,
+      visible: true,
+      stockSourceUrl: null,
+    },
+  }),
+  deterministicItemAttributes: (item) => ({
+    visible: true,
+    stockSourceUrl: item.availabilitySourceUrl ?? null,
+    seasonalAvailability: "",
+    preorderRequired: null,
+    preorderNote: "",
+    allergens: [],
+    allergenSourceUrl: null,
   }),
   generatedTranslationStatus: "draft",
   providers: foodRetailProviders,

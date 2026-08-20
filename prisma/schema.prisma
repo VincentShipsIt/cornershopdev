@@ -117,6 +117,18 @@ enum AuthLinkDestination {
 enum AuthDeliveryStatus {
   PENDING
   SENT
+  DELIVERED
+  BOUNCED
+  SUPPRESSED
+  FAILED
+}
+
+enum ClaimDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  BOUNCED
+  SUPPRESSED
   FAILED
 }
 
@@ -148,19 +160,21 @@ enum SourceMonitorSuggestionStatus {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  email          String          @unique
-  emailVerified  Boolean         @default(false)
-  name           String
-  image          String?
-  platformRole   PlatformRole    @default(USER)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  memberships    Membership[]
-  sessions       Session[]
-  accounts       Account[]
-  authMagicLinks AuthMagicLink[]
-  authSessions   AuthSession[]
+  id                       String          @id @default(cuid())
+  email                    String          @unique
+  emailVerified            Boolean         @default(false)
+  name                     String
+  image                    String?
+  platformRole             PlatformRole    @default(USER)
+  authLinkSequence         Int             @default(0)
+  authLinkActiveGeneration Int             @default(0)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  memberships              Membership[]
+  sessions                 Session[]
+  accounts                 Account[]
+  authMagicLinks           AuthMagicLink[]
+  authSessions             AuthSession[]
 }
 
 model Organization {
@@ -195,9 +209,14 @@ model Site {
   address                  String?
   phone                    String?
   email                    String?
+  /// Private operator-reviewed owner/outreach recipient. Never project this
+  /// field into a draft, published version, or public site response.
+  leadContactEmail         String?
   sourceUrl                String?
   sourceKey                String?                   @unique
   logoUrl                  String?
+  faviconUrl               String?
+  sourceData               Json                      @default("{}")
   heroImageUrl             String?
   heroOriginalImageUrl     String?
   heroImageProvenance      ImageProvenance?
@@ -238,27 +257,45 @@ model Site {
 }
 
 model AuthMagicLink {
-  id                String              @id @default(cuid())
-  tokenHash         String              @unique
-  destination       AuthLinkDestination
-  brandVertical     Vertical?
-  deliveryStatus    AuthDeliveryStatus  @default(PENDING)
-  deliveryAttempts  Int                 @default(0)
-  retryCount        Int                 @default(0)
-  providerMessageId String?
-  failureCode       String?
-  expiresAt         DateTime
-  deliveredAt       DateTime?
-  lastAttemptAt     DateTime?
-  consumedAt        DateTime?
-  revokedAt         DateTime?
-  userId            String
-  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id                 String              @id @default(cuid())
+  tokenHash          String              @unique
+  destination        AuthLinkDestination
+  brandVertical      Vertical?
+  deliveryStatus     AuthDeliveryStatus  @default(PENDING)
+  deliveryAttempts   Int                 @default(0)
+  retryCount         Int                 @default(0)
+  rotationGeneration Int
+  providerMessageId  String?
+  providerEventAt    DateTime?
+  failureCode        String?
+  expiresAt          DateTime
+  deliveredAt        DateTime?
+  lastAttemptAt      DateTime?
+  consumedAt         DateTime?
+  revokedAt          DateTime?
+  userId             String
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerEvents     AuthProviderEvent[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
+  @@unique([userId, rotationGeneration])
   @@index([userId, createdAt])
   @@index([deliveryStatus, createdAt])
+}
+
+model AuthProviderEvent {
+  id                String             @id
+  authMagicLinkId   String
+  authMagicLink     AuthMagicLink      @relation(fields: [authMagicLinkId], references: [id], onDelete: Cascade)
+  providerMessageId String
+  eventType         String
+  deliveryStatus    AuthDeliveryStatus
+  occurredAt        DateTime
+  createdAt         DateTime           @default(now())
+
+  @@index([authMagicLinkId, occurredAt])
+  @@index([providerMessageId, occurredAt])
 }
 
 model AuthSession {
@@ -368,7 +405,8 @@ model CatalogItem {
   originalImageUrl String?
   imageProvenance  ImageProvenance?
   attributes       Json             @default("{}")
-  available        Boolean          @default(true)
+  /// Null means the source made no availability claim.
+  available        Boolean?
   position         Int              @default(0)
   sectionId        String
   section          CatalogSection   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
@@ -448,25 +486,54 @@ model Domain {
 }
 
 model ClaimInvitation {
-  id                      String           @id @default(cuid())
+  id                      String               @id @default(cuid())
   email                   String
-  tokenHash               String           @unique
-  outreachKey             String?          @unique
-  proofMethod             ClaimProofMethod @default(DOMAIN_EMAIL)
+  tokenHash               String               @unique
+  outreachKey             String?              @unique
+  proofMethod             ClaimProofMethod     @default(DOMAIN_EMAIL)
+  approvalEvidenceRef     String?
+  approvedBy              String?
+  approvedAt              DateTime?
+  deliveryStatus          ClaimDeliveryStatus  @default(PENDING)
+  deliveryAttempts        Int                  @default(0)
+  retryCount              Int                  @default(0)
+  replacesInvitationId    String?              @unique
+  providerMessageId       String?              @unique
+  providerEventAt         DateTime?
+  deliveryFailureCode     String?
+  deliveredAt             DateTime?
+  lastDeliveryAttemptAt   DateTime?
   expiresAt               DateTime
   verifiedAt              DateTime?
   acceptedAt              DateTime?
   revokedAt               DateTime?
-  checkoutSessionId       String?          @unique
+  checkoutSessionId       String?              @unique
   stripePriceId           String?
-  checkoutAttempt         Int              @default(0)
+  checkoutAttempt         Int                  @default(0)
   checkoutReturnTokenHash String?
   checkoutReturnExpiresAt DateTime?
   siteId                  String
-  site                    Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt               DateTime         @default(now())
+  site                    Site                 @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  providerEvents          ClaimProviderEvent[]
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
   @@index([siteId, email, expiresAt])
+  @@index([deliveryStatus, createdAt])
+}
+
+model ClaimProviderEvent {
+  id                String              @id
+  claimInvitationId String
+  claimInvitation   ClaimInvitation     @relation(fields: [claimInvitationId], references: [id], onDelete: Cascade)
+  providerMessageId String
+  eventType         String
+  deliveryStatus    ClaimDeliveryStatus
+  occurredAt        DateTime
+  createdAt         DateTime            @default(now())
+
+  @@index([claimInvitationId, occurredAt])
+  @@index([providerMessageId, occurredAt])
 }
 
 model OutreachMessage {
@@ -561,6 +628,7 @@ model Subscription {
 model StripeWebhookEvent {
   eventId         String   @id
   type            String
+  livemode        Boolean?
   stripeCreatedAt DateTime
   status          String   @default("PROCESSED")
   failureReason   String?

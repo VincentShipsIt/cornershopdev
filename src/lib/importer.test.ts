@@ -28,6 +28,7 @@ describe("importer SSRF guards", () => {
     "::ffff:10.1.2.3",
     "::7f00:1",
     "::127.0.0.1",
+    "64:ff9b::7f00:1",
   ])("treats %s as private", (address) => {
     expect(isPrivateAddress(address)).toBe(true);
   });
@@ -81,6 +82,15 @@ describe("importer SSRF guards", () => {
     ).rejects.toThrow(/private/i);
     await expect(
       assertPublicUrl(new URL("http://[fe90::1]/")),
+    ).rejects.toThrow(/private/i);
+    await expect(
+      assertPublicUrl(new URL("http://2130706433/")),
+    ).rejects.toThrow(/private/i);
+    await expect(
+      assertPublicUrl(new URL("http://0x7f000001/")),
+    ).rejects.toThrow(/private/i);
+    await expect(
+      assertPublicUrl(new URL("http://0177.0.0.1/")),
     ).rejects.toThrow(/private/i);
   });
 

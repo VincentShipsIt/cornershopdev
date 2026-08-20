@@ -8,6 +8,7 @@ import {
 } from "@/lib/authorization-policy";
 import { getCurrentSession } from "@/lib/current-session";
 import { getDb } from "@/lib/db";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 import { isConfiguredSuperadminEmail } from "@/lib/superadmin-config";
 
 const authorization = createAuthorizationPolicy({
@@ -18,7 +19,7 @@ const authorization = createAuthorizationPolicy({
       where: {
         slug: siteSlug,
         organization: {
-          memberships: { some: { userId } },
+          memberships: { some: ownerMembershipWhere(userId) },
         },
       },
       select: {
@@ -29,7 +30,7 @@ const authorization = createAuthorizationPolicy({
         organization: {
           select: {
             memberships: {
-              where: { userId },
+              where: ownerMembershipWhere(userId),
               take: 1,
               select: {
                 user: { select: { id: true, email: true } },

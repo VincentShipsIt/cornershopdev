@@ -141,7 +141,13 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
         evidence: [],
       },
     });
-    await reviewSourceMonitoringSuggestion({
+    const beforeRevision = (
+      await db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: { draftRevision: true },
+      })
+    ).draftRevision;
+    const reviewed = await reviewSourceMonitoringSuggestion({
       siteId,
       suggestionId: suggestion.id,
       actor: {
@@ -150,6 +156,16 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
         role: "owner",
       },
       action: "accept",
+      expectedRevision: beforeRevision,
+    });
+    expect(reviewed).toMatchObject({
+      status: "ACCEPTED",
+      revision: beforeRevision + 1,
+      vertical: "RESTAURANT",
+      draft: {
+        address: "New address",
+        phone: "2222",
+      },
     });
     expect(
       await db.site.findUniqueOrThrow({
@@ -159,6 +175,7 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
           phone: true,
           publishedSiteVersionId: true,
           _count: { select: { siteVersions: true } },
+          draftRevision: true,
         },
       }),
     ).toEqual({
@@ -166,6 +183,7 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
       phone: "2222",
       publishedSiteVersionId: null,
       _count: { siteVersions: 0 },
+      draftRevision: beforeRevision + 1,
     });
   });
 
@@ -202,6 +220,7 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
           role: "owner",
         },
         action: "accept",
+        expectedRevision: await currentRevision(),
       }),
     ).rejects.toBeInstanceOf(SourceMonitoringConflictError);
     expect(
@@ -211,7 +230,65 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
       }),
     ).toEqual({ status: "PENDING" });
   });
+
+  test("rejects an accepted suggestion loaded at an older draft revision", async () => {
+    const run = await db.sourceMonitorRun.create({
+      data: {
+        siteId,
+        idempotencyKey: `${siteId}:manual-stale-revision`,
+        scheduledFor: new Date(),
+        status: "SUCCEEDED",
+        completedAt: new Date(),
+        suggestionCount: 1,
+      },
+    });
+    const suggestion = await db.sourceMonitorSuggestion.create({
+      data: {
+        siteId,
+        runId: run.id,
+        fingerprint: randomUUID(),
+        field: "CONTACT",
+        path: "contact",
+        currentValue: { address: "New address", phone: "2222" },
+        suggestedValue: { address: "Stale revision", phone: "4444" },
+        evidence: [],
+      },
+    });
+    const revision = await currentRevision();
+
+    await expect(
+      reviewSourceMonitoringSuggestion({
+        siteId,
+        suggestionId: suggestion.id,
+        actor: {
+          id: userId,
+          email: `${userId}@example.test`,
+          role: "owner",
+        },
+        action: "accept",
+        expectedRevision: revision - 1,
+      }),
+    ).rejects.toMatchObject({
+      name: "DraftRevisionConflictError",
+      currentRevision: revision,
+    });
+    expect(
+      await db.sourceMonitorSuggestion.findUniqueOrThrow({
+        where: { id: suggestion.id },
+        select: { status: true },
+      }),
+    ).toEqual({ status: "PENDING" });
+  });
 });
+
+async function currentRevision(): Promise<number> {
+  return (
+    await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: { draftRevision: true },
+    })
+  ).draftRevision;
+}
 
 function restoreEnvironment(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name];

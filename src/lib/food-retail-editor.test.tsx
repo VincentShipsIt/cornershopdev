@@ -35,10 +35,10 @@ function draftWithUiAdditions() {
     description: "",
     price: null,
     currency: "EUR",
-    available: true,
+    available: null,
     imageUrl: null,
     attributes: {
-      stockStatus: null,
+      visible: true,
       stockSourceUrl: null,
       seasonalAvailability: "",
       preorderRequired: null,

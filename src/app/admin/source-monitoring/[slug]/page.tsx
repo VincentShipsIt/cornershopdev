@@ -21,7 +21,7 @@ export default async function OperatorSourceMonitoringPage({
   const { slug } = await params;
   const site = await getDb().site.findUnique({
     where: { slug },
-    select: { id: true, slug: true, name: true },
+    select: { id: true, slug: true, name: true, draftRevision: true },
   });
   if (!site) notFound();
   const monitoring = await getSourceMonitoringDashboard(site.id);
@@ -36,7 +36,12 @@ export default async function OperatorSourceMonitoringPage({
           Operator review · {site.name}
         </p>
         <div className="mt-4 rounded-2xl border bg-background p-5 md:p-8">
-          <SourceMonitoringPanel siteSlug={site.slug} initial={monitoring} />
+          <SourceMonitoringPanel
+            siteSlug={site.slug}
+            initial={monitoring}
+            draftRevision={site.draftRevision}
+            hasUnsavedChanges={false}
+          />
         </div>
       </div>
     </main>

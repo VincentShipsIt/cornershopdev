@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { Check, ExternalLink, Languages, Plus, Save, Send, Trash2 } from "lucide-react";
 import { AccountActions } from "@/components/account-actions";
@@ -37,7 +37,18 @@ export function FoodRetailDashboard({
   initialDraft: FoodRetailSiteDraft;
   initialRevision: number;
 }) {
-  const [draft, setDraft] = useState(initialDraft);
+  const [draft, setDraftState] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
+  function setDraft(
+    next:
+      | FoodRetailSiteDraft
+      | ((current: FoodRetailSiteDraft) => FoodRetailSiteDraft),
+  ) {
+    const resolved =
+      typeof next === "function" ? next(draftRef.current) : next;
+    draftRef.current = resolved;
+    setDraftState(resolved);
+  }
   const [revision, setRevision] = useState(initialRevision);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -114,10 +125,10 @@ export function FoodRetailDashboard({
         description: "",
         price: null,
         currency: "EUR",
-        available: true,
+        available: null,
         imageUrl: null,
         attributes: {
-          stockStatus: null,
+          visible: true,
           stockSourceUrl: null,
           seasonalAvailability: "",
           preorderRequired: null,
@@ -183,12 +194,12 @@ export function FoodRetailDashboard({
     }
   }
 
-  async function saveDraft(): Promise<boolean> {
+  async function saveDraft(): Promise<number | null> {
     const submittedDraft = draft;
     const parsed = foodRetailSiteDraftSchema.safeParse(submittedDraft);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Check the draft fields");
-      return false;
+      return null;
     }
     setSaving(true);
     setError(null);
@@ -213,6 +224,7 @@ export function FoodRetailDashboard({
       ) {
         throw new Error("Save response did not include a draft revision");
       }
+      const hadNewerEdits = draftRef.current !== submittedDraft;
       setDraft((current) =>
         reconcileFoodRetailDraftAfterSave(
           submittedDraft,
@@ -221,11 +233,17 @@ export function FoodRetailDashboard({
         ),
       );
       setRevision(result.revision);
+      if (hadNewerEdits) {
+        setError(
+          "New edits were made while saving. Save them before publishing.",
+        );
+        return null;
+      }
       setNotice("Draft saved privately.");
-      return true;
+      return result.revision;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Save failed");
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -244,11 +262,15 @@ export function FoodRetailDashboard({
     setPublishing(true);
     setError(null);
     try {
-      if (!(await saveDraft())) return;
+      const reviewedRevision = await saveDraft();
+      if (reviewedRevision === null) return;
       const response = await fetch(`/api/sites/${draft.slug}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changeSummary }),
+        body: JSON.stringify({
+          changeSummary,
+          expectedRevision: reviewedRevision,
+        }),
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Publish failed");
@@ -336,8 +358,8 @@ export function FoodRetailDashboard({
                   <div key={itemIndex} className="space-y-3 rounded-xl border p-4">
                     <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]"><Input aria-label={`Product ${itemIndex + 1} name`} placeholder="Product name" value={item.name} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.name = event.target.value; })} /><Input aria-label={`Product ${itemIndex + 1} price`} type="number" min="0" step="0.01" placeholder="No price" value={item.price ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.price = event.target.value === "" ? null : Number(event.target.value); })} /><Button size="icon-sm" variant="ghost" aria-label={`Remove product ${itemIndex + 1}`} onClick={() => removeItem(sectionIndex, itemIndex)}><Trash2 /></Button></div>
                     <Textarea aria-label={`Product ${itemIndex + 1} description`} placeholder="Sourced product description" value={item.description} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.description = event.target.value; })} />
-                    <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/55 px-3 py-2"><div><Label htmlFor={`available-${sectionIndex}-${itemIndex}`}>Show product on storefront</Label><p className="text-xs text-muted-foreground">This controls catalog visibility, not current stock.</p></div><Switch id={`available-${sectionIndex}-${itemIndex}`} checked={item.available} onCheckedChange={(checked) => updateItem(sectionIndex, itemIndex, (next) => { next.available = checked; })} /></div>
-                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]"><select aria-label={`Product ${itemIndex + 1} stock status`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.attributes.stockStatus ?? "unknown"} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.stockStatus = event.target.value === "unknown" ? null : event.target.value as NonNullable<typeof next.attributes.stockStatus>; if (next.attributes.stockStatus === null) next.attributes.stockSourceUrl = null; })}><option value="unknown">Stock unknown</option><option value="in-stock">In stock (sourced)</option><option value="out-of-stock">Out of stock (sourced)</option></select><Input aria-label={`Product ${itemIndex + 1} stock source`} type="url" placeholder="Required source URL for a stock claim" value={item.attributes.stockSourceUrl ?? ""} disabled={item.attributes.stockStatus === null} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.stockSourceUrl = event.target.value || null; })} /></div>
+                    <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/55 px-3 py-2"><div><Label htmlFor={`visible-${sectionIndex}-${itemIndex}`}>Show product on storefront</Label><p className="text-xs text-muted-foreground">This controls catalog visibility, not current stock.</p></div><Switch id={`visible-${sectionIndex}-${itemIndex}`} checked={item.attributes.visible} onCheckedChange={(checked) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.visible = checked; })} /></div>
+                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]"><select aria-label={`Product ${itemIndex + 1} stock status`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.available === null ? "unknown" : item.available ? "in-stock" : "out-of-stock"} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.available = event.target.value === "unknown" ? null : event.target.value === "in-stock"; if (next.available === null) next.attributes.stockSourceUrl = null; })}><option value="unknown">Stock unknown</option><option value="in-stock">In stock (sourced)</option><option value="out-of-stock">Out of stock (sourced)</option></select><Input aria-label={`Product ${itemIndex + 1} stock source`} type="url" placeholder="Required source URL for a stock claim" value={item.attributes.stockSourceUrl ?? ""} disabled={item.available === null} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.stockSourceUrl = event.target.value || null; })} /></div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_150px_1fr]"><Input aria-label={`Product ${itemIndex + 1} seasonal availability`} placeholder="Seasonal availability (only if sourced)" value={item.attributes.seasonalAvailability} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.seasonalAvailability = event.target.value; })} /><select aria-label={`Product ${itemIndex + 1} preorder requirement`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.attributes.preorderRequired === null ? "unknown" : item.attributes.preorderRequired ? "required" : "not-required"} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.preorderRequired = event.target.value === "unknown" ? null : event.target.value === "required"; })}><option value="unknown">Preorder unknown</option><option value="required">Preorder required</option><option value="not-required">No preorder required</option></select><Input aria-label={`Product ${itemIndex + 1} preorder note`} placeholder="Preorder note (only if sourced)" value={item.attributes.preorderNote} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.preorderNote = event.target.value; })} /></div>
                     <div className="grid gap-3 sm:grid-cols-2"><Input aria-label={`Product ${itemIndex + 1} allergens`} placeholder="Allergens, comma separated" value={item.attributes.allergens.join(", ")} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.allergens = event.target.value.split(",").map((value) => value.trim()).filter(Boolean); })} /><Input aria-label={`Product ${itemIndex + 1} allergen source`} type="url" placeholder="Required source URL for allergens" value={item.attributes.allergenSourceUrl ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.allergenSourceUrl = event.target.value || null; })} /></div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_180px]"><Input aria-label={`Product ${itemIndex + 1} image`} type="url" placeholder="Approved product image URL" value={item.imageUrl ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.imageUrl = event.target.value || null; if (!next.imageUrl) next.imageProvenance = null; })} /><select aria-label={`Product ${itemIndex + 1} image provenance`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.imageProvenance ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.imageProvenance = (event.target.value || null) as "official" | "owner" | "permissioned-ugc" | null; })}><option value="">Choose image source</option><option value="official">Official source</option><option value="owner">Owner supplied</option><option value="permissioned-ugc">Permissioned UGC</option></select></div>

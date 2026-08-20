@@ -12,19 +12,19 @@ import {
 describe("FOOD_RETAIL stock truth", () => {
   it("defaults missing legacy stock evidence to unknown", () => {
     expect(foodRetailItemAttributesSchema.parse({})).toMatchObject({
-      stockStatus: null,
+      visible: true,
       stockSourceUrl: null,
     });
     expect(foodRetailConfig.itemAttributeDefaults).toMatchObject({
-      stockStatus: null,
+      visible: true,
       stockSourceUrl: null,
     });
   });
 
   it("rejects in-stock and out-of-stock claims without source evidence", () => {
-    for (const stockStatus of ["in-stock", "out-of-stock"] as const) {
+    for (const available of [true, false]) {
       const draft = structuredClone(sampleFoodRetailDraft);
-      draft.catalogSections[0].items[0].attributes.stockStatus = stockStatus;
+      draft.catalogSections[0].items[0].available = available;
       draft.catalogSections[0].items[0].attributes.stockSourceUrl = null;
 
       const result = foodRetailSiteDraftSchema.safeParse(draft);
@@ -37,6 +37,21 @@ describe("FOOD_RETAIL stock truth", () => {
         );
       }
     }
+  });
+
+  it("drops model-proposed stock claims even when they include a plausible URL", () => {
+    const normalized = foodRetailConfig.normalizeGeneratedItem?.({
+      available: true,
+      attributes: {
+        ...foodRetailConfig.itemAttributeDefaults,
+        stockSourceUrl: "https://example.com/invented-stock",
+      },
+    });
+
+    expect(normalized).toMatchObject({
+      available: null,
+      attributes: { visible: true, stockSourceUrl: null },
+    });
   });
 
   it("keeps an unknown-stock product visible without rendering a stock claim", () => {
@@ -55,12 +70,12 @@ describe("FOOD_RETAIL stock truth", () => {
   it("renders sourced in-stock and out-of-stock claims in HTML and JSON-LD", () => {
     const cases = [
       {
-        stockStatus: "in-stock" as const,
+        available: true,
         label: "In stock",
         schemaValue: "https://schema.org/InStock",
       },
       {
-        stockStatus: "out-of-stock" as const,
+        available: false,
         label: "Out of stock",
         schemaValue: "https://schema.org/OutOfStock",
       },
@@ -68,7 +83,7 @@ describe("FOOD_RETAIL stock truth", () => {
 
     for (const testCase of cases) {
       const draft = withOnlyStockStatus(
-        testCase.stockStatus,
+        testCase.available,
         "https://example.com/maison-levain/daily-breads",
       );
       const html = renderToStaticMarkup(
@@ -83,14 +98,14 @@ describe("FOOD_RETAIL stock truth", () => {
 });
 
 function withOnlyStockStatus(
-  stockStatus: "in-stock" | "out-of-stock" | null,
+  available: boolean | null,
   stockSourceUrl: string | null,
 ) {
   const draft = structuredClone(sampleFoodRetailDraft);
   const item = draft.catalogSections[0].items[0];
+  item.available = available;
   item.attributes = {
     ...item.attributes,
-    stockStatus,
     stockSourceUrl,
     seasonalAvailability: "",
     preorderRequired: null,

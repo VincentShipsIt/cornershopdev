@@ -31,12 +31,11 @@ export const foodRetailAttributesSchema = z.object({
 export const foodRetailItemAttributesSchema = z
   .object({
     /**
-     * Product inclusion is controlled by the shared `available` field. Stock is
-     * a separate, evidence-backed retail fact: unknown is deliberately the
-     * default because a product appearing in a range does not prove it is in
-     * stock today.
+     * Storefront inclusion is separate from shared, factual `available` state.
+     * Unknown stock is deliberately the default because a product appearing in
+     * a range does not prove it is in stock today.
      */
-    stockStatus: z.enum(["in-stock", "out-of-stock"]).nullable().default(null),
+    visible: z.boolean().default(true),
     stockSourceUrl: safeExternalHttpsUrlSchema.nullable().default(null),
     /** Free text preserves source wording such as “weekends only”. */
     seasonalAvailability: z.string().max(120).default(""),
@@ -48,13 +47,6 @@ export const foodRetailItemAttributesSchema = z
     allergenSourceUrl: safeExternalHttpsUrlSchema.nullable().default(null),
   })
   .superRefine((attributes, context) => {
-    if (attributes.stockStatus !== null && !attributes.stockSourceUrl) {
-      context.addIssue({
-        code: "custom",
-        path: ["stockSourceUrl"],
-        message: "Stock availability claims require a source URL",
-      });
-    }
     if (attributes.allergens.length > 0 && !attributes.allergenSourceUrl) {
       context.addIssue({
         code: "custom",
@@ -136,6 +128,34 @@ export const foodRetailSiteDraftSchema = z
     }
     draft.catalogSections.forEach((section, sectionIndex) => {
       section.items.forEach((item, itemIndex) => {
+        if (item.available !== null && !item.attributes.stockSourceUrl) {
+          context.addIssue({
+            code: "custom",
+            path: [
+              "catalogSections",
+              sectionIndex,
+              "items",
+              itemIndex,
+              "attributes",
+              "stockSourceUrl",
+            ],
+            message: "Stock availability claims require a source URL",
+          });
+        }
+        if (item.available === null && item.attributes.stockSourceUrl) {
+          context.addIssue({
+            code: "custom",
+            path: [
+              "catalogSections",
+              sectionIndex,
+              "items",
+              itemIndex,
+              "attributes",
+              "stockSourceUrl",
+            ],
+            message: "A stock source URL requires an availability claim",
+          });
+        }
         if (item.imageUrl && !item.imageProvenance) {
           context.addIssue({
             code: "custom",

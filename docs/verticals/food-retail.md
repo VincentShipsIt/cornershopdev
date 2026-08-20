@@ -39,10 +39,11 @@ The importer and owner-save schema enforce these rules:
 
 - no invented products, prices, stock, seasonal dates, preorder requirements,
   pickup promises or allergens;
-- `price: null`, `stockStatus: null`, `preorderRequired: null`, empty strings and
+- `price: null`, `available: null`, `preorderRequired: null`, empty strings and
   empty arrays are the normal unknown state;
-- `stockStatus` can become `in-stock` or `out-of-stock` only with an exact HTTPS
-  `stockSourceUrl`; unknown stock remains visible without a stock claim;
+- shared `available` can become `true` or `false` only with an exact HTTPS
+  `stockSourceUrl`; `attributes.visible` independently controls storefront
+  inclusion, so unknown and out-of-stock products can remain visible;
 - any non-empty `allergens` array is invalid unless `allergenSourceUrl` is an
   exact HTTPS source URL;
 - only source/owner/permissioned photography can be persisted, and enhancement
@@ -76,7 +77,8 @@ an unqualified product fact.
 
 ## Persistence and migration
 
-Migration `20260820120000_food_retail_vertical` adds the enum value only.
+Migration `20260820210000_food_retail_vertical` adds the enum value only, after
+the shared nullable-availability migration from #111.
 Existing generic JSON attribute bags and catalog/integration relations already
 carry the vertical data, so no existing rows are rewritten and the migration
 does not seed product facts. The owner PUT route parses FOOD_RETAIL drafts with

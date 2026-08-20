@@ -31,16 +31,32 @@ export type RestaurantThemeRendererInputProps = Omit<
 
 export function themeStyle(
   tokens: RestaurantThemeTokens,
+  palette?: SiteDraftView["palette"],
 ): React.CSSProperties {
+  const background = palette?.background ?? tokens.colors.background;
+  const foreground = palette?.foreground ?? tokens.colors.foreground;
   return {
-    "--theme-bg": tokens.colors.background,
-    "--theme-fg": tokens.colors.foreground,
-    "--theme-surface": tokens.colors.surface,
-    "--theme-accent": tokens.colors.accent,
-    "--theme-accent-fg": tokens.colors.accentForeground,
+    "--theme-bg": background,
+    "--theme-fg": foreground,
+    "--theme-surface": palette
+      ? `color-mix(in srgb, ${background}, ${foreground} 7%)`
+      : tokens.colors.surface,
+    "--theme-accent": palette?.accent ?? tokens.colors.accent,
+    "--theme-accent-fg":
+      palette?.accentForeground ?? tokens.colors.accentForeground,
     background: "var(--theme-bg)",
     color: "var(--theme-fg)",
   } as React.CSSProperties;
+}
+
+export function sourceBrandPalette(
+  draft: Pick<SiteDraftView, "palette" | "sourceData">,
+): SiteDraftView["palette"] | undefined {
+  return draft.sourceData?.evidence.some((item) =>
+    item.field.startsWith("palette."),
+  )
+    ? draft.palette
+    : undefined;
 }
 
 export function fontPairClass(tokens: RestaurantThemeTokens): string {
@@ -116,12 +132,12 @@ export function ThemeLocation({
   draft: Pick<SiteDraftView, "address">;
   className?: string;
 }) {
-  return (
+  return draft.address ? (
     <span className={cn("flex items-start gap-2", className)}>
       <MapPin className="mt-0.5 size-4 shrink-0" />
       {draft.address}
     </span>
-  );
+  ) : null;
 }
 
 export function ThemeBusinessHours({
@@ -144,6 +160,23 @@ export function ThemeBusinessHours({
         </div>
       ))}
     </dl>
+  );
+}
+
+export function ThemeContact({
+  draft,
+  className,
+}: {
+  draft: Pick<SiteDraftView, "address" | "phone" | "email">;
+  className?: string;
+}) {
+  if (!draft.address && !draft.phone && !draft.email) return null;
+  return (
+    <address className={cn("grid gap-1 not-italic", className)}>
+      {draft.address ? <span>{draft.address}</span> : null}
+      {draft.phone ? <a href={`tel:${draft.phone}`}>{draft.phone}</a> : null}
+      {draft.email ? <a href={`mailto:${draft.email}`}>{draft.email}</a> : null}
+    </address>
   );
 }
 

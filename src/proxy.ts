@@ -19,6 +19,7 @@ import {
 import {
   LIVE_SITE_SLUG_HEADER,
   LIVE_SITE_VERSION_HEADER,
+  PUBLIC_SITE_VERSION_HEADER,
 } from "@/lib/site-surface";
 import {
   listEmbedFrameOrigins,
@@ -210,11 +211,11 @@ function respondForCustomerHost(
   const destination = decision.locale
     ? `/preview/${decision.slug}/${decision.locale}`
     : `/preview/${decision.slug}`;
-  return withEmbedFrameCsp(
-    NextResponse.rewrite(new URL(destination, request.url), {
-      request: { headers: upstreamHeaders },
-    }),
-  );
+  const response = NextResponse.rewrite(new URL(destination, request.url), {
+    request: { headers: upstreamHeaders },
+  });
+  response.headers.set(PUBLIC_SITE_VERSION_HEADER, decision.versionId);
+  return withEmbedFrameCsp(response);
 }
 
 export const config = {

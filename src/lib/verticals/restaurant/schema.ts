@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  assertSiteDraftInvariants,
+  assertSourceNavigationDestinations,
   assertTranslationParity,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
@@ -176,7 +178,7 @@ export const restaurantSiteDraftSchema = z
       .min(1)
       .max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 export const restaurantDraftSchema = z
   .object({
@@ -187,6 +189,7 @@ export const restaurantDraftSchema = z
     menuSections: z.array(menuSectionSchema).min(1).max(12),
   })
   .superRefine((draft, context) => {
+    assertSourceNavigationDestinations(draft, context);
     assertTranslationParity(
       {
         defaultLocale: draft.defaultLocale,
@@ -331,11 +334,15 @@ export function toRestaurantDraft(
     themeSelection: draft.attributes.themeSelection,
     address: draft.address,
     phone: draft.phone,
+    email: draft.email,
     sourceUrl: draft.sourceUrl,
+    logoUrl: draft.logoUrl,
+    faviconUrl: draft.faviconUrl,
     heroImageUrl: draft.heroImageUrl,
     heroOriginalImageUrl: draft.heroOriginalImageUrl,
     heroImageProvenance: draft.heroImageProvenance,
     palette: draft.palette,
+    sourceData: draft.sourceData,
     showMenuImages: draft.attributes.showMenuImages,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
@@ -392,11 +399,15 @@ export function fromRestaurantDraft(
     },
     address: draft.address,
     phone: draft.phone,
+    email: draft.email,
     sourceUrl: draft.sourceUrl,
+    logoUrl: draft.logoUrl,
+    faviconUrl: draft.faviconUrl,
     heroImageUrl: draft.heroImageUrl,
     heroOriginalImageUrl: draft.heroOriginalImageUrl,
     heroImageProvenance: draft.heroImageProvenance,
     palette: draft.palette,
+    sourceData: draft.sourceData,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
     businessHours: draft.businessHours,

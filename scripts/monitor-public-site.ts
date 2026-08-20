@@ -1,7 +1,4 @@
-import {
-  captureOperatorAlert,
-  dispatchDueOperatorAlerts,
-} from "@/lib/operator-alerts";
+import { captureOperatorAlert } from "@/lib/operator-alerts";
 import { getDb } from "@/lib/db";
 
 const execute = process.argv.slice(2).includes("--execute");
@@ -19,7 +16,6 @@ if (target.protocol !== "https:" && process.env.NODE_ENV === "production") {
   throw new Error("Production public health monitoring requires HTTPS.");
 }
 
-const retryOutcomes = await dispatchDueOperatorAlerts().catch(() => null);
 let timeout: ReturnType<typeof setTimeout> | undefined;
 try {
   const response = await Promise.race([
@@ -38,7 +34,6 @@ try {
     JSON.stringify({
       command: "monitor-public-site",
       healthy: true,
-      retryOutcomes,
       checkedOrigin: target.origin,
       checkedAt: new Date().toISOString(),
     }),
@@ -57,7 +52,6 @@ try {
       command: "monitor-public-site",
       healthy: false,
       alertOutcome: outcome,
-      retryOutcomes,
       checkedOrigin: target.origin,
       checkedAt: new Date().toISOString(),
     }),

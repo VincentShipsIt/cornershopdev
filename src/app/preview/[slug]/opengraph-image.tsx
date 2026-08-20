@@ -6,6 +6,7 @@ import {
   previewOgCard,
   type LivePreviewOgCard,
 } from "@/lib/preview-metadata";
+import { loadPublicHeroImageDataUrl } from "@/lib/opengraph-hero";
 import { liveSiteVersionId } from "@/lib/site-surface";
 import {
   findPublishedSiteView,
@@ -42,7 +43,7 @@ export default async function OpenGraphImage({
   }
 
   if (card.heroImageUrl) {
-    const heroSrc = await loadHeroImageSrc(
+    const heroSrc = await loadPublicHeroImageDataUrl(
       resolvePublicUrl(card.heroImageUrl, factoryMetadataOrigin()),
     );
     if (heroSrc) {
@@ -221,34 +222,5 @@ function resolvePublicUrl(url: string, origin: string): string {
     return new URL(url, origin).href;
   } catch {
     return url;
-  }
-}
-
-async function loadHeroImageSrc(url: string): Promise<string | null> {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      return null;
-    }
-    const response = await fetch(parsed);
-    if (!response.ok) return null;
-    const mediaType =
-      response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
-    if (
-      mediaType !== "image/jpeg" &&
-      mediaType !== "image/jpg" &&
-      mediaType !== "image/png" &&
-      mediaType !== "image/gif"
-    ) {
-      return null;
-    }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > 4 * 1024 * 1024) {
-      return null;
-    }
-    const normalizedType = mediaType === "image/jpg" ? "image/jpeg" : mediaType;
-    return `data:${normalizedType};base64,${bytes.toString("base64")}`;
-  } catch {
-    return null;
   }
 }

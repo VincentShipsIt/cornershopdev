@@ -33,12 +33,76 @@ describe("FOOD_RETAIL vertical", () => {
       {
         name: "Product ranges",
         description:
-          "Product ranges details were not available for automatic structuring.",
+          "Product ranges details were not present in deterministic source markup.",
         items: [],
       },
     ]);
     expect(draft.businessHours).toEqual([]);
     expect(draft.integrations).toEqual([]);
+  });
+
+  it("keeps reconstructed products visible while preserving sourced and unknown stock", () => {
+    const draft = deterministicDraft(
+      {
+        source: "https://example.com/bakery",
+        sourceUrl: "https://example.com/bakery",
+        sourceLocale: "en",
+        name: "Evidence Bakery",
+        description: "A source-backed local bakery product range.",
+        address: "",
+        phone: "",
+        heroImageUrl: null,
+        pageText: "Country loaf and rye loaf",
+        links: [],
+        catalogSections: [
+          {
+            name: "Breads",
+            description: "",
+            items: [
+              {
+                name: "Country loaf",
+                description: "",
+                price: null,
+                currency: null,
+                availability: null,
+                imageUrl: null,
+              },
+              {
+                name: "Rye loaf",
+                description: "",
+                price: null,
+                currency: null,
+                availability: false,
+                availabilitySourceUrl: "https://example.com/bakery/breads",
+                imageUrl: null,
+              },
+            ],
+          },
+        ],
+      },
+      foodRetailConfig,
+    );
+
+    expect(draft.catalogSections[0].items).toMatchObject([
+      {
+        available: null,
+        attributes: { visible: true, stockSourceUrl: null },
+      },
+      {
+        available: false,
+        attributes: {
+          visible: true,
+          stockSourceUrl: "https://example.com/bakery/breads",
+        },
+      },
+    ]);
+    const markup = renderToStaticMarkup(
+      <SiteRenderer draft={draft} vertical="FOOD_RETAIL" locale="en" />,
+    );
+    expect(markup).toContain("Country loaf");
+    expect(markup).toContain("Rye loaf");
+    expect(markup).not.toContain("In stock");
+    expect(markup).toContain("Out of stock");
   });
 
   it("rejects allergen labels without attached source evidence", () => {

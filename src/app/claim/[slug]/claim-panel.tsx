@@ -46,20 +46,28 @@ export function ClaimPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fragment = new URLSearchParams(window.location.hash.slice(1));
-    const token = fragment.get("claim_token");
     let revealToken: number | undefined;
-    if (token && /^[A-Za-z0-9_-]{32,128}$/.test(token)) {
-      revealToken = window.setTimeout(() => setInvitationToken(token), 0);
+
+    function consumeClaimFragment() {
+      const fragment = new URLSearchParams(window.location.hash.slice(1));
+      const token = fragment.get("claim_token");
+      if (token && /^[A-Za-z0-9_-]{32,128}$/.test(token)) {
+        if (revealToken !== undefined) window.clearTimeout(revealToken);
+        revealToken = window.setTimeout(() => setInvitationToken(token), 0);
+      }
+      if (window.location.hash) {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}`,
+        );
+      }
     }
-    if (window.location.hash) {
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}${window.location.search}`,
-      );
-    }
+
+    consumeClaimFragment();
+    window.addEventListener("hashchange", consumeClaimFragment);
     return () => {
+      window.removeEventListener("hashchange", consumeClaimFragment);
       if (revealToken !== undefined) window.clearTimeout(revealToken);
     };
   }, []);

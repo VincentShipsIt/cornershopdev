@@ -3,6 +3,7 @@ import { Vertical } from "@/generated/prisma/enums";
 import { saveAuthorizedSiteDraft } from "@/lib/owner-site-save";
 import { sampleRestaurant } from "@/lib/restaurant";
 import { DraftRevisionConflictError } from "@/lib/site-persistence";
+import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
 
 let currentRevision = 7;
 const updateSiteDraft = mock(
@@ -66,6 +67,32 @@ describe("owner site save revision contract", () => {
       code: "DRAFT_REVISION_CONFLICT",
       currentRevision: 8,
     });
+  });
+
+  it("persists a reviewed, schema-valid bilingual food-retail draft with its loaded revision", async () => {
+    const foodAccess = {
+      ...access,
+      site: { vertical: Vertical.FOOD_RETAIL },
+    };
+    const response = await saveAuthorizedSiteDraft(
+      sampleFoodRetailDraft.slug,
+      foodAccess,
+      { ...sampleFoodRetailDraft, expectedRevision: currentRevision },
+      updateSiteDraft,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ revision: 8 });
+    expect(updateSiteDraft).toHaveBeenCalledWith(
+      sampleFoodRetailDraft.slug,
+      expect.objectContaining({
+        translations: expect.arrayContaining([
+          expect.objectContaining({ status: "current" }),
+        ]),
+      }),
+      Vertical.FOOD_RETAIL,
+      expect.objectContaining({ expectedRevision: 7 }),
+    );
   });
 });
 

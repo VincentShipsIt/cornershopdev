@@ -1,0 +1,3 @@
+ALTER TABLE "Site"
+  ADD COLUMN "faviconUrl" TEXT,
+  ADD COLUMN "sourceData" JSONB NOT NULL DEFAULT '{}';

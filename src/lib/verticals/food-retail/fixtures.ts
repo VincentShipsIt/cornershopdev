@@ -93,7 +93,7 @@ export const sampleFoodRetailDraft = foodRetailSiteDraftSchema.parse({
           available: true,
           imageUrl: null,
           attributes: {
-            stockStatus: "in-stock",
+            visible: true,
             stockSourceUrl:
               "https://example.com/maison-levain/daily-breads",
             seasonalAvailability: "",
@@ -115,10 +115,10 @@ export const sampleFoodRetailDraft = foodRetailSiteDraftSchema.parse({
           description: "Available during apricot season.",
           price: null,
           currency: "EUR",
-          available: true,
+          available: null,
           imageUrl: null,
           attributes: {
-            stockStatus: null,
+            visible: true,
             stockSourceUrl: null,
             seasonalAvailability: "Apricot season only",
             preorderRequired: true,

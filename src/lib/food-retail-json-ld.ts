@@ -75,9 +75,12 @@ export function buildFoodRetailJsonLd(
     .filter(Boolean);
   const catalogSections = draft.catalogSections.flatMap((section) => {
     const items = section.items
-      .filter((item) => item.available)
+      .filter((item) => item.attributes.visible !== false)
       .map((item) => {
-        const stockAvailability = sourcedStockAvailability(item.attributes);
+        const stockAvailability = sourcedStockAvailability(
+          item.available,
+          item.attributes,
+        );
         const product: {
           "@type": "Product";
           name: string;
@@ -166,16 +169,17 @@ function isFoodShopType(value: unknown): value is FoodShopType {
 }
 
 function sourcedStockAvailability(
+  available: boolean | null,
   attributes: Record<string, unknown>,
 ):
   | "https://schema.org/InStock"
   | "https://schema.org/OutOfStock"
   | null {
   if (typeof attributes.stockSourceUrl !== "string") return null;
-  if (attributes.stockStatus === "in-stock") {
+  if (available === true) {
     return "https://schema.org/InStock";
   }
-  if (attributes.stockStatus === "out-of-stock") {
+  if (available === false) {
     return "https://schema.org/OutOfStock";
   }
   return null;

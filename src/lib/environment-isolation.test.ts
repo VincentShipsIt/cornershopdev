@@ -29,13 +29,26 @@ describe("database environment isolation evidence", () => {
     ).toThrow("same database identity");
   });
 
-  it("rejects local or malformed deployment values", () => {
+  it("rejects IPv4, IPv6, or malformed local deployment values", () => {
+    for (const productionUrl of [
+      "postgresql://localhost/app",
+      "postgresql://127.0.0.1/app",
+      "postgresql://127.0.0.2/app",
+      "postgresql://[::1]:5432/app",
+    ]) {
+      expect(() =>
+        verifyDatabaseIsolation({
+          productionUrl,
+          previewUrl: "postgresql://preview.example.test/app",
+        }),
+      ).toThrow("local host");
+    }
     expect(() =>
       verifyDatabaseIsolation({
-        productionUrl: "postgresql://localhost/app",
-        previewUrl: "not-a-url",
+        productionUrl: "not-a-url",
+        previewUrl: "postgresql://preview.example.test/app",
       }),
-    ).toThrow();
+    ).toThrow("valid PostgreSQL URLs");
   });
 
   it("fingerprints observed identities without returning their components", () => {
