@@ -888,9 +888,9 @@ export function Dashboard({
       ) : null}
 
       <Tabs defaultValue="overview" className="mx-auto max-w-[1500px]">
-        <div className="flex min-h-[calc(100vh-4rem)]">
-          <aside className="hidden w-60 shrink-0 border-r bg-background p-4 lg:block">
-            <TabsList className="flex h-auto w-full flex-col items-stretch bg-transparent">
+        <div className="flex min-h-[calc(100vh-4rem)] flex-col lg:flex-row">
+          <aside className="contents lg:block lg:w-60 lg:shrink-0 lg:border-r lg:bg-background lg:p-4">
+            <TabsList className="mb-6 w-full justify-start overflow-x-auto lg:mb-0 lg:flex lg:h-auto lg:flex-col lg:items-stretch lg:overflow-visible lg:bg-transparent">
               {[
                 ["overview", LayoutDashboard, "Overview"],
                 ["analytics", TrendingUp, "Analytics"],
@@ -906,14 +906,14 @@ export function Dashboard({
                 <TabsTrigger
                   key={value as string}
                   value={value as string}
-                  className="justify-start gap-2.5 px-3 py-2.5 data-[state=active]:bg-muted"
+                  className="lg:justify-start lg:gap-2.5 lg:px-3 lg:py-2.5 lg:data-[state=active]:bg-muted"
                 >
-                  <Icon className="size-4" />
+                  <Icon className="hidden size-4 lg:block" />
                   {label as string}
                 </TabsTrigger>
               ))}
             </TabsList>
-            <div className="mt-8 rounded-xl border bg-muted/40 p-3">
+            <div className="mt-8 hidden rounded-xl border bg-muted/40 p-3 lg:block">
               <p className="text-xs font-medium">Signed in as</p>
               <p className="mt-1 truncate text-[11px] text-muted-foreground">
                 {email}
@@ -922,18 +922,6 @@ export function Dashboard({
           </aside>
 
           <div className="min-w-0 flex-1 p-4 md:p-7 lg:p-10">
-            <TabsList className="mb-6 w-full justify-start overflow-x-auto lg:hidden">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-              <TabsTrigger value="leads">Leads</TabsTrigger>
-              <TabsTrigger value="design">Design</TabsTrigger>
-              <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-              <TabsTrigger value="menu">Menu</TabsTrigger>
-              <TabsTrigger value="imagery">Imagery</TabsTrigger>
-              <TabsTrigger value="integrations">Links</TabsTrigger>
-              <TabsTrigger value="domain">Domain</TabsTrigger>
-            </TabsList>
-
             <TabsContent value="overview" className="mt-0">
               <PageHeading
                 eyebrow="Restaurant overview"
@@ -1614,8 +1602,9 @@ export function Dashboard({
               <Card className="mt-8 max-w-3xl">
                 <CardContent className="grid gap-5 pt-6">
                   <div className="grid gap-2">
-                    <Label>Restaurant name</Label>
+                    <Label htmlFor="restaurant-name">Restaurant name</Label>
                     <Input
+                      id="restaurant-name"
                       value={draft.name}
                       onChange={(event) =>
                         setDraft((current) => ({

@@ -101,10 +101,12 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   });
   expect(beforePublish.status()).toBe(404);
 
-  await page.getByRole("tab", { name: "Settings" }).click();
-  const restaurantName = page
-    .getByText("Restaurant name", { exact: true })
-    .locator("..").locator("input");
+  const settingsTab = page.getByRole("tab", { name: "Settings" });
+  await settingsTab.click();
+  await expect(settingsTab).toHaveAttribute("aria-selected", "true");
+  await expect(settingsTab).toHaveAttribute("aria-controls", /.+/);
+  const restaurantName = page.getByLabel("Restaurant name", { exact: true });
+  await expect(restaurantName).toBeVisible();
   await restaurantName.fill(e2e.editedName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
