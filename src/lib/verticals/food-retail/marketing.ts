@@ -6,6 +6,7 @@ import type { VerticalMarketing } from "@/lib/verticals/types";
  * gates are replaced. Until then it is available only in the factory studio.
  */
 export const foodRetailMarketing = {
+  publiclyAccessible: false,
   hostnames: [],
   domain: null,
   brand: { name: "Shopfront Food", initials: "SF" },

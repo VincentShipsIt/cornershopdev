@@ -25,6 +25,7 @@ const reconstructionMigration =
   "20260820170000_deterministic_source_reconstruction";
 const privacyMigration =
   "20260820200000_site_contact_privacy_and_catalog_availability";
+const foodRetailMigration = "20260820210000_food_retail_vertical";
 
 describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
   test(
@@ -126,6 +127,7 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
         await applyMigration(upgrade, authRotationMigration);
         await applyMigration(upgrade, reconstructionMigration);
         await applyMigration(upgrade, privacyMigration);
+        await applyMigration(upgrade, foodRetailMigration);
 
         const contacts = await upgrade.query<{
           email: string | null;
@@ -202,6 +204,17 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
           { name: "AuthProviderEvent" },
           { name: "ClaimProviderEvent" },
         ]);
+
+        const verticalValues = await upgrade.query<{ value: string }>(
+          `SELECT enumlabel AS value
+           FROM pg_enum
+           JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+           WHERE pg_type.typname = 'Vertical'
+           ORDER BY enumsortorder`,
+        );
+        expect(verticalValues.rows.map((row) => row.value)).toContain(
+          Vertical.FOOD_RETAIL,
+        );
       } finally {
         await upgrade?.end().catch(() => undefined);
         await admin.query(

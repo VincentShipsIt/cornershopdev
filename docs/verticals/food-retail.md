@@ -22,9 +22,11 @@ flowchart LR
 - Product ranges use the shared `CatalogSection` / `CatalogItem` relations.
 - `Site.attributes` stores `shopType`, product-gallery preference and sourced
   pickup details.
-- `CatalogItem.attributes` stores nullable, evidence-backed stock status,
-  seasonal availability, explicit preorder state/note, allergens and allergen
-  evidence. The shared `available` column controls storefront visibility only.
+- The shared nullable `CatalogItem.available` column stores an evidence-backed
+  stock fact. `CatalogItem.attributes.visible` independently controls storefront
+  inclusion; unknown stock does not hide a product.
+- `CatalogItem.attributes` also stores the stock evidence URL, seasonal
+  availability, explicit preorder state/note, allergens and allergen evidence.
 - Ordering, click-and-collect and preorder URLs use the shared `ORDERING`
   integration. Courier marketplaces use `DELIVERY`.
 - The renderer selects ordering as the primary mobile CTA and sets booking
@@ -44,6 +46,10 @@ The importer and owner-save schema enforce these rules:
 - shared `available` can become `true` or `false` only with an exact HTTPS
   `stockSourceUrl`; `attributes.visible` independently controls storefront
   inclusion, so unknown and out-of-stock products can remain visible;
+- after model generation, canonical identity, contact details, hours, product
+  ranges, prices, integrations and FOOD_RETAIL claim attributes are replaced
+  with deterministic crawl output; unsupported model claims fail closed to the
+  documented unknown values;
 - any non-empty `allergens` array is invalid unless `allergenSourceUrl` is an
   exact HTTPS source URL;
 - only source/owner/permissioned photography can be persisted, and enhancement

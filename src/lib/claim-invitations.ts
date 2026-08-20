@@ -11,10 +11,7 @@ import { alertClaimInvitationDeliveryFailure } from "@/lib/billing-operator-aler
 import { getDb } from "@/lib/db";
 import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getResend } from "@/lib/resend";
-import {
-  hasValidClaimApprovalEvidence,
-  isClaimable,
-} from "@/lib/site-claim";
+import { hasValidClaimApprovalEvidence, isClaimable } from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import {
@@ -25,17 +22,15 @@ import {
 } from "@/lib/outreach-lock";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import type { VerticalId } from "@/lib/verticals/types";
+import { isVerticalClaimEnabled } from "@/lib/verticals/registry";
 
 export const CLAIM_INVITATION_TTL_MS = 48 * 60 * 60_000;
 export const MIN_CLAIM_CHECKOUT_TTL_MS = 31 * 60_000;
 export const CLAIM_APPROVAL_EVIDENCE_REF_MAX_LENGTH = 160;
 const retryableInvitationCodes = new Set(["P2002", "P2034"]);
-const approvalEvidenceRefPattern =
-  /^[A-Za-z0-9][A-Za-z0-9._:/#-]{7,159}$/;
+const approvalEvidenceRefPattern = /^[A-Za-z0-9][A-Za-z0-9._:/#-]{7,159}$/;
 
-export type ClaimProofMethodValue =
-  | "DOMAIN_EMAIL"
-  | "OPERATOR_APPROVAL";
+export type ClaimProofMethodValue = "DOMAIN_EMAIL" | "OPERATOR_APPROVAL";
 
 export type ClaimFlowErrorCode =
   | "checkout_completed"
@@ -145,7 +140,9 @@ export function hasDomainEmailOwnershipProof(
       new URL(site.sourceUrl).hostname,
       true,
     );
-    const emailDomain = normalizeDomain(email.slice(email.lastIndexOf("@") + 1));
+    const emailDomain = normalizeDomain(
+      email.slice(email.lastIndexOf("@") + 1),
+    );
     return sourceDomain.length > 0 && sourceDomain === emailDomain;
   } catch {
     return false;
@@ -198,17 +195,17 @@ export async function issueClaimInvitation(input: {
       ? input.outreachDispatch
         ? `outreach-dispatch:${input.outreachDispatch.id}`
         : input.replacesInvitationId
-          ? input.approvalEvidenceRef?.trim() ?? ""
+          ? (input.approvalEvidenceRef?.trim() ?? "")
           : normalizeClaimApprovalEvidenceRef(input.approvalEvidenceRef)
       : null;
   const approvedBy = approvalEvidenceRef
     ? input.replacesInvitationId
-      ? input.approvedBy?.trim() ?? ""
+      ? (input.approvedBy?.trim() ?? "")
       : input.actor
     : null;
   const approvedAt = approvalEvidenceRef
     ? input.replacesInvitationId
-      ? input.approvedAt ?? null
+      ? (input.approvedAt ?? null)
       : now
     : null;
   const expiresAt = new Date(now.getTime() + CLAIM_INVITATION_TTL_MS);
@@ -220,9 +217,9 @@ export async function issueClaimInvitation(input: {
 
   let issued:
     | {
-      id: string;
-      expiresAt: Date;
-      site: {
+        id: string;
+        expiresAt: Date;
+        site: {
           id: string;
           slug: string;
           name: string;
@@ -287,6 +284,7 @@ export async function issueClaimInvitation(input: {
             },
           });
           if (!site || !isClaimable(site)) throw notClaimable();
+          if (!isVerticalClaimEnabled(site.vertical)) throw notClaimable();
           if (authorizedDispatch && authorizedDispatch.siteId !== site.id) {
             throw new Error("Outreach dispatch site mismatch");
           }
@@ -305,7 +303,9 @@ export async function issueClaimInvitation(input: {
                 input.outreachDispatch.reviewedAt ||
               !isOperatorReviewCurrent(latestReview, site.updatedAt)
             ) {
-              throw new Error("Outreach lead changed before invitation issuance");
+              throw new Error(
+                "Outreach lead changed before invitation issuance",
+              );
             }
           }
           if (
@@ -452,7 +452,8 @@ export async function issueClaimInvitation(input: {
               latestInvitation.proofMethod !== input.proofMethod ||
               latestInvitation.approvalEvidenceRef !== approvalEvidenceRef ||
               latestInvitation.approvedBy !== approvedBy ||
-              latestInvitation.approvedAt?.getTime() !== approvedAt?.getTime() ||
+              latestInvitation.approvedAt?.getTime() !==
+                approvedAt?.getTime() ||
               latestInvitation.acceptedAt ||
               latestInvitation.checkoutSessionId ||
               !isClaimInvitationDeliveryRetryable(latestInvitation) ||
@@ -751,6 +752,7 @@ export type CheckoutClaimInvitation = {
   email: string;
   siteId: string;
   siteSlug: string;
+  vertical: VerticalId;
   checkoutSessionId: string | null;
   expiresAt: Date;
   stripePriceId: string | null;
@@ -791,6 +793,7 @@ export async function authorizeClaimInvitationForCheckout(input: {
         site: {
           select: {
             slug: true,
+            vertical: true,
             status: true,
             organizationId: true,
           },
@@ -812,6 +815,9 @@ export async function authorizeClaimInvitationForCheckout(input: {
       );
     }
     if (!isClaimable(invitation.site)) throw notClaimable();
+    if (!isVerticalClaimEnabled(invitation.site.vertical)) {
+      throw notClaimable();
+    }
     if (!hasValidClaimApprovalEvidence(invitation)) {
       throw new ClaimFlowError(
         "invalid_ownership_proof",
@@ -824,8 +830,7 @@ export async function authorizeClaimInvitationForCheckout(input: {
     }
     if (
       !invitation.checkoutSessionId &&
-      invitation.expiresAt.getTime() - now.getTime() <
-        MIN_CLAIM_CHECKOUT_TTL_MS
+      invitation.expiresAt.getTime() - now.getTime() < MIN_CLAIM_CHECKOUT_TTL_MS
     ) {
       throw invalidInvitation();
     }
@@ -857,6 +862,7 @@ export async function authorizeClaimInvitationForCheckout(input: {
       email: invitation.email,
       siteId: invitation.siteId,
       siteSlug: invitation.site.slug,
+      vertical: invitation.site.vertical,
       checkoutSessionId: invitation.checkoutSessionId,
       expiresAt: invitation.expiresAt,
       stripePriceId: invitation.stripePriceId,
@@ -958,7 +964,10 @@ export async function deliverClaimInvitation(
     "send"
   > = getResend().emails,
 ): Promise<void> {
-  const claimUrl = new URL(`/claim/${encodeURIComponent(invitation.site.slug)}`, appOrigin);
+  const claimUrl = new URL(
+    `/claim/${encodeURIComponent(invitation.site.slug)}`,
+    appOrigin,
+  );
   // The fragment is never sent in HTTP requests or Referer headers. The claim
   // page reads it into memory and removes it immediately, preventing embedded
   // third-party imagery in the preview from learning the bearer token.
@@ -996,7 +1005,8 @@ export async function deliverClaimInvitation(
       },
     );
     if (error) throw new Error(error.message);
-    if (!data?.id) throw new Error("Resend did not return a message identifier");
+    if (!data?.id)
+      throw new Error("Resend did not return a message identifier");
     providerMessageId = data.id;
   } catch (error) {
     const failureCode = claimInvitationDeliveryFailureCode(error);

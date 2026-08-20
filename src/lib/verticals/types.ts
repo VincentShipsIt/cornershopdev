@@ -11,7 +11,10 @@ export type CatalogVocabulary = {
 };
 
 export type IntegrationLinkType =
-  "booking" | "ordering" | "delivery" | "social";
+  | "booking"
+  | "ordering"
+  | "delivery"
+  | "social";
 
 /**
  * How a provider's own booking widget is embedded on a generated site.
@@ -126,6 +129,13 @@ export type MarketingPlans = [MarketingPlan, ...MarketingPlan[]];
  */
 export type VerticalMarketing = {
   /**
+   * Whether the shared `/niche/[vertical]` route is public. This is independent
+   * from owning a standalone domain: Beauty is intentionally available on the
+   * factory route before it has one, while a vertical under private review must
+   * opt out explicitly.
+   */
+  publiclyAccessible: boolean;
+  /**
    * Hostnames whose `/` serves this niche's marketing site. Empty is meaningful
    * and supported: the vertical is built and sellable, it simply has no domain
    * yet, so the factory homepage lists it while `proxy.ts` never matches it.
@@ -223,6 +233,16 @@ export type VerticalConfig<
   attributeDefaults: TAttributes;
   /** Optional richer defaults used only for a brand-new non-AI import. */
   deterministicAttributes?: TAttributes;
+  /** Locale-specific vocabulary for sparse no-model imports. */
+  deterministicCopy?: Record<
+    string,
+    {
+      eyebrow: string;
+      description: string;
+      catalogName: string;
+      emptyCatalogDescription: string;
+    }
+  >;
   itemAttributesSchema: z.ZodType<TItemAttributes>;
   itemAttributeDefaults: TItemAttributes;
   draftSchema: z.ZodType<TDraft>;
@@ -288,6 +308,16 @@ export type VerticalConfig<
     available: boolean | null;
     attributes: TItemAttributes;
   };
+  /**
+   * Final trust boundary for a model-produced draft. The deterministic draft is
+   * reconstructed exclusively from authenticated crawl output, so a vertical
+   * with stricter factuality requirements can replace unsupported model claims
+   * before the draft is parsed for persistence.
+   */
+  bindGeneratedDraftToEvidence?: (input: {
+    generated: TDraft;
+    deterministic: TDraft;
+  }) => TDraft;
   /** Adds facts that came directly from deterministic source extraction. */
   deterministicItemAttributes?: (item: {
     availability: boolean | null;

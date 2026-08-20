@@ -3,7 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SiteRenderer } from "@/components/site-renderer";
 import { deterministicDraft } from "@/lib/ai/site-generation";
 import { localizeSiteDraft } from "@/lib/site-draft";
-import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
+import {
+  bindGeneratedFoodRetailDraftToEvidence,
+  foodRetailConfig,
+} from "@/lib/verticals/food-retail/config";
 import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
 import { foodRetailProviders } from "@/lib/verticals/food-retail/providers";
 import { foodRetailSiteDraftSchema } from "@/lib/verticals/food-retail/schema";
@@ -26,19 +29,45 @@ describe("FOOD_RETAIL vertical", () => {
       foodRetailConfig,
     );
 
-    expect(draft.attributes).toEqual(
-      foodRetailConfig.deterministicAttributes,
-    );
+    expect(draft.attributes).toEqual(foodRetailConfig.deterministicAttributes);
     expect(draft.catalogSections).toEqual([
       {
-        name: "Product ranges",
+        name: "Gammes de produits",
         description:
-          "Product ranges details were not present in deterministic source markup.",
+          "Aucune gamme de produits n’était présente dans les données source structurées.",
         items: [],
       },
     ]);
     expect(draft.businessHours).toEqual([]);
     expect(draft.integrations).toEqual([]);
+  });
+
+  it("renders a sparse no-model French source without English or raw enum fallbacks", () => {
+    const draft = deterministicDraft(
+      {
+        source: "Boulangerie des Amis",
+        sourceUrl: "https://example.com/boulangerie",
+        sourceLocale: "fr",
+        name: "Boulangerie des Amis",
+        description: "",
+        address: "",
+        phone: "",
+        heroImageUrl: null,
+        pageText: "Boulangerie des Amis",
+        links: [],
+      },
+      foodRetailConfig,
+    );
+    const html = renderToStaticMarkup(
+      <SiteRenderer draft={draft} vertical="FOOD_RETAIL" locale="fr" />,
+    );
+
+    expect(html).toContain("Aperçu privé du commerce alimentaire");
+    expect(html).toContain("Gammes de produits");
+    expect(html).toContain("Aucune gamme de produits");
+    expect(html).not.toContain("Private food_retail preview");
+    expect(html).not.toContain("private preview reconstructed");
+    expect(html).not.toContain("Product ranges details");
   });
 
   it("keeps reconstructed products visible while preserving sourced and unknown stock", () => {
@@ -105,6 +134,158 @@ describe("FOOD_RETAIL vertical", () => {
     expect(markup).toContain("Out of stock");
   });
 
+  it("binds every model fact to deterministic crawl evidence", () => {
+    const deterministic = deterministicDraft(
+      {
+        source: "Evidence Bakery",
+        sourceUrl: "https://evidence.example/bakery",
+        sourceLocale: "en",
+        name: "Evidence Bakery",
+        description: "A source-backed description of the local bakery.",
+        address: "",
+        phone: "",
+        heroImageUrl: null,
+        pageText: "Evidence Bakery",
+        links: [],
+      },
+      foodRetailConfig,
+    );
+    const malicious = structuredClone(sampleFoodRetailDraft);
+    malicious.name = "Invented Bakery";
+    malicious.eyebrow = "Invented identity";
+    malicious.description = "Invented canonical description";
+    malicious.address = "Invented address";
+    malicious.phone = "+1 555 INVENTED";
+    malicious.email = "invented@attacker.example";
+    malicious.sourceUrl = "https://attacker.example/source";
+    malicious.sourceData = {
+      navigation: [],
+      brandAssets: [],
+      evidence: [],
+    };
+    malicious.defaultLocale = "fr";
+    malicious.attributes.pickupDetails = "Pickup in five minutes";
+    malicious.businessHours = [{ days: "Every day", hours: "Always open" }];
+    malicious.integrations = [
+      {
+        type: "ordering",
+        label: "Invented order link",
+        provider: null,
+        url: "https://attacker.example/order",
+        enabled: true,
+        venueId: null,
+      },
+    ];
+    const inventedItem = malicious.catalogSections[0].items[0];
+    inventedItem.name = "Invented loaf";
+    inventedItem.price = 99;
+    inventedItem.available = true;
+    inventedItem.attributes = {
+      ...inventedItem.attributes,
+      stockSourceUrl: "https://attacker.example/stock",
+      seasonalAvailability: "Today only",
+      preorderRequired: true,
+      preorderNote: "Preorder now",
+      allergens: ["invented allergen"],
+      allergenSourceUrl: "https://attacker.example/allergens",
+    };
+
+    const bound = foodRetailSiteDraftSchema.parse(
+      bindGeneratedFoodRetailDraftToEvidence({
+        generated: malicious,
+        deterministic,
+      }),
+    );
+
+    expect(bound).toMatchObject({
+      name: "Evidence Bakery",
+      eyebrow: "Private food retail preview",
+      description: "A source-backed description of the local bakery.",
+      address: "",
+      phone: "",
+      email: "",
+      sourceUrl: "https://evidence.example/bakery",
+      defaultLocale: "en",
+      attributes: { pickupDetails: "" },
+      businessHours: [],
+      integrations: [],
+    });
+    expect(bound.catalogSections).toEqual(deterministic.catalogSections);
+    expect(JSON.stringify(bound)).not.toMatch(
+      /Invented (?:Bakery|identity|canonical description|address|loaf)|99|Today only|Preorder now|invented allergen|attacker\.example/,
+    );
+  });
+
+  it("preserves valid source-reconstructed products, prices, hours and links", () => {
+    const sourceLink = {
+      type: "ordering" as const,
+      label: "Order from the shop",
+      provider: null,
+      url: "https://evidence.example/order",
+      enabled: true,
+      venueId: null,
+    };
+    const deterministic = deterministicDraft(
+      {
+        source: "https://evidence.example/bakery",
+        sourceUrl: "https://evidence.example/bakery",
+        sourceLocale: "en",
+        name: "Evidence Bakery",
+        description: "A source-backed description of the local bakery.",
+        address: "1 Evidence Street",
+        phone: "+356 2000 0000",
+        heroImageUrl: null,
+        pageText: "Country loaf €5, open Monday",
+        links: [sourceLink],
+        businessHours: [{ days: "Monday", hours: "08:00–16:00" }],
+        catalogSections: [
+          {
+            name: "Bread",
+            description: "",
+            items: [
+              {
+                name: "Country loaf",
+                description: "Naturally leavened bread.",
+                price: 5,
+                currency: "EUR",
+                availability: null,
+                imageUrl: null,
+              },
+            ],
+          },
+        ],
+      },
+      foodRetailConfig,
+    );
+    const generated = structuredClone(sampleFoodRetailDraft);
+    const bound = foodRetailSiteDraftSchema.parse(
+      bindGeneratedFoodRetailDraftToEvidence({ generated, deterministic }),
+    );
+
+    expect(bound).toMatchObject({
+      name: "Evidence Bakery",
+      description: "A source-backed description of the local bakery.",
+      address: "1 Evidence Street",
+      phone: "+356 2000 0000",
+      defaultLocale: "en",
+    });
+    expect(bound.catalogSections).toEqual(deterministic.catalogSections);
+    expect(bound.catalogSections[0].items[0]).toMatchObject({
+      name: "Country loaf",
+      price: 5,
+      available: null,
+      attributes: {
+        seasonalAvailability: "",
+        preorderRequired: null,
+        preorderNote: "",
+        allergens: [],
+        allergenSourceUrl: null,
+      },
+    });
+    expect(bound.businessHours).toEqual(deterministic.businessHours);
+    expect(bound.integrations).toEqual([sourceLink]);
+  });
+
   it("rejects allergen labels without attached source evidence", () => {
     const unsourced = structuredClone(sampleFoodRetailDraft);
     unsourced.catalogSections[0].items[0].attributes.allergenSourceUrl = null;
@@ -124,6 +305,28 @@ describe("FOOD_RETAIL vertical", () => {
       "https://example.com/product.jpg";
     imageDraft.catalogSections[0].items[0].imageProvenance = null;
     expect(foodRetailSiteDraftSchema.safeParse(imageDraft).success).toBe(false);
+  });
+
+  it("rejects source navigation destinations outside the authenticated source", () => {
+    const draft = structuredClone(sampleFoodRetailDraft);
+    draft.sourceData.navigation = [
+      {
+        label: "Order",
+        url: "/order",
+        destinationUrl: "https://attacker.example/phish",
+      },
+    ];
+
+    const result = foodRetailSiteDraftSchema.safeParse(draft);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          message:
+            "Source navigation destinations must match the authenticated source origin and intent",
+        }),
+      );
+    }
   });
 
   it("preserves allergen evidence while localizing customer-facing labels", () => {
@@ -178,12 +381,15 @@ describe("FOOD_RETAIL vertical", () => {
   });
 
   it("registers commerce links but never booking providers", () => {
-    expect(foodRetailProviders.some((provider) => provider.type === "ordering"))
-      .toBe(true);
-    expect(foodRetailProviders.some((provider) => provider.type === "delivery"))
-      .toBe(true);
-    expect(foodRetailProviders.some((provider) => provider.type === "booking"))
-      .toBe(false);
+    expect(
+      foodRetailProviders.some((provider) => provider.type === "ordering"),
+    ).toBe(true);
+    expect(
+      foodRetailProviders.some((provider) => provider.type === "delivery"),
+    ).toBe(true);
+    expect(
+      foodRetailProviders.some((provider) => provider.type === "booking"),
+    ).toBe(false);
     expect(foodRetailConfig.prompt.extractionRules).toContain(
       "Do not create booking links",
     );

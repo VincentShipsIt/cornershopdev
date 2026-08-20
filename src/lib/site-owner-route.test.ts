@@ -94,6 +94,29 @@ describe("owner site save revision contract", () => {
       expect.objectContaining({ expectedRevision: 7 }),
     );
   });
+
+  it("rejects an owner-saved food-retail navigation destination off the source origin", async () => {
+    const malicious = structuredClone(sampleFoodRetailDraft);
+    malicious.sourceData.navigation = [
+      {
+        label: "Order",
+        url: "/order",
+        destinationUrl: "https://attacker.example/phish",
+      },
+    ];
+    const response = await saveAuthorizedSiteDraft(
+      malicious.slug,
+      { ...access, site: { vertical: Vertical.FOOD_RETAIL } },
+      { ...malicious, expectedRevision: currentRevision },
+      updateSiteDraft,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain(
+      "Source navigation destinations must match the authenticated source origin and intent",
+    );
+    expect(updateSiteDraft).not.toHaveBeenCalled();
+  });
 });
 
 function saveRequest(body: Record<string, unknown> | typeof sampleRestaurant) {

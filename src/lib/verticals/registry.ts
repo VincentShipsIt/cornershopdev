@@ -108,14 +108,41 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
 }
 
 /**
- * A registered vertical is not automatically a public product. Launch requires
- * the real canonical domain to be claimed by its hostname routing and a
- * niche-specific sender to be configured. Keeping this check here makes the
- * factory listing, direct niche route and social card share one hard gate.
+ * A registered vertical is not automatically reachable from the public niche
+ * route. This explicit flag preserves factory-hosted verticals such as Beauty,
+ * which are public before they own a standalone domain, while keeping work in
+ * private review unreachable.
+ */
+export function isVerticalPubliclyAccessible(id: VerticalId): boolean {
+  return resolveVerticalConfig(id).marketing.publiclyAccessible;
+}
+
+/**
+ * Standalone launch is stricter than factory-route access: it requires a real
+ * canonical domain, a matching routed hostname and a niche-specific sender.
  */
 export function isVerticalPubliclyLaunched(id: VerticalId): boolean {
   const { domain, email, hostnames } = resolveVerticalConfig(id).marketing;
-  return Boolean(domain && email && hostnames.includes(domain));
+  return Boolean(
+    isVerticalPubliclyAccessible(id) &&
+      domain &&
+      email &&
+      hostnames.includes(domain),
+  );
+}
+
+/**
+ * Claim invitations and subscription checkout exist only for a fully launched
+ * niche with its own domain, routing and sender. Public factory-route access is
+ * deliberately insufficient: previewing Beauty must not sell Restofront's plan.
+ */
+export function isVerticalClaimEnabled(id: VerticalId): boolean {
+  return isVerticalPubliclyLaunched(id);
+}
+
+/** Every vertical intentionally exposed by the shared public niche route. */
+export function listPublicVerticals(): VerticalId[] {
+  return listVerticalIds().filter(isVerticalPubliclyAccessible);
 }
 
 /**

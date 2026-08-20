@@ -67,6 +67,41 @@ describe("FOOD_RETAIL stock truth", () => {
     expect(jsonLd).not.toHaveProperty("availability");
   });
 
+  it("uses availability-neutral catalog and gallery copy for unknown stock", () => {
+    const cases = [
+      { shopType: "bakery" as const, heading: "Explore the published range." },
+      {
+        shopType: "butcher" as const,
+        heading: "Products from the published range.",
+      },
+      {
+        shopType: "grocer" as const,
+        heading: "What the shop publishes.",
+      },
+    ];
+    const forbidden = [
+      "Made for today",
+      "Today’s selection",
+      "on the counter",
+      "prepared, ready",
+      "current range",
+      "Préparé pour aujourd’hui",
+      "sélection du jour",
+      "gamme actuelle",
+    ];
+
+    for (const testCase of cases) {
+      const draft = withOnlyStockStatus(null, null);
+      draft.attributes.shopType = testCase.shopType;
+      draft.attributes.showProductImages = true;
+      const html = renderToStaticMarkup(
+        <SiteRenderer draft={draft} vertical="FOOD_RETAIL" locale="en" />,
+      );
+      expect(html).toContain(testCase.heading);
+      for (const claim of forbidden) expect(html).not.toContain(claim);
+    }
+  });
+
   it("renders sourced in-stock and out-of-stock claims in HTML and JSON-LD", () => {
     const cases = [
       {

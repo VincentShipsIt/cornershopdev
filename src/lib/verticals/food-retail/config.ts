@@ -28,7 +28,7 @@ export const foodRetailDictionaryExtensions = {
     reservationsVia: "Order via",
     bookingPartner: "the shop’s ordering partner",
     seasonalNotice:
-      "Products and availability may change. Check the current range before travelling.",
+      "Product details can change. Contact the shop before travelling.",
     heroImageAlt: "Shop and products at",
     bookingHeading: "Ordering",
     bookingRequestHeading: "",
@@ -40,7 +40,7 @@ export const foodRetailDictionaryExtensions = {
     reservationsVia: "Commander via",
     bookingPartner: "le partenaire de commande de la boutique",
     seasonalNotice:
-      "Les produits et disponibilités peuvent évoluer. Vérifiez la gamme actuelle avant de vous déplacer.",
+      "Les informations produit peuvent évoluer. Contactez la boutique avant de vous déplacer.",
     heroImageAlt: "Boutique et produits chez",
     bookingHeading: "Commande",
     bookingRequestHeading: "",
@@ -58,6 +58,69 @@ const shopTypeLabels: Record<FoodShopType, Record<"en" | "fr", string>> = {
   grocer: { en: "Grocer", fr: "Épicerie" },
   "local-food-shop": { en: "Local food shop", fr: "Commerce alimentaire" },
 };
+
+/**
+ * FOOD_RETAIL treats the model as a presentation assistant, never an evidence
+ * source. Canonical business facts and catalog rows come only from deterministic
+ * reconstruction; translated overlays are retained as drafts but mirror the
+ * evidence-bound structure and claim fields until an owner reviews them.
+ */
+export function bindGeneratedFoodRetailDraftToEvidence({
+  generated,
+  deterministic,
+}: {
+  generated: FoodRetailSiteDraft;
+  deterministic: FoodRetailSiteDraft;
+}): FoodRetailSiteDraft {
+  return {
+    ...generated,
+    slug: deterministic.slug,
+    name: deterministic.name,
+    eyebrow: deterministic.eyebrow,
+    description: deterministic.description,
+    address: deterministic.address,
+    phone: deterministic.phone,
+    email: deterministic.email,
+    sourceUrl: deterministic.sourceUrl,
+    logoUrl: deterministic.logoUrl,
+    faviconUrl: deterministic.faviconUrl,
+    heroImageUrl: deterministic.heroImageUrl,
+    heroOriginalImageUrl: deterministic.heroOriginalImageUrl,
+    heroImageProvenance: deterministic.heroImageProvenance,
+    sourceData: deterministic.sourceData,
+    defaultLocale: deterministic.defaultLocale,
+    attributes: {
+      ...deterministic.attributes,
+      showProductImages: generated.attributes.showProductImages,
+    },
+    businessHours: deterministic.businessHours,
+    catalogSections: deterministic.catalogSections,
+    integrations: deterministic.integrations,
+    translations: generated.translations.map((translation) => ({
+      ...translation,
+      status: "draft",
+      attributes: {
+        pickupDetails: deterministic.attributes.pickupDetails,
+      },
+      catalogSections: deterministic.catalogSections.map((section) => ({
+        name: section.name,
+        description: section.description,
+        items: section.items.map((item) => ({
+          name: item.name,
+          description: item.description,
+          attributes: {
+            seasonalAvailability: item.attributes.seasonalAvailability,
+            preorderNote: item.attributes.preorderNote,
+            allergens: [...item.attributes.allergens],
+          },
+        })),
+      })),
+      integrationLabels: deterministic.integrations.map(
+        (integration) => integration.label,
+      ),
+    })),
+  };
+}
 
 function language(locale: string): "en" | "fr" {
   return locale.toLowerCase().startsWith("fr") ? "fr" : "en";
@@ -81,6 +144,24 @@ export const foodRetailConfig = {
     shopType: "local-food-shop",
     showProductImages: false,
     pickupDetails: "",
+  },
+  deterministicCopy: {
+    en: {
+      eyebrow: "Private food retail preview",
+      description:
+        "A private food retail preview built only from source information currently available.",
+      catalogName: "Product ranges",
+      emptyCatalogDescription:
+        "No product range details were present in deterministic source markup.",
+    },
+    fr: {
+      eyebrow: "Aperçu privé du commerce alimentaire",
+      description:
+        "Un aperçu privé du commerce alimentaire fondé uniquement sur les informations source disponibles.",
+      catalogName: "Gammes de produits",
+      emptyCatalogDescription:
+        "Aucune gamme de produits n’était présente dans les données source structurées.",
+    },
   },
   itemAttributesSchema: foodRetailItemAttributesSchema,
   itemAttributeDefaults: {
@@ -121,7 +202,9 @@ export const foodRetailConfig = {
         badges.push(localeLanguage === "fr" ? "En stock" : "In stock");
       }
       if (attributes.stockSourceUrl && available === false) {
-        badges.push(localeLanguage === "fr" ? "Rupture de stock" : "Out of stock");
+        badges.push(
+          localeLanguage === "fr" ? "Rupture de stock" : "Out of stock",
+        );
       }
       if (attributes.seasonalAvailability) {
         badges.push(attributes.seasonalAvailability);
@@ -157,6 +240,7 @@ export const foodRetailConfig = {
       stockSourceUrl: null,
     },
   }),
+  bindGeneratedDraftToEvidence: bindGeneratedFoodRetailDraftToEvidence,
   deterministicItemAttributes: (item) => ({
     visible: true,
     stockSourceUrl: item.availabilitySourceUrl ?? null,

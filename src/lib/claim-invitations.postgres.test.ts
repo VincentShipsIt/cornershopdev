@@ -7,6 +7,8 @@ const suffix = randomUUID();
 const siteId = `claim-retry-site-${suffix}`;
 const slug = `claim-retry-${suffix}`;
 const email = `owner@claim-retry-${suffix}.example.test`;
+const foodSiteId = `claim-food-private-site-${suffix}`;
+const foodSlug = `claim-food-private-${suffix}`;
 
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let claim: typeof import("@/lib/claim-invitations");
@@ -28,10 +30,38 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
         status: "PREVIEW_READY",
       },
     });
+    await db.site.create({
+      data: {
+        id: foodSiteId,
+        slug: foodSlug,
+        name: "Private food-retail claim fixture",
+        description: "An unlaunched food-retail claim gate fixture.",
+        email: `owner@${foodSlug}.example.test`,
+        sourceUrl: `https://${foodSlug}.example.test/`,
+        vertical: "FOOD_RETAIL",
+        status: "PREVIEW_READY",
+      },
+    });
   });
 
   afterAll(async () => {
-    if (db) await db.site.deleteMany({ where: { id: siteId } });
+    if (db) {
+      await db.site.deleteMany({ where: { id: { in: [siteId, foodSiteId] } } });
+    }
+  });
+
+  test("rejects FOOD_RETAIL invitation issuance before any claim can charge", async () => {
+    await expect(
+      claim.issueClaimInvitation({
+        siteSlug: foodSlug,
+        email: `owner@${foodSlug}.example.test`,
+        proofMethod: "DOMAIN_EMAIL",
+        actor: "claimant:self-serve",
+      }),
+    ).rejects.toMatchObject({ code: "not_claimable", status: 409 });
+    expect(
+      await db.claimInvitation.count({ where: { siteId: foodSiteId } }),
+    ).toBe(0);
   });
 
   test("allows one concurrent successor and never revokes it from a stale retry", async () => {
@@ -67,8 +97,7 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
         result,
       ): result is PromiseFulfilledResult<
         Awaited<ReturnType<typeof claim.resendClaimInvitation>>
-      > =>
-        result.status === "fulfilled",
+      > => result.status === "fulfilled",
     );
     const rejected = attempts.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",

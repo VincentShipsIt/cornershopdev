@@ -101,8 +101,14 @@ and allergens only when an exact source URL is stored with the label. Unknown
 products, prices, stock, pickup promises and allergens remain empty. English and
 French storefront copy and translation overlays are included.
 
+FOOD_RETAIL model output is presentation-only: a post-generation evidence
+adapter restores business identity, contact details, hours, products, prices,
+ordering links and factual product attributes from deterministic crawl output.
+Unsupported model claims remain empty or null.
+
 The vertical is registered for private studio imports and owner dashboards but
-is not publicly launched: its marketing domain, hostnames and sender are null.
+is not publicly launched: its marketing hostnames are empty, and its domain and
+sender are null.
 The implementation contract, test fixture, structured-data mapping and required
 domain/sender/production-config evidence are documented in
 [`docs/verticals/food-retail.md`](docs/verticals/food-retail.md).

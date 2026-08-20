@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  assertTranslationParity,
+  assertSiteDraftInvariants,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
   catalogItemSchema,
@@ -117,7 +117,7 @@ export const foodRetailSiteDraftSchema = z
       .min(1)
       .max(16),
   })
-  .superRefine(assertTranslationParity)
+  .superRefine(assertSiteDraftInvariants)
   .superRefine((draft, context) => {
     if (draft.heroImageUrl && !draft.heroImageProvenance) {
       context.addIssue({

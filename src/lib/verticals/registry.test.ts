@@ -9,8 +9,11 @@ import {
 import { beautyConfig } from "@/lib/verticals/beauty/config";
 import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
 import {
+  isVerticalClaimEnabled,
+  isVerticalPubliclyAccessible,
   isVerticalPubliclyLaunched,
   listMarketingVerticals,
+  listPublicVerticals,
   listVerticalIds,
   resolveVerticalByHostname,
   resolveVerticalBySlug,
@@ -248,6 +251,7 @@ describe("niche routing", () => {
   it("lists only launched niches for the homepage", () => {
     const listed = listMarketingVerticals();
     expect(isVerticalPubliclyLaunched(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalPubliclyLaunched(Vertical.BEAUTY)).toBe(false);
     expect(isVerticalPubliclyLaunched(Vertical.FOOD_RETAIL)).toBe(false);
     expect(listed).toEqual(
       listVerticalIds()
@@ -261,10 +265,27 @@ describe("niche routing", () => {
     expect(listed).not.toContain(Vertical.BEAUTY);
     expect(listed).not.toContain(Vertical.FOOD_RETAIL);
     expect(foodRetailConfig.marketing).toMatchObject({
+      publiclyAccessible: false,
       hostnames: [],
       domain: null,
       email: null,
     });
+  });
+
+  it("keeps existing public niche routes while food retail stays private", () => {
+    expect(listPublicVerticals()).toEqual([
+      Vertical.RESTAURANT,
+      Vertical.BEAUTY,
+    ]);
+    expect(isVerticalPubliclyAccessible(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalPubliclyAccessible(Vertical.BEAUTY)).toBe(true);
+    expect(isVerticalPubliclyAccessible(Vertical.FOOD_RETAIL)).toBe(false);
+  });
+
+  it("enables claim checkout only for a fully launched vertical", () => {
+    expect(isVerticalClaimEnabled(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalClaimEnabled(Vertical.BEAUTY)).toBe(false);
+    expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(false);
   });
 
   it("registers the selected Restofrontapp mark and favicon assets", () => {
