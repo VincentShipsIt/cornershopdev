@@ -118,22 +118,27 @@ describe("checkPlatformReadiness", () => {
   });
 
   it("fails deployed environments that point at a local database", async () => {
-    const serviceProbes = probes();
-    const result = await checkPlatformReadiness(
-      {
-        ...configuredEnvironment,
-        DATABASE_URL: "postgresql://localhost:5432/cornershopdev",
-      },
-      serviceProbes,
-    );
+    for (const databaseUrl of [
+      "postgresql://localhost:5432/cornershopdev",
+      "postgresql://127.0.0.1:5432/cornershopdev",
+      "postgresql://127.0.0.2:5432/cornershopdev",
+      "postgresql://[::1]:5432/cornershopdev",
+    ]) {
+      const serviceProbes = probes();
+      const result = await checkPlatformReadiness(
+        { ...configuredEnvironment, DATABASE_URL: databaseUrl },
+        serviceProbes,
+      );
 
-    expect(result.status).toBe("not_ready");
-    expect(result.services[0]).toEqual({
-      service: "database",
-      status: "misconfigured",
-      message: "DATABASE_URL must use a managed host in deployed environments.",
-    });
-    expect(serviceProbes.database).not.toHaveBeenCalled();
+      expect(result.status).toBe("not_ready");
+      expect(result.services[0]).toEqual({
+        service: "database",
+        status: "misconfigured",
+        message:
+          "DATABASE_URL must use a managed host in deployed environments.",
+      });
+      expect(serviceProbes.database).not.toHaveBeenCalled();
+    }
   });
 
   it("does not expose provider errors or credential values", async () => {

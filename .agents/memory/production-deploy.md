@@ -8,13 +8,15 @@ status: durable
 ## Release truth audit (2026-08-20)
 
 Production runs `feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, not current main
-`09e2e730566724b3d229c1dfbdc76d720c384f2c`. It is 12 commits behind, exposes
+`b958ecd8554edf27e0747755504e03ede30f3dff`. It is 14 commits behind, exposes
 15 migrations while main contains 18, and has no outreach preflight command.
-The current production SSM set is missing `RESEND_WEBHOOK_SECRET` and
-`BETTER_AUTH_SECRET`; the Restofront sender display name also differs from the
-merged outreach contract. Neither `*.restofront.com` nor `*.cornershop.dev`
-exists in Route 53. Caddy itself validates and its loaded on-demand TLS ask
-endpoint correctly targets `api-cornershop-dev`.
+The current production SSM set is missing the explicit delivery signing secret
+`RESEND_WEBHOOK_SECRET`, the explicit inbound signing secret
+`RESEND_INBOUND_WEBHOOK_SECRET`, and `BETTER_AUTH_SECRET`; the Restofront sender
+display name also differs from the merged outreach contract. Neither
+`*.restofront.com` nor `*.cornershop.dev` exists in Route 53. Caddy itself
+validates and its loaded on-demand TLS ask endpoint correctly targets
+`api-cornershop-dev`.
 
 The reviewed fix makes production stable-release-only, runs migration,
 outreach, wildcard DNS, and post-cutover TLS gates in the exact candidate, and
@@ -23,8 +25,12 @@ Exact blocker remediation and state definitions live in
 `docs/operations/production-release.md`. Do not describe merged main as
 production until a release artifact proves `productionDeployed: VERIFIED`.
 
-Host `i-00e74422e719396c3` (us-west-1), single container `cornershopdev` behind
-`shipshit-caddy`, single-origin on `cornershop.dev`.
+Host `i-00e74422e719396c3` (us-west-1), single container `api-cornershop-dev`
+behind `shipshit-caddy`. Single-origin: `cornershop.dev`, `restofront.com`,
+their routed storefront hostnames, and customer custom domains hit that container.
+`domains.cornershop.dev` is an intentional Caddy `404` and is not proxied to
+the app (`PUBLIC_APP_IP` `52.8.153.188`). This is not a Vercel frontend. Do not
+split it — see `hosting-single-origin.md`.
 
 Production application data and Workflow state both use the PostgreSQL database
 `cornershopdev` on RDS `api-shipshit-dev`. It was renamed in place from
@@ -122,3 +128,14 @@ on 2026-07-26:
 
 Do not treat other `restofront.com` records as cleanup targets. Restofront is
 the active restaurant niche, and its email/DKIM records remain intentional.
+`restofront.com` and `www.restofront.com` A-record to the same Caddy IP as
+`cornershop.dev`. A stale Caddy comment that "restofront.com is served
+elsewhere" is false.
+
+## Vercel is not this app
+
+The leftover Vercel Git project `restofrontcom` was disconnected 2026-08-19.
+The operator reports deleting it on 2026-08-20; that account-side action is
+not independently observable from this repository. It never served
+`restofront.com` or `cornershop.dev`. Do not recreate it. Do not `vercel link` this repo. Detail:
+`hosting-single-origin.md`.
