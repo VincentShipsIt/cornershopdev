@@ -171,9 +171,17 @@ OpenRouter Auto selects a compatible language model per import. Structured outpu
 is schema validated before it is persisted.
 
 Optional image enhancement runs through the same key and the same provider. The
-model must expose `image` output; the default does.
+model must expose `image` output and pass the photo policy's economical-model
+allow-list; the default does.
 
 - `OPENROUTER_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image`
+- `PHOTO_ENHANCEMENT_MODEL` pins the validated batch model
+- `PHOTO_ENHANCEMENT_ESTIMATED_COST_MICROS`,
+  `PHOTO_ENHANCEMENT_PER_IMAGE_CEILING_MICROS`, and
+  `PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS` reserve spend before provider work
+- `PHOTO_DISCOVERY_MAX_IMAGES`, `PHOTO_INGEST_CONCURRENCY`,
+  `PHOTO_ENHANCEMENT_CONCURRENCY`, and `PHOTO_ENHANCEMENT_BATCH_MAX_IMAGES`
+  bound crawl/storage/provider fan-out
 
 Without `OPENROUTER_API_KEY` an import still completes: the draft falls back to
 the deterministic composer and hero enhancement is skipped.
@@ -198,17 +206,22 @@ Configure the private production S3 bucket and its CloudFront public origin:
 - `S3_BUCKET`
 - `S3_PUBLIC_BASE_URL`
 
-Cornershopdev never creates a dish photograph from menu text. Enhancement requires
-an existing HTTPS source image from the restaurant, an owner upload, or customer
-UGC with explicit reuse permission. The immutable original URL and its
-provenance are stored alongside the enhanced S3 derivative.
+Cornershopdev never creates a photograph from text. The crawler deterministically
+discovers a bounded set of photo references on the business's own pages, filters
+logos and decorative assets, copies validated bytes to content-addressed immutable
+storage, and deduplicates them by SHA-256. Owners may also upload a file or add an
+HTTPS reference. Source page, provenance, candidate classification, review state,
+selection, original, and enhanced derivative remain durable records.
 
 Allowed edits are exposure, white balance, highlight and shadow recovery,
 denoising, sharpness, resolution, straightening, subtle cropping, and removal of
 transient non-material distractions such as sensor dust. Ingredients, garnishes,
 portions, plating, tableware, people, architecture, and material scene elements
-must not be added, removed, replaced, moved, or regenerated. Owners can disable
-automatic enhancement and must review the derivative before publishing.
+must not be added, removed, replaced, moved, or regenerated. Only approved
+originals enter a rate- and concurrency-limited batch. Originals remain active
+until the owner approves the before/after derivative, and every approve, reject,
+selection, restore, failure, and cost result is audited. See
+`docs/operations/photo-ingestion.md` for the full safety and recovery contract.
 
 ### Preview abuse protection
 

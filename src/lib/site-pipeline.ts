@@ -37,6 +37,6 @@ export async function generateDraftForVertical(
 export async function enhanceSiteHeroImage(
   request: SiteImageEnhancementRequest,
   vertical: VerticalId,
-): Promise<{ data: Uint8Array; mediaType: string }> {
+): Promise<{ data: Uint8Array; mediaType: string; costMicros: number | null }> {
   return enhanceSiteImage(request, resolveVerticalConfig(vertical));
 }

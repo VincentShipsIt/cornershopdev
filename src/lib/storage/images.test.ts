@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
+  enhancedPhotoObjectKey,
   getImageStorageConfig,
   imageStorageIsConfigured,
+  immutableOriginalObjectKey,
   storageObjectKeyFromUrl,
 } from "@/lib/storage/images";
 
@@ -44,5 +46,41 @@ describe("image storage configuration", () => {
     expect(() =>
       storageObjectKeyFromUrl("https://attacker.example/hero.png", env),
     ).toThrow("outside");
+  });
+
+  it("builds content-addressed immutable original and derivative keys", () => {
+    const digest = "a".repeat(64);
+    expect(
+      immutableOriginalObjectKey({
+        siteSlug: "osteria-luna",
+        vertical: "RESTAURANT",
+        sha256: digest,
+        mediaType: "image/jpeg",
+      }),
+    ).toBe(
+      `restofrontcom/sites/osteria-luna/originals/${digest}.jpg`,
+    );
+    expect(
+      enhancedPhotoObjectKey({
+        siteSlug: "osteria-luna",
+        vertical: "RESTAURANT",
+        sourceSha256: digest,
+        configVersion: "b".repeat(16),
+        mediaType: "image/webp",
+      }),
+    ).toBe(
+      `restofrontcom/sites/osteria-luna/enhanced/${digest}-${"b".repeat(16)}.webp`,
+    );
+  });
+
+  it("rejects unsafe immutable key material", () => {
+    expect(() =>
+      immutableOriginalObjectKey({
+        siteSlug: "test",
+        vertical: "RESTAURANT",
+        sha256: "../escape",
+        mediaType: "image/png",
+      }),
+    ).toThrow("SHA-256");
   });
 });

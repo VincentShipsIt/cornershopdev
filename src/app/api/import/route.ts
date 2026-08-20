@@ -14,6 +14,7 @@ import {
   type PersistableSiteDraft,
 } from "@/lib/site-persistence";
 import { crawlSiteSource, generateDraftForVertical } from "@/lib/site-pipeline";
+import { ingestDiscoveredSitePhotos } from "@/lib/photo-library";
 import { siteImportWorkflow } from "@/workflows/site-import";
 
 export const runtime = "nodejs";
@@ -76,10 +77,20 @@ export async function POST(request: Request) {
       source,
       importJobId: importJob.id,
     });
+    const photoIngest = await ingestDiscoveredSitePhotos({
+      siteId: persisted.siteId,
+      siteSlug: persisted.draft.slug,
+      vertical,
+      photos: extracted.photos,
+    }).catch(() => ({ ingested: 0, deduplicated: 0, failed: extracted.photos.length }));
     return NextResponse.json({
       mode: "inline",
       vertical,
-      ...persisted,
+      draft: persisted.draft,
+      importJobId: persisted.importJobId,
+      urls: persisted.urls,
+      created: persisted.created,
+      photoIngest,
     });
   } catch (error) {
     if (importJobId) {

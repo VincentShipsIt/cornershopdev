@@ -70,6 +70,7 @@ export type PersistableSiteDraft = {
 };
 
 export type PersistedSiteImport<TDraft extends PersistableSiteDraft> = {
+  siteId: string;
   draft: TDraft;
   importJobId: string;
   urls: ImportUrls;
@@ -358,6 +359,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
             slug: site.slug,
           }) as TDraft;
           return {
+            siteId: site.id,
             draft: canonicalDraft,
             importJobId: input.importJobId,
             urls: buildImportUrls(site.slug),
@@ -514,6 +516,7 @@ export async function createOperatorSiteImport<
           }
 
           return {
+            siteId: site.id,
             draft: config.draftSchema.parse({
               ...draft,
               slug: site.slug,
@@ -568,6 +571,25 @@ export async function updateSiteDraft(
           ) {
             throw new DraftRevisionConflictError(current.draftRevision);
           }
+          // Catalog rows are replaced on a full owner save. Preserve photo
+          // placement by stable section/item position, then bind each selected
+          // immutable photo to the replacement row inside the same transaction.
+          const catalogPhotoSelections = await tx.photoAsset.findMany({
+            where: {
+              siteId: current.id,
+              selectedUsage: "CATALOG",
+              selectedCatalogItemId: { not: null },
+            },
+            select: {
+              id: true,
+              selectedCatalogItem: {
+                select: {
+                  position: true,
+                  section: { select: { position: true } },
+                },
+              },
+            },
+          });
           const updated = await tx.site.update({
             where: { id: current.id },
             data: {
@@ -577,6 +599,35 @@ export async function updateSiteDraft(
             },
             select: { id: true, draftRevision: true },
           });
+          if (catalogPhotoSelections.length > 0) {
+            const replacementItems = await tx.catalogItem.findMany({
+              where: { section: { siteId: current.id } },
+              select: {
+                id: true,
+                position: true,
+                section: { select: { position: true } },
+              },
+            });
+            for (const selection of catalogPhotoSelections) {
+              const previous = selection.selectedCatalogItem;
+              const replacement = previous
+                ? replacementItems.find(
+                    (item) =>
+                      item.position === previous.position &&
+                      item.section.position === previous.section.position,
+                  )
+                : null;
+              await tx.photoAsset.update({
+                where: { id: selection.id },
+                data: replacement
+                  ? {
+                      selectedCatalogItemId: replacement.id,
+                      selectedUsage: "CATALOG",
+                    }
+                  : { selectedCatalogItemId: null, selectedUsage: null },
+              });
+            }
+          }
           if (options.actor) {
             await tx.auditEvent.create({
               data: {

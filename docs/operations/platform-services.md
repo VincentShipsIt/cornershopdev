@@ -114,9 +114,10 @@ docker exec api-cornershop-dev \
   bun run operator:verify-image-storage --environment production --execute
 ```
 
-The command writes separate `original-hero` and enhanced `hero` fixtures through
-`storeSiteImage`, retrieves both with the configured S3 client, verifies their
-exact SHA-256 content, and deletes both in a `finally` cleanup. Output contains
+The command writes a content-addressed immutable original and its config-addressed
+enhanced derivative through the production photo storage path, retrieves both
+with the configured S3 client, verifies their exact SHA-256 content, proves the
+keys are distinct, and deletes both in a `finally` cleanup. Output contains
 only fixture labels, digests, cleanup status, environment, and timestamp—never
 bucket names, keys, URLs, credentials, or provider error bodies. A run without
 `--execute` performs no write. Do not claim the production round trip until the

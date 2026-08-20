@@ -6,8 +6,9 @@ import {
 } from "@aws-sdk/client-s3";
 import {
   getImageStorageConfig,
+  storeImmutableEnhancedPhoto,
+  storeImmutableSiteOriginal,
   storageObjectKeyFromUrl,
-  storeSiteImage,
 } from "@/lib/storage/images";
 
 class SafeVerificationError extends Error {
@@ -48,7 +49,6 @@ async function verifyRoundTrip(args: string[]) {
   const fixtures = [
     {
       label: "original",
-      purpose: "original-hero" as const,
       data: Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X2NDWQAAAABJRU5ErkJggg==",
         "base64",
@@ -56,7 +56,6 @@ async function verifyRoundTrip(args: string[]) {
     },
     {
       label: "enhanced",
-      purpose: "hero" as const,
       data: Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
         "base64",
@@ -71,15 +70,29 @@ async function verifyRoundTrip(args: string[]) {
   let cleanup: "not-required" | "completed" | "failed" = "not-required";
 
   try {
-    for (const fixture of fixtures) {
-      const storedUrl = await storeSiteImage({
-        siteSlug: `storage-verification-${environment}`,
-        vertical: "RESTAURANT",
-        data: fixture.data,
-        mediaType: "image/png",
-        purpose: fixture.purpose,
-      });
-      const key = storageObjectKeyFromUrl(storedUrl);
+    const original = await storeImmutableSiteOriginal({
+      siteSlug: `storage-verification-${environment}`,
+      vertical: "RESTAURANT",
+      data: fixtures[0]!.data,
+      mediaType: "image/png",
+    });
+    const enhanced = await storeImmutableEnhancedPhoto({
+      siteSlug: `storage-verification-${environment}`,
+      vertical: "RESTAURANT",
+      sourceSha256: original.sha256,
+      configVersion: "f".repeat(16),
+      data: fixtures[1]!.data,
+      mediaType: "image/png",
+    });
+    const stored = [
+      { ...fixtures[0]!, storedUrl: original.url },
+      { ...fixtures[1]!, storedUrl: enhanced.url },
+    ];
+    for (const fixture of stored) {
+      const key = storageObjectKeyFromUrl(fixture.storedUrl);
+      if (keys.includes(key)) {
+        throw new SafeVerificationError("duplicate_object_key", "unknown");
+      }
       keys.push(key);
       const response = await client.send(
         new GetObjectCommand({ Bucket: config.bucket, Key: key }),

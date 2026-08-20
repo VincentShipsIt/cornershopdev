@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -24,7 +24,6 @@ import {
   Rocket,
   Save,
   Settings,
-  Sparkles,
   Trash2,
   TrendingUp,
   TriangleAlert,
@@ -38,6 +37,7 @@ import {
 import { RestaurantIntegrationEditor } from "@/components/restaurant-integration-editor";
 import { RestaurantMenuEditor } from "@/components/restaurant-menu-editor";
 import { SourceMonitoringPanel } from "@/components/source-monitoring-panel";
+import { PhotoLibraryPanel } from "@/components/photo-library-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,6 +120,57 @@ export function Dashboard({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedRevision, setSavedRevision] = useState<number | null>(null);
+  const handlePhotoRevision = useCallback((revision: number) => {
+    setSavedRevision(revision);
+  }, []);
+  const handlePhotoHeroChange = useCallback(
+    (
+      hero: {
+        url: string;
+        originalUrl: string;
+        provenance: "official" | "owner" | "permissioned-ugc";
+      } | null,
+    ) => {
+      setDraft((current) => ({
+        ...current,
+        heroImageUrl: hero?.url ?? null,
+        heroOriginalImageUrl: hero?.originalUrl ?? null,
+        heroImageProvenance: hero?.provenance ?? null,
+      }));
+    },
+    [],
+  );
+  const handlePhotoCatalogChange = useCallback(
+    (change: {
+      sectionIndex: number;
+      itemIndex: number;
+      url: string | null;
+      originalUrl: string | null;
+      provenance: "official" | "owner" | "permissioned-ugc" | null;
+    }) => {
+      setDraft((current) => ({
+        ...current,
+        menuSections: current.menuSections.map((section, sectionIndex) =>
+          sectionIndex !== change.sectionIndex
+            ? section
+            : {
+                ...section,
+                items: section.items.map((item, itemIndex) =>
+                  itemIndex !== change.itemIndex
+                    ? item
+                    : {
+                        ...item,
+                        imageUrl: change.url,
+                        originalImageUrl: change.originalUrl,
+                        imageProvenance: change.provenance,
+                      },
+                ),
+              },
+        ),
+      }));
+    },
+    [],
+  );
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -128,7 +179,6 @@ export function Dashboard({
   const [domainError, setDomainError] = useState<string | null>(null);
   const [domainNotice, setDomainNotice] = useState<string | null>(null);
   const [domainLoading, setDomainLoading] = useState(false);
-  const [imageLoading, setImageLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [themeDirty, setThemeDirty] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState<string | null>(null);
@@ -727,50 +777,6 @@ export function Dashboard({
     }
   }
 
-  async function enhanceImage() {
-    const sourceImageUrl =
-      draft.heroOriginalImageUrl ?? draft.heroImageUrl;
-    if (!sourceImageUrl?.startsWith("https://")) return;
-
-    setImageLoading(true);
-    try {
-      const response = await fetch("/api/images/enhance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceImageUrl,
-          siteSlug: draft.slug,
-          siteName: draft.name,
-        }),
-      });
-      const result = (await response.json()) as {
-        url?: string;
-        originalUrl?: string;
-        error?: string;
-      };
-      if (!response.ok || !result.url) {
-        throw new Error(result.error ?? "Image could not be enhanced");
-      }
-      setDraft((current) => ({
-        ...current,
-        heroImageUrl: result.url ?? current.heroImageUrl,
-        heroOriginalImageUrl:
-          current.heroOriginalImageUrl ??
-          result.originalUrl ??
-          current.heroImageUrl,
-        heroImageProvenance:
-          current.heroImageProvenance ??
-          (current.sourceUrl ? "official" : "owner"),
-      }));
-    } catch (caught) {
-      alert(
-        caught instanceof Error ? caught.message : "Image could not be enhanced",
-      );
-    } finally {
-      setImageLoading(false);
-    }
-  }
-
   return (
     <main className="min-h-screen bg-[#f3f1eb]">
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b bg-background px-4 md:px-6">
@@ -1291,52 +1297,8 @@ export function Dashboard({
                 eyebrow="Image library"
                 title="Authentic photos, professionally finished."
                 copy={`${brand.name} improves light, colour, crop and clarity without inventing dishes or changing what guests will receive.`}
-                action={
-                  <Button
-                    size="sm"
-                    onClick={() => void enhanceImage()}
-                    disabled={
-                      imageLoading ||
-                      !(
-                        draft.heroOriginalImageUrl ??
-                        draft.heroImageUrl
-                      )?.startsWith("https://")
-                    }
-                  >
-                    {imageLoading ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <Sparkles />
-                    )}
-                    Enhance current hero
-                  </Button>
-                }
               />
               <Card className="mt-8">
-                <CardContent className="flex items-center justify-between gap-6 pt-6">
-                  <div>
-                    <Label htmlFor="auto-enhance-images" className="text-sm">
-                      Automatically enhance approved photos
-                    </Label>
-                    <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-                      Uses only restaurant-owned or permissioned customer
-                      photos. Originals remain stored and every enhanced image
-                      still requires review.
-                    </p>
-                  </div>
-                  <Switch
-                    id="auto-enhance-images"
-                    checked={draft.autoEnhanceImages}
-                    onCheckedChange={(checked) =>
-                      setDraft((current) => ({
-                        ...current,
-                        autoEnhanceImages: checked,
-                      }))
-                    }
-                  />
-                </CardContent>
-              </Card>
-              <Card className="mt-4">
                 <CardContent className="flex items-center justify-between gap-6 pt-6">
                   <div>
                     <Label htmlFor="show-menu-images" className="text-sm">
@@ -1359,7 +1321,7 @@ export function Dashboard({
                   />
                 </CardContent>
               </Card>
-              <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {demo ? <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {[draft.heroImageUrl, ...draft.menuSections.flatMap((section) =>
                   section.items.map((item) => item.imageUrl),
                 )]
@@ -1385,7 +1347,14 @@ export function Dashboard({
                       </div>
                     </Card>
                   ))}
-              </div>
+              </div> : (
+                <PhotoLibraryPanel
+                  siteSlug={draft.slug}
+                  onRevision={handlePhotoRevision}
+                  onHeroChange={handlePhotoHeroChange}
+                  onCatalogChange={handlePhotoCatalogChange}
+                />
+              )}
             </TabsContent>
 
             <TabsContent value="integrations" className="mt-0">

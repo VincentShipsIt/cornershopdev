@@ -37,7 +37,8 @@ describe("evidence-backed source diffs", () => {
         description: "",
         address: "",
         phone: "+356 9999 0000",
-        heroImageUrl: null,
+      heroImageUrl: null,
+      photos: [],
         pageText:
           "Contact +356 9999 0000. Monday-Friday 09:00-18:00. Lunch: New pasta, Tomato, €18.",
         links: [
@@ -95,7 +96,8 @@ describe("evidence-backed source diffs", () => {
         description: "",
         address: "",
         phone: "",
-        heroImageUrl: null,
+      heroImageUrl: null,
+      photos: [],
         pageText: "Welcome to Example",
         links: [],
       },
