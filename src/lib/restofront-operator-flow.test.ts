@@ -682,7 +682,7 @@ describe("mocked Restofront operator delivery flow", () => {
     });
     const replayedInvitation = await issueClaimInvitation({
       siteSlug: site.slug,
-      email: site.email!,
+      email: site.leadContactEmail!,
       proofMethod: "OPERATOR_APPROVAL",
       actor: "operator:operator_1",
       outreachKey: `lead-outreach:${site.id}:preview_ready`,
