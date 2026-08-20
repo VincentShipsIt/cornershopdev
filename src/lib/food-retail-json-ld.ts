@@ -24,6 +24,9 @@ export type FoodRetailJsonLd = {
       description?: string;
       itemListElement: Array<{
         "@type": "Offer";
+        availability?:
+          | "https://schema.org/InStock"
+          | "https://schema.org/OutOfStock";
         price?: number;
         priceCurrency?: string;
         url?: string;
@@ -74,6 +77,7 @@ export function buildFoodRetailJsonLd(
     const items = section.items
       .filter((item) => item.available)
       .map((item) => {
+        const stockAvailability = sourcedStockAvailability(item.attributes);
         const product: {
           "@type": "Product";
           name: string;
@@ -89,6 +93,7 @@ export function buildFoodRetailJsonLd(
         if (item.imageUrl?.startsWith("https://")) product.image = item.imageUrl;
         return {
           "@type": "Offer" as const,
+          ...(stockAvailability ? { availability: stockAvailability } : {}),
           ...(item.price === null
             ? {}
             : { price: item.price, priceCurrency: item.currency }),
@@ -158,4 +163,20 @@ function isFoodShopType(value: unknown): value is FoodShopType {
       "local-food-shop",
     ].includes(value)
   );
+}
+
+function sourcedStockAvailability(
+  attributes: Record<string, unknown>,
+):
+  | "https://schema.org/InStock"
+  | "https://schema.org/OutOfStock"
+  | null {
+  if (typeof attributes.stockSourceUrl !== "string") return null;
+  if (attributes.stockStatus === "in-stock") {
+    return "https://schema.org/InStock";
+  }
+  if (attributes.stockStatus === "out-of-stock") {
+    return "https://schema.org/OutOfStock";
+  }
+  return null;
 }

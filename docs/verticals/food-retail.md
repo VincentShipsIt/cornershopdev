@@ -22,8 +22,9 @@ flowchart LR
 - Product ranges use the shared `CatalogSection` / `CatalogItem` relations.
 - `Site.attributes` stores `shopType`, product-gallery preference and sourced
   pickup details.
-- `CatalogItem.attributes` stores seasonal availability, explicit preorder
-  state/note, allergens and allergen evidence.
+- `CatalogItem.attributes` stores nullable, evidence-backed stock status,
+  seasonal availability, explicit preorder state/note, allergens and allergen
+  evidence. The shared `available` column controls storefront visibility only.
 - Ordering, click-and-collect and preorder URLs use the shared `ORDERING`
   integration. Courier marketplaces use `DELIVERY`.
 - The renderer selects ordering as the primary mobile CTA and sets booking
@@ -38,8 +39,10 @@ The importer and owner-save schema enforce these rules:
 
 - no invented products, prices, stock, seasonal dates, preorder requirements,
   pickup promises or allergens;
-- `price: null`, `preorderRequired: null`, empty strings and empty arrays are the
-  normal unknown state;
+- `price: null`, `stockStatus: null`, `preorderRequired: null`, empty strings and
+  empty arrays are the normal unknown state;
+- `stockStatus` can become `in-stock` or `out-of-stock` only with an exact HTTPS
+  `stockSourceUrl`; unknown stock remains visible without a stock claim;
 - any non-empty `allergens` array is invalid unless `allergenSourceUrl` is an
   exact HTTPS source URL;
 - only source/owner/permissioned photography can be persisted, and enhancement
@@ -47,6 +50,10 @@ The importer and owner-save schema enforce these rules:
 - English/French translations change text only. Product order, prices,
   currencies, image references, integration URLs and allergen evidence stay
   canonical.
+- Owner-added categories and products require a sourced canonical name before
+  they are created. Locale overlays temporarily reuse that nonblank source text,
+  remain `stale`, and cannot publish until the localized editor is completed and
+  explicitly marked reviewed. Imported/generated overlays default to `draft`.
 
 ## Structured data
 
@@ -56,8 +63,9 @@ Live pages emit Schema.org JSON-LD only on the analytics-enabled public surface:
 - `GroceryStore` for grocers;
 - `Store` plus a precise `category` for butchers, delis, cheesemongers and the
   safe generic type;
-- `OfferCatalog` / `Offer` / `Product` for available, actually stored catalog
-  entries;
+- `OfferCatalog` / `Offer` / `Product` for visible, actually stored catalog
+  entries, with Schema.org stock availability only when the status has source
+  evidence;
 - `OrderAction` only when a persisted ordering or delivery integration exists;
 - price and currency only when the source-backed price is non-null.
 

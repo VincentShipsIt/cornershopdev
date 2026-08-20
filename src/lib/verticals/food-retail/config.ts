@@ -84,6 +84,8 @@ export const foodRetailConfig = {
   },
   itemAttributesSchema: foodRetailItemAttributesSchema,
   itemAttributeDefaults: {
+    stockStatus: null,
+    stockSourceUrl: null,
     seasonalAvailability: "",
     preorderRequired: null,
     preorderNote: "",
@@ -115,6 +117,15 @@ export const foodRetailConfig = {
     itemBadges: (attributes, locale) => {
       const localeLanguage = language(locale);
       const badges: string[] = [];
+      if (attributes.stockSourceUrl && attributes.stockStatus === "in-stock") {
+        badges.push(localeLanguage === "fr" ? "En stock" : "In stock");
+      }
+      if (
+        attributes.stockSourceUrl &&
+        attributes.stockStatus === "out-of-stock"
+      ) {
+        badges.push(localeLanguage === "fr" ? "Rupture de stock" : "Out of stock");
+      }
       if (attributes.seasonalAvailability) {
         badges.push(attributes.seasonalAvailability);
       }

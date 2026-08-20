@@ -9,15 +9,18 @@ import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { Vertical } from "@/generated/prisma/enums";
 import { publicSiteOrigin } from "@/lib/domain-routing";
-import { getRestaurantDraft } from "@/lib/restaurants";
-import { sampleRestaurant } from "@/lib/restaurant";
+import {
+  sampleRestaurant,
+  toRestaurantDraft,
+  type RestaurantSiteDraft,
+} from "@/lib/restaurant";
 import { getSitePublicationHistory } from "@/lib/site-publication";
 import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
 import { FoodRetailDashboard } from "@/app/dashboard/food-retail-dashboard";
-import { findSiteDraft } from "@/lib/sites";
+import { findOwnerSiteDraft } from "@/lib/sites";
 import type { FoodRetailSiteDraft } from "@/lib/verticals/food-retail/schema";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -45,13 +48,14 @@ export default async function DashboardPage({
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
   if (access?.ok && access.site.vertical === Vertical.FOOD_RETAIL) {
-    const loaded = await findSiteDraft(access.site.slug);
+    const loaded = await findOwnerSiteDraft(access.site.slug);
     if (!loaded || loaded.vertical !== Vertical.FOOD_RETAIL) redirect("/sign-in");
     return (
       <FoodRetailDashboard
         email={access.user.email}
         brand={await resolveRequestBrand()}
         initialDraft={loaded.draft as FoodRetailSiteDraft}
+        initialRevision={loaded.draftRevision}
       />
     );
   }
@@ -68,7 +72,7 @@ export default async function DashboardPage({
   }
 
   const [
-    draft,
+    loadedOwnerDraft,
     analyticsSummary,
     bookingInbox,
     billingAccess,
@@ -77,7 +81,7 @@ export default async function DashboardPage({
     sourceMonitoring,
   ] = access?.ok
     ? await Promise.all([
-        getRestaurantDraft(access.site.slug),
+        findOwnerSiteDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
         getSiteBillingAccess(access.site.id),
@@ -86,7 +90,7 @@ export default async function DashboardPage({
         getSourceMonitoringDashboard(access.site.id),
       ])
     : [
-        sampleRestaurant,
+        null,
         buildEmptyAnalyticsSummary(),
         {
           requests: [],
@@ -109,6 +113,11 @@ export default async function DashboardPage({
         },
       ];
 
+  const draft =
+    loadedOwnerDraft?.vertical === Vertical.RESTAURANT
+      ? toRestaurantDraft(loadedOwnerDraft.draft as RestaurantSiteDraft)
+      : null;
+
   // A claimed restaurant without a loadable draft is a data integrity problem,
   // not a cue to invent sample content under the owner's real slug.
   if (access?.ok && !draft) {
@@ -118,6 +127,7 @@ export default async function DashboardPage({
   return (
     <Dashboard
       initialDraft={draft ?? sampleRestaurant}
+      initialRevision={access?.ok ? (loadedOwnerDraft?.draftRevision ?? null) : null}
       email={access?.ok ? access.user.email : "demo@cornershop.dev"}
       checkoutComplete={query.checkout === "success"}
       demo={!session}

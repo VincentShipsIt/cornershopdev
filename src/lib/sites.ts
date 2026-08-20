@@ -57,6 +57,16 @@ export type LoadedSite = {
 };
 
 /**
+ * Owner-only editable state. The revision is deliberately kept out of
+ * `LoadedSite` and `SiteView`, which are consumed by private previews and
+ * public renderers, so concurrency metadata cannot become part of a render
+ * payload by accident.
+ */
+export type LoadedOwnerSiteDraft = LoadedSite & {
+  draftRevision: number;
+};
+
+/**
  * What a page needs to render a site: the draft in its structural form plus the
  * vertical and pinned theme identity that own it.
  */
@@ -153,8 +163,9 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
 }
 
 /**
- * Loads only editable draft state. Private previews and owner dashboards use
- * this path; custom domains never do.
+ * Loads only editable draft state for private previews. Owner dashboards use
+ * `findOwnerSiteDraft` so they also receive a concurrency token; custom domains
+ * never use either mutable-draft path.
  */
 export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   if (!process.env.DATABASE_URL) return null;
@@ -165,6 +176,24 @@ export async function findSiteDraft(slug: string): Promise<LoadedSite | null> {
   });
 
   return site ? projectSiteDraft(site) : null;
+}
+
+/** Loads an editable draft plus its optimistic-concurrency token for owners. */
+export async function findOwnerSiteDraft(
+  slug: string,
+): Promise<LoadedOwnerSiteDraft | null> {
+  if (!process.env.DATABASE_URL) return null;
+
+  const site = await getDb().site.findUnique({
+    where: { slug },
+    include: siteDraftRelations,
+  });
+  if (!site) return null;
+
+  return {
+    ...projectSiteDraft(site),
+    draftRevision: site.draftRevision,
+  };
 }
 
 /**

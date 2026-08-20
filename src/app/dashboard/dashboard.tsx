@@ -91,6 +91,7 @@ type ClientPublicationHistoryItem = Omit<
  */
 export function Dashboard({
   initialDraft,
+  initialRevision,
   email,
   checkoutComplete,
   demo,
@@ -104,6 +105,7 @@ export function Dashboard({
   platformUrl,
 }: {
   initialDraft: RestaurantDraft;
+  initialRevision: number | null;
   email: string;
   checkoutComplete: boolean;
   demo: boolean;
@@ -119,7 +121,9 @@ export function Dashboard({
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [savedRevision, setSavedRevision] = useState<number | null>(null);
+  const [savedRevision, setSavedRevision] = useState<number | null>(
+    initialRevision,
+  );
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -228,9 +232,7 @@ export function Dashboard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...draft,
-            ...(savedRevision !== null
-              ? { expectedRevision: savedRevision }
-              : {}),
+            expectedRevision: savedRevision,
           }),
         });
         const result = (await response.json()) as {

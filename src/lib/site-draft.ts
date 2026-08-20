@@ -35,6 +35,7 @@ export type SiteCatalogItemView = {
   description: string;
   price: number | null;
   currency: string;
+  /** Storefront visibility, not a claim that a retail product is in stock. */
   available: boolean;
   imageUrl: string | null;
   attributes: Record<string, unknown>;

@@ -37,6 +37,7 @@ export const sampleFoodRetailDraft = foodRetailSiteDraftSchema.parse({
   translations: [
     {
       locale: "fr",
+      status: "current",
       eyebrow: "Boulangerie de quartier · La Valette",
       description:
         "Une petite boulangerie de quartier avec une gamme quotidienne de pains et des viennoiseries le week-end, à retirer en boutique.",
@@ -92,6 +93,9 @@ export const sampleFoodRetailDraft = foodRetailSiteDraftSchema.parse({
           available: true,
           imageUrl: null,
           attributes: {
+            stockStatus: "in-stock",
+            stockSourceUrl:
+              "https://example.com/maison-levain/daily-breads",
             seasonalAvailability: "",
             preorderRequired: null,
             preorderNote: "",
@@ -114,6 +118,8 @@ export const sampleFoodRetailDraft = foodRetailSiteDraftSchema.parse({
           available: true,
           imageUrl: null,
           attributes: {
+            stockStatus: null,
+            stockSourceUrl: null,
             seasonalAvailability: "Apricot season only",
             preorderRequired: true,
             preorderNote: "Order by Friday noon",

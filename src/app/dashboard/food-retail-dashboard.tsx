@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Plus, Save, Send, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Languages, Plus, Save, Send, Trash2 } from "lucide-react";
 import { AccountActions } from "@/components/account-actions";
 import { Brand } from "@/components/brand";
 import { SiteRenderer } from "@/components/site-renderer";
@@ -14,19 +14,30 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Vertical } from "@/generated/prisma/enums";
 import type { BrandIdentity } from "@/lib/brand";
+import {
+  appendFoodRetailCategoryTranslations,
+  appendFoodRetailIntegrationTranslations,
+  appendFoodRetailItemTranslations,
+  FOOD_RETAIL_NEW_LINK_LABEL,
+  markFoodRetailTranslationReviewed,
+  markFoodRetailTranslationsStale,
+  updateFoodRetailTranslation,
+} from "@/lib/verticals/food-retail/editor";
 import { foodRetailSiteDraftSchema, type FoodRetailSiteDraft } from "@/lib/verticals/food-retail/schema";
 
 export function FoodRetailDashboard({
   email,
   brand,
   initialDraft,
+  initialRevision,
 }: {
   email: string;
   brand: BrandIdentity;
   initialDraft: FoodRetailSiteDraft;
+  initialRevision: number;
 }) {
   const [draft, setDraft] = useState(initialDraft);
-  const [revision, setRevision] = useState<number | null>(null);
+  const [revision, setRevision] = useState(initialRevision);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -39,7 +50,7 @@ export function FoodRetailDashboard({
     setDraft((current) => {
       const next = structuredClone(current);
       update(next.catalogSections[sectionIndex]);
-      return next;
+      return markFoodRetailTranslationsStale(next);
     });
     setNotice(null);
   }
@@ -55,7 +66,7 @@ export function FoodRetailDashboard({
   }
 
   function removeSection(sectionIndex: number) {
-    setDraft((current) => ({
+    setDraft((current) => markFoodRetailTranslationsStale({
       ...current,
       catalogSections: current.catalogSections.filter(
         (_, index) => index !== sectionIndex,
@@ -70,19 +81,14 @@ export function FoodRetailDashboard({
   }
 
   function addSection() {
-    setDraft((current) => ({
+    const name = window.prompt("Enter the sourced category name:")?.trim();
+    if (!name) return;
+    setDraft((current) => appendFoodRetailCategoryTranslations({
       ...current,
       catalogSections: [
         ...current.catalogSections,
-        { name: "", description: "", items: [] },
+        { name, description: "", items: [] },
       ],
-      translations: current.translations.map((translation) => ({
-        ...translation,
-        catalogSections: [
-          ...translation.catalogSections,
-          { name: "", description: "", items: [] },
-        ],
-      })),
     }));
   }
 
@@ -93,21 +99,25 @@ export function FoodRetailDashboard({
       next.translations.forEach((translation) => {
         translation.catalogSections[sectionIndex]?.items.splice(itemIndex, 1);
       });
-      return next;
+      return markFoodRetailTranslationsStale(next);
     });
   }
 
   function addItem(sectionIndex: number) {
+    const name = window.prompt("Enter the sourced product name:")?.trim();
+    if (!name) return;
     setDraft((current) => {
       const next = structuredClone(current);
       next.catalogSections[sectionIndex].items.push({
-        name: "",
+        name,
         description: "",
         price: null,
         currency: "EUR",
         available: true,
         imageUrl: null,
         attributes: {
+          stockStatus: null,
+          stockSourceUrl: null,
           seasonalAvailability: "",
           preorderRequired: null,
           preorderNote: "",
@@ -115,44 +125,29 @@ export function FoodRetailDashboard({
           allergenSourceUrl: null,
         },
       });
-      next.translations.forEach((translation) => {
-        translation.catalogSections[sectionIndex]?.items.push({
-          name: "",
-          description: "",
-          attributes: {
-            seasonalAvailability: "",
-            preorderNote: "",
-            allergens: [],
-          },
-        });
-      });
-      return next;
+      return appendFoodRetailItemTranslations(next, sectionIndex);
     });
   }
 
   function addIntegration() {
-    setDraft((current) => ({
+    setDraft((current) => appendFoodRetailIntegrationTranslations({
       ...current,
       integrations: [
         ...current.integrations,
         {
           type: "ordering",
-          label: "",
+          label: FOOD_RETAIL_NEW_LINK_LABEL,
           provider: null,
           url: "",
           enabled: true,
           venueId: null,
         },
       ],
-      translations: current.translations.map((translation) => ({
-        ...translation,
-        integrationLabels: [...translation.integrationLabels, ""],
-      })),
     }));
   }
 
   function removeIntegration(integrationIndex: number) {
-    setDraft((current) => ({
+    setDraft((current) => markFoodRetailTranslationsStale({
       ...current,
       integrations: current.integrations.filter(
         (_, index) => index !== integrationIndex,
@@ -164,6 +159,27 @@ export function FoodRetailDashboard({
         ),
       })),
     }));
+  }
+
+  function changeTranslation(
+    locale: string,
+    updater: (
+      translation: FoodRetailSiteDraft["translations"][number],
+    ) => void,
+  ) {
+    setDraft((current) => updateFoodRetailTranslation(current, locale, updater));
+    setNotice(null);
+    setError(null);
+  }
+
+  function reviewTranslation(locale: string) {
+    try {
+      setDraft(markFoodRetailTranslationReviewed(draft, locale));
+      setNotice(`${locale.toUpperCase()} translation reviewed.`);
+      setError(null);
+    } catch {
+      setError("Complete every required translated name and label before review.");
+    }
   }
 
   async function saveDraft(): Promise<boolean> {
@@ -181,7 +197,7 @@ export function FoodRetailDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...parsed.data,
-          ...(revision === null ? {} : { expectedRevision: revision }),
+          expectedRevision: revision,
         }),
       });
       const result = (await response.json()) as {
@@ -189,8 +205,14 @@ export function FoodRetailDashboard({
         revision?: number;
       };
       if (!response.ok) throw new Error(result.error ?? "Save failed");
+      if (
+        typeof result.revision !== "number" ||
+        !Number.isInteger(result.revision)
+      ) {
+        throw new Error("Save response did not include a draft revision");
+      }
       setDraft(parsed.data);
-      setRevision(result.revision ?? null);
+      setRevision(result.revision);
       setNotice("Draft saved privately.");
       return true;
     } catch (caught) {
@@ -279,8 +301,8 @@ export function FoodRetailDashboard({
               </Field>
               <Field label="Address"><Input value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} /></Field>
               <Field label="Phone"><Input value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} /></Field>
-              <Field label="Pickup details" className="sm:col-span-2"><Textarea value={draft.attributes.pickupDetails} onChange={(event) => setDraft({ ...draft, attributes: { ...draft.attributes, pickupDetails: event.target.value } })} /></Field>
-              <Field label="Description" className="sm:col-span-2"><Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></Field>
+              <Field label="Pickup details" className="sm:col-span-2"><Textarea value={draft.attributes.pickupDetails} onChange={(event) => setDraft((current) => markFoodRetailTranslationsStale({ ...current, attributes: { ...current.attributes, pickupDetails: event.target.value } }))} /></Field>
+              <Field label="Description" className="sm:col-span-2"><Textarea value={draft.description} onChange={(event) => setDraft((current) => markFoodRetailTranslationsStale({ ...current, description: event.target.value }))} /></Field>
               <div className="flex items-center justify-between gap-4 sm:col-span-2">
                 <div><Label htmlFor="show-product-images">Show product gallery</Label><p className="text-xs text-muted-foreground">Only source or owner-approved images are rendered.</p></div>
                 <Switch id="show-product-images" checked={draft.attributes.showProductImages} onCheckedChange={(checked) => setDraft({ ...draft, attributes: { ...draft.attributes, showProductImages: checked } })} />
@@ -306,7 +328,8 @@ export function FoodRetailDashboard({
                   <div key={itemIndex} className="space-y-3 rounded-xl border p-4">
                     <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]"><Input aria-label={`Product ${itemIndex + 1} name`} placeholder="Product name" value={item.name} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.name = event.target.value; })} /><Input aria-label={`Product ${itemIndex + 1} price`} type="number" min="0" step="0.01" placeholder="No price" value={item.price ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.price = event.target.value === "" ? null : Number(event.target.value); })} /><Button size="icon-sm" variant="ghost" aria-label={`Remove product ${itemIndex + 1}`} onClick={() => removeItem(sectionIndex, itemIndex)}><Trash2 /></Button></div>
                     <Textarea aria-label={`Product ${itemIndex + 1} description`} placeholder="Sourced product description" value={item.description} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.description = event.target.value; })} />
-                    <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/55 px-3 py-2"><div><Label htmlFor={`available-${sectionIndex}-${itemIndex}`}>Show as currently available</Label><p className="text-xs text-muted-foreground">Turn this off only when the source or owner confirms it.</p></div><Switch id={`available-${sectionIndex}-${itemIndex}`} checked={item.available} onCheckedChange={(checked) => updateItem(sectionIndex, itemIndex, (next) => { next.available = checked; })} /></div>
+                    <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/55 px-3 py-2"><div><Label htmlFor={`available-${sectionIndex}-${itemIndex}`}>Show product on storefront</Label><p className="text-xs text-muted-foreground">This controls catalog visibility, not current stock.</p></div><Switch id={`available-${sectionIndex}-${itemIndex}`} checked={item.available} onCheckedChange={(checked) => updateItem(sectionIndex, itemIndex, (next) => { next.available = checked; })} /></div>
+                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]"><select aria-label={`Product ${itemIndex + 1} stock status`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.attributes.stockStatus ?? "unknown"} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.stockStatus = event.target.value === "unknown" ? null : event.target.value as NonNullable<typeof next.attributes.stockStatus>; if (next.attributes.stockStatus === null) next.attributes.stockSourceUrl = null; })}><option value="unknown">Stock unknown</option><option value="in-stock">In stock (sourced)</option><option value="out-of-stock">Out of stock (sourced)</option></select><Input aria-label={`Product ${itemIndex + 1} stock source`} type="url" placeholder="Required source URL for a stock claim" value={item.attributes.stockSourceUrl ?? ""} disabled={item.attributes.stockStatus === null} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.stockSourceUrl = event.target.value || null; })} /></div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_150px_1fr]"><Input aria-label={`Product ${itemIndex + 1} seasonal availability`} placeholder="Seasonal availability (only if sourced)" value={item.attributes.seasonalAvailability} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.seasonalAvailability = event.target.value; })} /><select aria-label={`Product ${itemIndex + 1} preorder requirement`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.attributes.preorderRequired === null ? "unknown" : item.attributes.preorderRequired ? "required" : "not-required"} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.preorderRequired = event.target.value === "unknown" ? null : event.target.value === "required"; })}><option value="unknown">Preorder unknown</option><option value="required">Preorder required</option><option value="not-required">No preorder required</option></select><Input aria-label={`Product ${itemIndex + 1} preorder note`} placeholder="Preorder note (only if sourced)" value={item.attributes.preorderNote} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.preorderNote = event.target.value; })} /></div>
                     <div className="grid gap-3 sm:grid-cols-2"><Input aria-label={`Product ${itemIndex + 1} allergens`} placeholder="Allergens, comma separated" value={item.attributes.allergens.join(", ")} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.allergens = event.target.value.split(",").map((value) => value.trim()).filter(Boolean); })} /><Input aria-label={`Product ${itemIndex + 1} allergen source`} type="url" placeholder="Required source URL for allergens" value={item.attributes.allergenSourceUrl ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.attributes.allergenSourceUrl = event.target.value || null; })} /></div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_180px]"><Input aria-label={`Product ${itemIndex + 1} image`} type="url" placeholder="Approved product image URL" value={item.imageUrl ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.imageUrl = event.target.value || null; if (!next.imageUrl) next.imageProvenance = null; })} /><select aria-label={`Product ${itemIndex + 1} image provenance`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={item.imageProvenance ?? ""} onChange={(event) => updateItem(sectionIndex, itemIndex, (next) => { next.imageProvenance = (event.target.value || null) as "official" | "owner" | "permissioned-ugc" | null; })}><option value="">Choose image source</option><option value="official">Official source</option><option value="owner">Owner supplied</option><option value="permissioned-ugc">Permissioned UGC</option></select></div>
@@ -324,10 +347,68 @@ export function FoodRetailDashboard({
             <CardContent className="space-y-3">
               {draft.integrations.filter((integration) => integration.type !== "social").map((integration) => {
                 const integrationIndex = draft.integrations.indexOf(integration);
-                return <div key={integrationIndex} className="grid gap-2 rounded-xl border p-3 sm:grid-cols-[130px_1fr_1.4fr_auto]"><select aria-label={`Link ${integrationIndex + 1} type`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={integration.type} onChange={(event) => setDraft({ ...draft, integrations: draft.integrations.map((candidate, index) => index === integrationIndex ? { ...candidate, type: event.target.value as "ordering" | "delivery" } : candidate) })}><option value="ordering">Preorder</option><option value="delivery">Delivery</option></select><Input aria-label={`Link ${integrationIndex + 1} label`} placeholder="Order for pickup" value={integration.label} onChange={(event) => setDraft({ ...draft, integrations: draft.integrations.map((candidate, index) => index === integrationIndex ? { ...candidate, label: event.target.value } : candidate) })} /><Input aria-label={`Link ${integrationIndex + 1} URL`} type="url" placeholder="https://…" value={integration.url} onChange={(event) => setDraft({ ...draft, integrations: draft.integrations.map((candidate, index) => index === integrationIndex ? { ...candidate, url: event.target.value } : candidate) })} /><Button size="icon-sm" variant="ghost" aria-label={`Remove link ${integrationIndex + 1}`} onClick={() => removeIntegration(integrationIndex)}><Trash2 /></Button></div>;
+                return <div key={integrationIndex} className="grid gap-2 rounded-xl border p-3 sm:grid-cols-[130px_1fr_1.4fr_auto]"><select aria-label={`Link ${integrationIndex + 1} type`} className="h-9 rounded-lg border bg-background px-2 text-sm" value={integration.type} onChange={(event) => setDraft({ ...draft, integrations: draft.integrations.map((candidate, index) => index === integrationIndex ? { ...candidate, type: event.target.value as "ordering" | "delivery" } : candidate) })}><option value="ordering">Preorder</option><option value="delivery">Delivery</option></select><Input aria-label={`Link ${integrationIndex + 1} label`} placeholder="Order for pickup" value={integration.label} onChange={(event) => setDraft((current) => markFoodRetailTranslationsStale({ ...current, integrations: current.integrations.map((candidate, index) => index === integrationIndex ? { ...candidate, label: event.target.value } : candidate) }))} /><Input aria-label={`Link ${integrationIndex + 1} URL`} type="url" placeholder="https://…" value={integration.url} onChange={(event) => setDraft({ ...draft, integrations: draft.integrations.map((candidate, index) => index === integrationIndex ? { ...candidate, url: event.target.value } : candidate) })} /><Button size="icon-sm" variant="ghost" aria-label={`Remove link ${integrationIndex + 1}`} onClick={() => removeIntegration(integrationIndex)}><Trash2 /></Button></div>;
               })}
             </CardContent>
           </Card>
+
+          {draft.translations.map((translation) => (
+            <Card key={translation.locale}>
+              <CardHeader className="flex-row items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Languages className="size-4" />
+                    <CardTitle>{translation.locale.toUpperCase()} localized copy</CardTitle>
+                  </div>
+                  <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+                    New entries temporarily reuse the canonical source wording so the private draft stays saveable without inventing a translation. Translate the wording below, then review it before publishing. Prices, stock, links and source evidence stay canonical.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border px-2 py-1 text-xs capitalize">{translation.status}</span>
+                  <Button size="sm" disabled={translation.status === "current"} onClick={() => reviewTranslation(translation.locale)}><Check /> Mark reviewed</Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Eyebrow"><Input aria-label={`${translation.locale} eyebrow`} value={translation.eyebrow} onChange={(event) => changeTranslation(translation.locale, (next) => { next.eyebrow = event.target.value; })} /></Field>
+                  <Field label="Pickup details"><Input aria-label={`${translation.locale} pickup details`} value={translation.attributes.pickupDetails} onChange={(event) => changeTranslation(translation.locale, (next) => { next.attributes.pickupDetails = event.target.value; })} /></Field>
+                  <Field label="Description" className="sm:col-span-2"><Textarea aria-label={`${translation.locale} description`} value={translation.description} onChange={(event) => changeTranslation(translation.locale, (next) => { next.description = event.target.value; })} /></Field>
+                </div>
+
+                {translation.catalogSections.map((translatedSection, sectionIndex) => (
+                  <div key={sectionIndex} className="space-y-3 rounded-xl border p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Category {sectionIndex + 1}</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Input aria-label={`${translation.locale} category ${sectionIndex + 1} name`} value={translatedSection.name} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].name = event.target.value; })} />
+                      <Input aria-label={`${translation.locale} category ${sectionIndex + 1} description`} placeholder="Localized category description" value={translatedSection.description} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].description = event.target.value; })} />
+                    </div>
+                    {translatedSection.items.map((translatedItem, itemIndex) => (
+                      <div key={itemIndex} className="grid gap-3 rounded-lg bg-muted/45 p-3 sm:grid-cols-2">
+                        <Input aria-label={`${translation.locale} product ${itemIndex + 1} name`} value={translatedItem.name} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].name = event.target.value; })} />
+                        <Input aria-label={`${translation.locale} product ${itemIndex + 1} description`} placeholder="Localized product description" value={translatedItem.description} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].description = event.target.value; })} />
+                        <Input aria-label={`${translation.locale} product ${itemIndex + 1} seasonal availability`} placeholder="Localized sourced seasonal wording" value={translatedItem.attributes.seasonalAvailability} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.seasonalAvailability = event.target.value; })} />
+                        <Input aria-label={`${translation.locale} product ${itemIndex + 1} preorder note`} placeholder="Localized sourced preorder note" value={translatedItem.attributes.preorderNote} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.preorderNote = event.target.value; })} />
+                        {translatedItem.attributes.allergens.map((allergen, allergenIndex) => (
+                          <Input key={allergenIndex} aria-label={`${translation.locale} product ${itemIndex + 1} allergen ${allergenIndex + 1}`} value={allergen} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.allergens[allergenIndex] = event.target.value; })} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+
+                {translation.integrationLabels.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {translation.integrationLabels.map((label, integrationIndex) => (
+                      <Field key={integrationIndex} label={`Link ${integrationIndex + 1} label`}>
+                        <Input aria-label={`${translation.locale} link ${integrationIndex + 1} label`} value={label} onChange={(event) => changeTranslation(translation.locale, (next) => { next.integrationLabels[integrationIndex] = event.target.value; })} />
+                      </Field>
+                    ))}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
         <div className="xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)]">

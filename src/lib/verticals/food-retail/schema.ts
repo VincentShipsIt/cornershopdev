@@ -30,6 +30,14 @@ export const foodRetailAttributesSchema = z.object({
 
 export const foodRetailItemAttributesSchema = z
   .object({
+    /**
+     * Product inclusion is controlled by the shared `available` field. Stock is
+     * a separate, evidence-backed retail fact: unknown is deliberately the
+     * default because a product appearing in a range does not prove it is in
+     * stock today.
+     */
+    stockStatus: z.enum(["in-stock", "out-of-stock"]).nullable().default(null),
+    stockSourceUrl: safeExternalHttpsUrlSchema.nullable().default(null),
     /** Free text preserves source wording such as “weekends only”. */
     seasonalAvailability: z.string().max(120).default(""),
     /** Null means the source said nothing about preorder requirements. */
@@ -40,6 +48,13 @@ export const foodRetailItemAttributesSchema = z
     allergenSourceUrl: safeExternalHttpsUrlSchema.nullable().default(null),
   })
   .superRefine((attributes, context) => {
+    if (attributes.stockStatus !== null && !attributes.stockSourceUrl) {
+      context.addIssue({
+        code: "custom",
+        path: ["stockSourceUrl"],
+        message: "Stock availability claims require a source URL",
+      });
+    }
     if (attributes.allergens.length > 0 && !attributes.allergenSourceUrl) {
       context.addIssue({
         code: "custom",
@@ -55,6 +70,12 @@ const translatedFoodRetailItemAttributesSchema = z.object({
   allergens: z.array(z.string().trim().min(1).max(40)).max(14).default([]),
 });
 
+export const foodRetailTranslationStatusSchema = z.enum([
+  "current",
+  "stale",
+  "draft",
+]);
+
 const foodRetailIntegrationSchema = integrationSchema.superRefine(
   (integration, context) => {
     if (integration.type === "booking") {
@@ -68,6 +89,9 @@ const foodRetailIntegrationSchema = integrationSchema.superRefine(
 );
 
 const foodRetailSiteTranslationSchema = baseSiteTranslationSchema.extend({
+  // Imported/generated locale copy has not been owner-reviewed merely because
+  // it parsed successfully. Fixtures and reviewed owner edits opt into current.
+  status: foodRetailTranslationStatusSchema.default("draft"),
   attributes: foodRetailAttributesSchema.pick({ pickupDetails: true }),
   catalogSections: z.array(
     translatedCatalogSectionSchema.extend({

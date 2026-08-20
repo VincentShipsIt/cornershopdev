@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
+import { hasUnreviewedFoodRetailTranslations } from "@/lib/verticals/food-retail/editor";
 import { previewCacheTagFor } from "@/lib/site-surface";
 import {
   projectPublishedSiteVersion,
@@ -105,16 +106,17 @@ export async function publishSiteDraft(
           // here before any write means validation failure cannot create a
           // version, move the pointer, change status, or write an audit row.
           const loaded = projectSiteDraft(site);
-          if (
-            loaded.vertical === Vertical.RESTAURANT &&
-            hasUnreviewedRestaurantTranslations(
-              loaded.draft as {
-                translations: Array<{
-                  status: "current" | "stale" | "draft";
-                }>;
-              },
-            )
-          ) {
+          const reviewableDraft = loaded.draft as {
+            translations: Array<{
+              status: "current" | "stale" | "draft";
+            }>;
+          };
+          const hasUnreviewedTranslations =
+            (loaded.vertical === Vertical.RESTAURANT &&
+              hasUnreviewedRestaurantTranslations(reviewableDraft)) ||
+            (loaded.vertical === Vertical.FOOD_RETAIL &&
+              hasUnreviewedFoodRetailTranslations(reviewableDraft));
+          if (hasUnreviewedTranslations) {
             throw new SitePublicationTranslationError();
           }
           const draft = loaded.draft as Prisma.InputJsonValue;
