@@ -63,7 +63,12 @@ jobs:
       - run: bun run lint
       - run: bun run design:lint
       - run: bun run build
-      - run: bun run lighthouse
+      # These static-route audits do not exercise workflows. Keep the server on
+      # the local world instead of inheriting the job's Postgres test backend.
+      - name: Lighthouse budgets
+        env:
+          WORKFLOW_TARGET_WORLD: "local"
+        run: bun run lighthouse
       - name: Show Lighthouse server log
         if: failure()
         run: cat .next/lighthouse-server.log || true
