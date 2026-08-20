@@ -4,6 +4,15 @@ export function evidenceDigest(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
+/**
+ * Compares JSON values after recursively canonicalizing object keys. PostgreSQL
+ * jsonb does not preserve insertion order, so persistence boundaries must not
+ * use raw JSON.stringify output as an equality contract.
+ */
+export function sameJsonValue(left: unknown, right: unknown): boolean {
+  return stableJson(left) === stableJson(right);
+}
+
 export function integrationUrlDigest(
   integrations: Array<{
     type: string;

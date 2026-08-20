@@ -8,6 +8,7 @@ import type {
 import { z } from "zod";
 import { configuredSuperadminEmails } from "@/lib/superadmin-config";
 import { getDb } from "@/lib/db";
+import { sameJsonValue } from "@/lib/evidence-digests";
 import {
   inspectPublicLink,
 } from "@/lib/importer";
@@ -576,7 +577,7 @@ export async function reviewSourceMonitoringSuggestion(input: {
         currentDraft,
         suggestion.field,
       );
-      if (!sameJson(currentValue, suggestion.currentValue)) {
+      if (!sameJsonValue(currentValue, suggestion.currentValue)) {
         throw new SourceMonitoringConflictError();
       }
       const proposedValue = parseSuggestionValue(
@@ -879,10 +880,6 @@ function safeMonitoringErrorCode(error: unknown) {
   }
   if (error instanceof z.ZodError) return "SOURCE_PARSE_FAILED";
   return "MONITORING_FAILED";
-}
-
-function sameJson(left: unknown, right: unknown) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function sourceMonitoringEmailHtml(input: {

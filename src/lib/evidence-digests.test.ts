@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   evidenceDigest,
   integrationUrlDigest,
+  sameJsonValue,
 } from "@/lib/evidence-digests";
 
 describe("redacted evidence digests", () => {
@@ -12,6 +13,21 @@ describe("redacted evidence digests", () => {
     expect(evidenceDigest({ value: "before" })).not.toBe(
       evidenceDigest({ value: "after" }),
     );
+  });
+
+  it("compares persisted JSON objects independently of jsonb key ordering", () => {
+    expect(
+      sameJsonValue(
+        { address: "Old address", phone: "1111" },
+        { phone: "1111", address: "Old address" },
+      ),
+    ).toBe(true);
+    expect(
+      sameJsonValue(
+        { address: "Old address", phone: "1111" },
+        { phone: "2222", address: "Old address" },
+      ),
+    ).toBe(false);
   });
 
   it("proves integration destinations without exposing them", () => {
