@@ -76,9 +76,15 @@ describe("invitation-bound site claim", () => {
     const replay = await claimSite(tx, completedCheckout());
 
     expect(replay).toEqual(first);
-    expect(state.sites[0].status).toBe("LIVE");
+    expect(state.sites[0].status).toBe("CLAIMED");
     expect(state.organizations).toHaveLength(1);
-    expect(state.auditEvents).toHaveLength(1);
+    expect(state.auditEvents).toHaveLength(2);
+    expect(state.auditEvents).toContainEqual(
+      expect.objectContaining({
+        type: "billing.site.restored",
+        siteId: "site_1",
+      }),
+    );
   });
 
   it("rejects cross-site, cross-email and cross-session use", async () => {
@@ -313,6 +319,7 @@ function completedCheckout(
     currentPeriodEnd: new Date("2026-08-26T00:00:00.000Z"),
     cancelAtPeriodEnd: false,
     stripeEventCreatedAt: new Date("2026-07-26T00:00:00.000Z"),
+    stripeEventId: "evt_checkout_1",
     ...overrides,
   };
 }
@@ -322,6 +329,7 @@ type SiteRow = {
   slug: string;
   status: string;
   organizationId: string | null;
+  publishedSiteVersionId: string | null;
 };
 
 type InvitationRow = {
@@ -354,6 +362,7 @@ function site(overrides: Partial<SiteRow> = {}): SiteRow {
     slug: "chez-lea",
     status: "PREVIEW_READY",
     organizationId: null,
+    publishedSiteVersionId: null,
     ...overrides,
   };
 }
@@ -493,6 +502,24 @@ function fixture(
       },
     },
     site: {
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        const row = state.sites.find((item) => item.id === where.id);
+        return row
+          ? { ...row, publishedSiteVersion: null }
+          : null;
+      },
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<SiteRow>;
+      }) => {
+        const row = state.sites.find((item) => item.id === where.id);
+        if (!row) throw new Error("Site not found");
+        Object.assign(row, data);
+        return row;
+      },
       updateMany: async ({
         where,
         data,
@@ -504,6 +531,9 @@ function fixture(
         for (const row of rows) Object.assign(row, data);
         return { count: rows.length };
       },
+    },
+    domain: {
+      count: async () => 0,
     },
     subscription: {
       findUnique: async ({

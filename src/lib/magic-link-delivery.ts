@@ -272,42 +272,12 @@ export async function finalizeMagicLinkDelivery(
     const usable =
       finalized.deliveryStatus === "SENT" ||
       finalized.deliveryStatus === "DELIVERED";
-
-    if (usable) {
-      const activated = await tx.user.updateMany({
-        where: {
-          id: link.userId,
-          authLinkActiveGeneration: { lt: input.rotationGeneration },
-        },
-        data: { authLinkActiveGeneration: input.rotationGeneration },
-      });
-      const active = await tx.user.findUniqueOrThrow({
-        where: { id: link.userId },
-        select: { authLinkActiveGeneration: true },
-      });
-      if (
-        activated.count === 1 ||
-        active.authLinkActiveGeneration === input.rotationGeneration
-      ) {
-        await revokeMagicLinks(tx, {
-          userId: link.userId,
-          generation: { lt: input.rotationGeneration },
-          now,
-        });
-      } else if (active.authLinkActiveGeneration > input.rotationGeneration) {
-        await revokeMagicLinks(tx, {
-          userId: link.userId,
-          generation: { equals: input.rotationGeneration },
-          now,
-        });
-      }
-    } else {
-      await revokeMagicLinks(tx, {
-        userId: link.userId,
-        generation: { equals: input.rotationGeneration },
-        now,
-      });
-    }
+    await reconcileMagicLinkActivation(tx, {
+      userId: link.userId,
+      rotationGeneration: input.rotationGeneration,
+      usable,
+      now,
+    });
 
     await tx.authEvent.create({
       data: {
@@ -322,6 +292,52 @@ export async function finalizeMagicLinkDelivery(
         },
       },
     });
+  });
+}
+
+export async function reconcileMagicLinkActivation(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    rotationGeneration: number;
+    usable: boolean;
+    now: Date;
+  },
+): Promise<void> {
+  if (input.usable) {
+    const activated = await tx.user.updateMany({
+      where: {
+        id: input.userId,
+        authLinkActiveGeneration: { lt: input.rotationGeneration },
+      },
+      data: { authLinkActiveGeneration: input.rotationGeneration },
+    });
+    const active = await tx.user.findUniqueOrThrow({
+      where: { id: input.userId },
+      select: { authLinkActiveGeneration: true },
+    });
+    if (
+      activated.count === 1 ||
+      active.authLinkActiveGeneration === input.rotationGeneration
+    ) {
+      await revokeMagicLinks(tx, {
+        userId: input.userId,
+        generation: { lt: input.rotationGeneration },
+        now: input.now,
+      });
+    } else if (active.authLinkActiveGeneration > input.rotationGeneration) {
+      await revokeMagicLinks(tx, {
+        userId: input.userId,
+        generation: { equals: input.rotationGeneration },
+        now: input.now,
+      });
+    }
+    return;
+  }
+  await revokeMagicLinks(tx, {
+    userId: input.userId,
+    generation: { equals: input.rotationGeneration },
+    now: input.now,
   });
 }
 

@@ -697,6 +697,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
   });
 
   test("preserves an owner theme through save, reload, locale, publish and rollback", async () => {
+    await db.domain.deleteMany({ where: { siteId } });
     const fixture = restaurantThemeFixtures["counter-service"];
     const ownerSelection = selectOwnerRestaurantTheme(
       fixture.profile,
@@ -815,6 +816,35 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       nextSelection,
     );
     expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: { status: true },
+      }),
+    ).toEqual({ status: "CLAIMED" });
+
+    await db.domain.create({
+      data: {
+        hostname: `${randomUUID()}.example.test`,
+        siteId,
+        verificationToken: randomUUID(),
+        verified: true,
+        verifiedAt: new Date(),
+      },
+    });
+    await rollbackPublishedSiteVersion({
+      siteId,
+      slug,
+      vertical: Vertical.RESTAURANT,
+      targetSiteVersionId: ownerPublished.id,
+      actor,
+    });
+    expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: { status: true },
+      }),
+    ).toEqual({ status: "LIVE" });
+    expect(
       await db.auditEvent.count({
         where: {
           siteId,
@@ -822,6 +852,6 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
           actor: actor.id,
         },
       }),
-    ).toBe(1);
+    ).toBe(2);
   });
 });

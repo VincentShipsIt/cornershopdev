@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { SiteStatus } from "@/generated/prisma/enums";
 import { normalizeAccountEmail } from "@/lib/account-email";
+import { reconcileSiteSubscriptionLifecycle } from "@/lib/subscription-site-lifecycle";
 
 export const CLAIMABLE_STATUSES: SiteStatus[] = [
   SiteStatus.PROSPECT,
@@ -55,6 +56,7 @@ export type CompletedCheckout = {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   stripeEventCreatedAt: Date;
+  stripeEventId: string;
 };
 
 export type ClaimedSiteAccess = {
@@ -244,16 +246,22 @@ async function upsertSubscription(
 ): Promise<void> {
   const existing = await tx.subscription.findUnique({
     where: { siteId },
-    select: { lastStripeEventAt: true },
+    select: { lastStripeEventAt: true, status: true },
   });
+  let effectiveStatus = existing?.status ?? checkout.subscriptionStatus;
   if (
     existing?.lastStripeEventAt &&
     existing.lastStripeEventAt > checkout.stripeEventCreatedAt
   ) {
+    await reconcileSiteSubscriptionLifecycle(tx, {
+      siteId,
+      subscriptionStatus: effectiveStatus,
+      stripeEventId: checkout.stripeEventId,
+    });
     return;
   }
 
-  await tx.subscription.upsert({
+  const stored = await tx.subscription.upsert({
     where: { siteId },
     update: {
       stripeCustomerId: checkout.stripeCustomerId,
@@ -276,5 +284,12 @@ async function upsertSubscription(
       siteId,
       organizationId,
     },
+    select: { status: true },
+  });
+  effectiveStatus = stored.status;
+  await reconcileSiteSubscriptionLifecycle(tx, {
+    siteId,
+    subscriptionStatus: effectiveStatus,
+    stripeEventId: checkout.stripeEventId,
   });
 }

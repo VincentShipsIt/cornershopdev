@@ -6,12 +6,20 @@ import {
 } from "@/lib/source-monitoring";
 import { getSourceMonitoringAccess } from "@/lib/source-monitoring-access";
 import { isSameOriginMutation } from "@/lib/request-origin";
+import { DraftRevisionConflictError } from "@/lib/site-persistence";
 
-const reviewSchema = z.object({
-  action: z.enum(["accept", "reject"]),
-  editedValue: z.unknown().optional(),
-  note: z.string().trim().max(500).optional(),
-});
+const reviewSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("accept"),
+    editedValue: z.unknown().optional(),
+    note: z.string().trim().max(500).optional(),
+    expectedRevision: z.number().int().min(0),
+  }),
+  z.object({
+    action: z.literal("reject"),
+    note: z.string().trim().max(500).optional(),
+  }),
+]);
 
 export async function PATCH(
   request: Request,
@@ -41,6 +49,16 @@ export async function PATCH(
     });
     return Response.json(result);
   } catch (error) {
+    if (error instanceof DraftRevisionConflictError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: "DRAFT_REVISION_CONFLICT",
+          currentRevision: error.currentRevision,
+        },
+        { status: 409 },
+      );
+    }
     if (error instanceof SourceMonitoringConflictError) {
       return Response.json({ error: error.message }, { status: 409 });
     }

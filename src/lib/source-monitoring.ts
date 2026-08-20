@@ -23,6 +23,7 @@ import {
   nextMonitoringTime,
 } from "@/lib/source-monitoring-plan";
 import {
+  DraftRevisionConflictError,
   type PersistableSiteDraft,
 } from "@/lib/site-persistence";
 import {
@@ -519,7 +520,11 @@ export async function reviewSourceMonitoringSuggestion(input: {
   action: "accept" | "reject";
   editedValue?: unknown;
   note?: string;
-}): Promise<{ status: "ACCEPTED" | "REJECTED" }> {
+  expectedRevision?: number;
+}): Promise<{
+  status: "ACCEPTED" | "REJECTED";
+  revision?: number;
+}> {
   const db = getDb();
   return db.$transaction(
     async (transaction) => {
@@ -557,6 +562,12 @@ export async function reviewSourceMonitoringSuggestion(input: {
         include: siteDraftRelations,
       });
       if (!site) throw new Error("Site not found");
+      if (
+        input.expectedRevision === undefined ||
+        site.draftRevision !== input.expectedRevision
+      ) {
+        throw new DraftRevisionConflictError(site.draftRevision);
+      }
       const loaded = projectSiteDraft(site);
       const currentDraft = loaded.draft as PersistableSiteDraft;
       const currentValue = monitoringFieldValue(
@@ -572,7 +583,7 @@ export async function reviewSourceMonitoringSuggestion(input: {
         currentDraft,
         site.vertical,
       );
-      await applySuggestionValue(
+      const revision = await applySuggestionValue(
         transaction,
         site.id,
         site.vertical,
@@ -599,7 +610,7 @@ export async function reviewSourceMonitoringSuggestion(input: {
         "ACCEPTED",
         input.editedValue !== undefined,
       );
-      return { status: "ACCEPTED" };
+      return { status: "ACCEPTED", revision };
     },
     { isolationLevel: "Serializable" },
   );
@@ -712,30 +723,37 @@ async function applySuggestionValue(
   vertical: Vertical,
   field: SourceMonitorSuggestionField,
   value: unknown,
-) {
+): Promise<number> {
   if (field === "CONTACT") {
     const contact = contactSchema.parse(value);
-    await transaction.site.update({
+    const updated = await transaction.site.update({
       where: { id: siteId },
-      data: contact,
+      data: { ...contact, draftRevision: { increment: 1 } },
+      select: { draftRevision: true },
     });
-    return;
+    return updated.draftRevision;
   }
   if (field === "HOURS") {
-    await transaction.site.update({
+    const updated = await transaction.site.update({
       where: { id: siteId },
       data: {
         businessHours: businessHoursSchema.parse(value) as Prisma.InputJsonValue,
+        draftRevision: { increment: 1 },
       },
+      select: { draftRevision: true },
     });
-    return;
+    return updated.draftRevision;
   }
   if (field === "LINKS") {
     const { integrations: links, translations } =
       linksSuggestionSchema.parse(value);
-    await transaction.site.update({
+    const updated = await transaction.site.update({
       where: { id: siteId },
-      data: { translations: translations as Prisma.InputJsonValue },
+      data: {
+        translations: translations as Prisma.InputJsonValue,
+        draftRevision: { increment: 1 },
+      },
+      select: { draftRevision: true },
     });
     await transaction.integration.deleteMany({ where: { siteId } });
     await transaction.integration.createMany({
@@ -749,15 +767,19 @@ async function applySuggestionValue(
         position,
       })),
     });
-    return;
+    return updated.draftRevision;
   }
 
   const config = resolveVerticalConfig(vertical);
   const { catalogSections: sections, translations } =
     menuSuggestionSchema.parse(value);
-  await transaction.site.update({
+  const updated = await transaction.site.update({
     where: { id: siteId },
-    data: { translations: translations as Prisma.InputJsonValue },
+    data: {
+      translations: translations as Prisma.InputJsonValue,
+      draftRevision: { increment: 1 },
+    },
+    select: { draftRevision: true },
   });
   await transaction.catalogSection.deleteMany({ where: { siteId } });
   for (const [position, section] of sections.entries()) {
@@ -785,6 +807,7 @@ async function applySuggestionValue(
       },
     });
   }
+  return updated.draftRevision;
 }
 
 function integrationType(value: string): IntegrationType {

@@ -56,7 +56,9 @@ function deliveryFixture() {
   const state = {
     link: {
       id: "link_1",
+      userId: "user_1",
       tokenHash: "token_hash_1",
+      rotationGeneration: 1,
       providerMessageId: "resend_1" as string | null,
       providerEventAt: null as Date | null,
       deliveryStatus: "SENT" as
@@ -79,12 +81,14 @@ function deliveryFixture() {
       occurredAt: Date;
     }>,
     verifications: ["token_hash_1"],
+    activeGeneration: 0,
   };
   const tx = {
     authMagicLink: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         where.id === state.link.id ? state.link : null,
       findFirst: async () => state.link,
+      findMany: async () => [],
       updateMany: async (input: {
         where: {
           deliveryStatus?: { in: string[] };
@@ -104,6 +108,15 @@ function deliveryFixture() {
         Object.assign(state.link, input.data);
         return { count: 1 };
       },
+    },
+    user: {
+      updateMany: async () => {
+        state.activeGeneration = 1;
+        return { count: 1 };
+      },
+      findUniqueOrThrow: async () => ({
+        authLinkActiveGeneration: state.activeGeneration,
+      }),
     },
     authProviderEvent: {
       upsert: async (input: {

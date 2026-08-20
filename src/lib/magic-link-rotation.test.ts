@@ -11,6 +11,35 @@ const { recordResendAuthEvent } = await import(
 );
 
 describe("monotonic magic-link rotation", () => {
+  it("makes a webhook-delivered link usable when the request process exits before finalization", async () => {
+    const fixture = rotationFixture({
+      activeGeneration: 1,
+      links: [link(1, "SENT", "message_1"), link(2, "PENDING")],
+    });
+
+    expect(
+      await recordResendAuthEvent(
+        {
+          eventId: "event_webhook_only_2",
+          eventType: "email.delivered",
+          occurredAt: new Date("2026-08-20T15:59:00.000Z"),
+          providerMessageId: "message_2",
+          taggedAuthMagicLinkId: "link_2",
+        },
+        fixture.db,
+      ),
+    ).toEqual({ handled: true, updated: 1 });
+
+    expect(fixture.state.activeGeneration).toBe(2);
+    expect(fixture.link(2)).toMatchObject({
+      deliveryStatus: "DELIVERED",
+      revokedAt: null,
+      providerMessageId: "message_2",
+    });
+    expect(fixture.link(1).revokedAt).toBeInstanceOf(Date);
+    expect(fixture.state.verifications).toEqual(["token_hash_2"]);
+  });
+
   it("keeps a webhook-delivered replacement monotonic and revokes every older link", async () => {
     const fixture = rotationFixture({
       activeGeneration: 1,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -71,6 +71,7 @@ import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
+  reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
   validateRestaurantMenuDraft,
   type RestaurantMenuMutation,
@@ -118,7 +119,18 @@ export function Dashboard({
   sourceMonitoring: SourceMonitoringDashboardDto;
   platformUrl: string;
 }) {
-  const [draft, setDraft] = useState(initialDraft);
+  const [draft, setDraftState] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
+  const [persistedDraft, setPersistedDraft] = useState(initialDraft);
+  function setDraft(
+    next:
+      | RestaurantDraft
+      | ((current: RestaurantDraft) => RestaurantDraft),
+  ) {
+    const resolved = typeof next === "function" ? next(draftRef.current) : next;
+    draftRef.current = resolved;
+    setDraftState(resolved);
+  }
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedRevision, setSavedRevision] = useState(initialDraftRevision);
@@ -201,8 +213,9 @@ export function Dashboard({
   }, [demo, draft.slug]);
 
   async function save(): Promise<number | null> {
-    const validationIssues = validateRestaurantMenuDraft(draft);
-    const integrationIssues = validateRestaurantIntegrations(draft);
+    const requestedDraft = structuredClone(draftRef.current);
+    const validationIssues = validateRestaurantMenuDraft(requestedDraft);
+    const integrationIssues = validateRestaurantIntegrations(requestedDraft);
     setMenuValidationIssues(validationIssues);
     setIntegrationValidationIssues(integrationIssues);
     if (validationIssues.length > 0 || integrationIssues.length > 0) {
@@ -230,7 +243,7 @@ export function Dashboard({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...draft,
+            ...requestedDraft,
             expectedRevision: savedRevision,
           }),
         });
@@ -247,6 +260,18 @@ export function Dashboard({
         }
         setSavedRevision(result.revision);
         persistedRevision = result.revision;
+      }
+      setPersistedDraft(requestedDraft);
+      if (
+        JSON.stringify(draftRef.current) !== JSON.stringify(requestedDraft)
+      ) {
+        const message =
+          "New edits were made while saving. Save them before publishing.";
+        setSaved(false);
+        setPublishError(message);
+        setMenuSaveError(message);
+        setIntegrationSaveError(message);
+        return null;
       }
       setSaved(true);
       setThemeDirty(false);
@@ -487,28 +512,52 @@ export function Dashboard({
     }
     setRegeneratingLocale(locale);
     setMenuSaveError(null);
+    const requestedDraft = structuredClone(draftRef.current);
+    const requestedRevision = savedRevision;
     try {
       const response = await fetch(
         `/api/sites/${draft.slug}/translations/${locale}/regenerate`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedRevision: requestedRevision }),
+        },
       );
       const result = (await response.json()) as {
         error?: string;
         draft?: unknown;
+        revision?: number;
       };
-      if (!response.ok || !result.draft) {
+      if (
+        !response.ok ||
+        !result.draft ||
+        !Number.isInteger(result.revision) ||
+        result.revision === undefined
+      ) {
         throw new Error(result.error ?? "Translation regeneration failed");
       }
       const regenerated = restaurantDraftSchema.parse(result.draft);
-      setDraft((current) => ({
-        ...current,
-        translations: regenerated.translations,
-      }));
-      setSaved(true);
-      setMenuDirty(false);
-      setIntegrationDirty(false);
-      setMenuValidationIssues([]);
-      setIntegrationValidationIssues([]);
+      const reconciled = reconcileRegeneratedRestaurantDraft(
+        requestedDraft,
+        draftRef.current,
+        regenerated,
+      );
+      setPersistedDraft(structuredClone(regenerated));
+      setDraft(reconciled.draft);
+      setSavedRevision(result.revision);
+      if (reconciled.preservedClientEdits) {
+        setSaved(false);
+        setMenuValidationIssues(validateRestaurantMenuDraft(reconciled.draft));
+        setIntegrationValidationIssues(
+          validateRestaurantIntegrations(reconciled.draft),
+        );
+      } else {
+        setSaved(true);
+        setMenuDirty(false);
+        setIntegrationDirty(false);
+        setMenuValidationIssues([]);
+        setIntegrationValidationIssues([]);
+      }
     } catch (error) {
       setMenuSaveError(
         error instanceof Error
@@ -1050,6 +1099,11 @@ export function Dashboard({
                 siteSlug={draft.slug}
                 initial={sourceMonitoring}
                 demo={demo}
+                draftRevision={savedRevision}
+                hasUnsavedChanges={
+                  JSON.stringify(draft) !==
+                  JSON.stringify(persistedDraft)
+                }
               />
             </TabsContent>
 

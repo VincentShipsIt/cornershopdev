@@ -3,6 +3,7 @@ import { revalidateTag } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { siteStatusForDomainState } from "@/lib/domain-routing";
 import {
   evidenceDigest,
   integrationUrlDigest,
@@ -379,6 +380,14 @@ export async function rollbackPublishedSiteVersion(input: {
             },
             select: { id: true, version: true },
           });
+          const verifiedDomainCount = await tx.domain.count({
+            where: { siteId: input.siteId, verified: true },
+          });
+          const nextStatus = siteStatusForDomainState({
+            currentStatus: site.status,
+            hasVerifiedDomain: verifiedDomainCount > 0,
+            hasValidPublishedVersion: true,
+          });
 
           const moved = await tx.site.updateMany({
             where: {
@@ -388,7 +397,7 @@ export async function rollbackPublishedSiteVersion(input: {
             },
             data: {
               publishedSiteVersionId: version.id,
-              status: "LIVE",
+              status: nextStatus,
             },
           });
           if (moved.count !== 1) {
@@ -409,6 +418,7 @@ export async function rollbackPublishedSiteVersion(input: {
                 actorEmail: input.actor.email,
                 themeId: projected.theme.id,
                 themeVersion: projected.theme.version,
+                live: nextStatus === "LIVE",
               },
             },
           });

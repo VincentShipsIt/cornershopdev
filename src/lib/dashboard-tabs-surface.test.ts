@@ -12,6 +12,21 @@ const restaurantSaveRoute = await Bun.file(
 const restaurantPublishRoute = await Bun.file(
   new URL("../app/api/sites/[slug]/publish/route.ts", import.meta.url),
 ).text();
+const translationRegenerationRoute = await Bun.file(
+  new URL(
+    "../app/api/sites/[slug]/translations/[locale]/regenerate/route.ts",
+    import.meta.url,
+  ),
+).text();
+const sourceMonitoringReviewRoute = await Bun.file(
+  new URL(
+    "../app/api/sites/[slug]/source-monitoring/suggestions/[suggestionId]/route.ts",
+    import.meta.url,
+  ),
+).text();
+const sourceMonitoringPanel = await Bun.file(
+  new URL("../components/source-monitoring-panel.tsx", import.meta.url),
+).text();
 
 describe("dashboard tab and settings surface", () => {
   it("uses one Base UI tab list containing the settings tab", () => {
@@ -40,5 +55,25 @@ describe("dashboard tab and settings surface", () => {
     expect(restaurantPublishRoute).toContain(
       'code: "DRAFT_REVISION_CONFLICT"',
     );
+  });
+
+  it("carries the universal draft revision through auxiliary owner mutations", () => {
+    expect(dashboard).toContain(
+      "body: JSON.stringify({ expectedRevision: requestedRevision })",
+    );
+    expect(dashboard).toContain("setSavedRevision(result.revision)");
+    expect(translationRegenerationRoute).toContain(
+      "expectedRevision: requestBody.data.expectedRevision",
+    );
+    expect(translationRegenerationRoute).toContain(
+      'code: "DRAFT_REVISION_CONFLICT"',
+    );
+    expect(sourceMonitoringReviewRoute).toContain(
+      "expectedRevision: z.number().int().min(0)",
+    );
+    expect(sourceMonitoringPanel).toContain(
+      "expectedRevision: draftRevision",
+    );
+    expect(sourceMonitoringPanel).toContain("window.location.reload()");
   });
 });

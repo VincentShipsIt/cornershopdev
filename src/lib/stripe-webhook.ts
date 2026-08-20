@@ -14,7 +14,7 @@ import {
   stripeSubscriptionSnapshot,
   type StripeSubscriptionSnapshot,
 } from "@/lib/stripe-subscription";
-import { siteStatusForDomainState } from "@/lib/domain-routing";
+import { reconcileSiteSubscriptionLifecycle } from "@/lib/subscription-site-lifecycle";
 
 const checkoutEventTypes = new Set<Stripe.Event.Type>([
   "checkout.session.completed",
@@ -285,6 +285,7 @@ async function provisionCheckout(
     ...snapshot,
     subscriptionStatus: snapshot.status,
     stripeEventCreatedAt: stripeTimestamp(event.created),
+    stripeEventId: event.id,
   });
   if (!invitation.acceptedAt) {
     await tx.auditEvent.create({
@@ -336,83 +337,13 @@ async function synchronizeSubscription(
 
   const subscription = await tx.subscription.findFirst({
     where: { stripeSubscriptionId: snapshot.stripeSubscriptionId },
-    select: {
-      siteId: true,
-      site: {
-        select: {
-          status: true,
-          publishedSiteVersionId: true,
-          publishedSiteVersion: {
-            select: { id: true, siteId: true, publishedAt: true },
-          },
-        },
-      },
-    },
+    select: { siteId: true },
   });
   if (!subscription) return;
-
-  // Paid live delivery follows Stripe status. ACTIVE restores a billing pause;
-  // PAST_DUE / CANCELED pause claimed or live sites so custom domains stop
-  // serving until payment is restored. INCOMPLETE is left alone so checkout
-  // mid-flight does not thrash site status.
-  if (snapshot.status === "ACTIVE") {
-    if (subscription.site.status !== "PAUSED") return;
-    const verifiedDomainCount = await tx.domain.count({
-      where: { siteId: subscription.siteId, verified: true },
-    });
-    const published = subscription.site.publishedSiteVersion;
-    const restoredTo = siteStatusForDomainState({
-      currentStatus: "CLAIMED",
-      hasVerifiedDomain: verifiedDomainCount > 0,
-      hasValidPublishedVersion:
-        Boolean(subscription.site.publishedSiteVersionId) &&
-        published?.id === subscription.site.publishedSiteVersionId &&
-        published.siteId === subscription.siteId &&
-        published.publishedAt instanceof Date,
-    });
-    await tx.site.update({
-      where: { id: subscription.siteId },
-      data: { status: restoredTo },
-    });
-    await tx.auditEvent.create({
-      data: {
-        type: "billing.site.restored",
-        actor: "stripe-webhook",
-        siteId: subscription.siteId,
-        metadata: {
-          stripeEventId: event.id,
-          subscriptionStatus: snapshot.status,
-          restoredTo,
-        },
-      },
-    });
-    return;
-  }
-
-  if (snapshot.status !== "PAST_DUE" && snapshot.status !== "CANCELED") {
-    return;
-  }
-  if (
-    subscription.site.status !== "CLAIMED" &&
-    subscription.site.status !== "LIVE"
-  ) {
-    return;
-  }
-  await tx.site.update({
-    where: { id: subscription.siteId },
-    data: { status: "PAUSED" },
-  });
-  await tx.auditEvent.create({
-    data: {
-      type: "billing.site.paused",
-      actor: "stripe-webhook",
-      siteId: subscription.siteId,
-      metadata: {
-        stripeEventId: event.id,
-        subscriptionStatus: snapshot.status,
-        previousStatus: subscription.site.status,
-      },
-    },
+  await reconcileSiteSubscriptionLifecycle(tx, {
+    siteId: subscription.siteId,
+    subscriptionStatus: snapshot.status,
+    stripeEventId: event.id,
   });
 }
 

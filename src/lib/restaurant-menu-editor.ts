@@ -205,6 +205,23 @@ export function applyRegeneratedRestaurantTranslation(
   return restaurantDraftSchema.parse(draft);
 }
 
+export function reconcileRegeneratedRestaurantDraft(
+  requestedDraft: RestaurantDraft,
+  currentDraft: RestaurantDraft,
+  regeneratedDraft: RestaurantDraft,
+): { draft: RestaurantDraft; preservedClientEdits: boolean } {
+  if (JSON.stringify(requestedDraft) !== JSON.stringify(currentDraft)) {
+    return {
+      draft: restaurantDraftSchema.parse(currentDraft),
+      preservedClientEdits: true,
+    };
+  }
+  return {
+    draft: restaurantDraftSchema.parse(regeneratedDraft),
+    preservedClientEdits: false,
+  };
+}
+
 export function markRestaurantTranslationsStale(
   draft: RestaurantDraft,
 ): RestaurantDraft {

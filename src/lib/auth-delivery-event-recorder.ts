@@ -6,6 +6,7 @@ import {
   RESEND_AUTH_EVENT_TRANSITIONS,
   type ResendAuthEventType,
 } from "@/lib/auth-delivery-policy";
+import { reconcileMagicLinkActivation } from "@/lib/magic-link-delivery";
 
 export async function recordResendAuthEvent(input: {
   eventId: string;
@@ -28,6 +29,8 @@ export async function recordResendAuthEvent(input: {
             providerEventAt: true,
             deliveryStatus: true,
             tokenHash: true,
+            userId: true,
+            rotationGeneration: true,
           },
         })
       : null;
@@ -42,6 +45,8 @@ export async function recordResendAuthEvent(input: {
           providerEventAt: true,
           deliveryStatus: true,
           tokenHash: true,
+          userId: true,
+          rotationGeneration: true,
         },
       }));
     if (
@@ -129,6 +134,16 @@ export async function recordResendAuthEvent(input: {
       });
       await tx.verification.deleteMany({
         where: { identifier: link.tokenHash },
+      });
+    } else if (
+      updated.count === 1 &&
+      (transition.status === "SENT" || transition.status === "DELIVERED")
+    ) {
+      await reconcileMagicLinkActivation(tx, {
+        userId: link.userId,
+        rotationGeneration: link.rotationGeneration,
+        usable: true,
+        now: input.occurredAt,
       });
     }
     return { handled: true, updated: updated.count };

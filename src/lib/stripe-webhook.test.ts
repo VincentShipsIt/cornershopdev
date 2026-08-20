@@ -235,6 +235,79 @@ describe("Stripe webhook event idempotency", () => {
     }
   });
 
+  for (const stripeStatus of ["past_due", "canceled"] as const) {
+    it(`pauses delayed Checkout provisioning after an earlier ${stripeStatus} event`, async () => {
+      await withConfiguredBilling(async () => {
+        const { db, state } = createWebhookDatabase();
+        const currentSubscription = subscriptionFixture({
+          status: stripeStatus,
+        });
+        const stripe = {
+          checkout: {
+            sessions: {
+              retrieve: async () => checkoutFixture(currentSubscription),
+            },
+          },
+          subscriptions: {
+            retrieve: async () => currentSubscription,
+          },
+        } as unknown as Stripe;
+
+        expect(
+          await processStripeWebhookEvent(
+            subscriptionEvent(
+              `evt_${stripeStatus}_before_checkout`,
+              200,
+              currentSubscription,
+            ),
+            stripe,
+            db,
+          ),
+        ).toBe("processed");
+        expect(state.subscriptions).toHaveLength(0);
+
+        expect(
+          await processStripeWebhookEvent(
+            checkoutEvent(`evt_checkout_after_${stripeStatus}`, 100),
+            stripe,
+            db,
+          ),
+        ).toBe("processed");
+        expect(state.subscriptions[0].status).toBe(
+          stripeStatus === "past_due" ? "PAST_DUE" : "CANCELED",
+        );
+        expect(state.sites[0].status).toBe("PAUSED");
+
+        expect(
+          await processStripeWebhookEvent(
+            checkoutEvent(`evt_checkout_after_${stripeStatus}`, 100),
+            stripe,
+            db,
+          ),
+        ).toBe("duplicate");
+        expect(
+          await processStripeWebhookEvent(
+            subscriptionEvent(
+              `evt_${stripeStatus}_after_checkout`,
+              201,
+              currentSubscription,
+            ),
+            stripe,
+            db,
+          ),
+        ).toBe("processed");
+        expect(state.sites[0].status).toBe("PAUSED");
+        expect(
+          state.audits.filter(
+            (audit) =>
+              (audit as { data?: { type?: string } }).data?.type ===
+              "billing.site.paused",
+          ),
+        ).toHaveLength(1);
+      });
+    });
+  }
+
   it("rolls back partial claim writes and persists a durable rejection", async () => {
     const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
     const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
@@ -655,8 +728,28 @@ function createWebhookDatabase(
       },
     },
     site: {
-      findUnique: async ({ where }: { where: { slug: string } }) =>
-        state.sites.find((row) => row.slug === where.slug) ?? null,
+      findUnique: async ({
+        where,
+      }: {
+        where: { slug?: string; id?: string };
+      }) => {
+        const site = state.sites.find(
+          (row) =>
+            (where.slug !== undefined && row.slug === where.slug) ||
+            (where.id !== undefined && row.id === where.id),
+        );
+        if (!site) return null;
+        return {
+          ...site,
+          publishedSiteVersion: site.publishedSiteVersionId
+            ? {
+                id: site.publishedSiteVersionId,
+                siteId: site.id,
+                publishedAt: new Date("2026-08-20T00:00:00.000Z"),
+              }
+            : null,
+        };
+      },
       update: async ({
         where,
         data,

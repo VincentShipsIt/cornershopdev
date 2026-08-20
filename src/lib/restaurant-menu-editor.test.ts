@@ -9,6 +9,7 @@ import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
+  reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
   validateRestaurantMenuDraft,
 } from "@/lib/restaurant-menu-editor";
@@ -152,5 +153,22 @@ describe("restaurant menu CRUD", () => {
     expect(hasUnreviewedRestaurantTranslations(edited)).toBe(true);
     const reviewed = markRestaurantTranslationReviewed(edited, "en");
     expect(hasUnreviewedRestaurantTranslations(reviewed)).toBe(false);
+  });
+
+  it("never overwrites owner edits typed while regeneration is in flight", () => {
+    const requested = multilingualDraft();
+    const current = structuredClone(requested);
+    current.name = "Name typed while AI was running";
+    current.translations[0].description =
+      "Translation typed while AI was running";
+    const regenerated = structuredClone(requested);
+    regenerated.translations[0].description = "AI regenerated description";
+
+    expect(
+      reconcileRegeneratedRestaurantDraft(requested, current, regenerated),
+    ).toEqual({ draft: current, preservedClientEdits: true });
+    expect(
+      reconcileRegeneratedRestaurantDraft(requested, requested, regenerated),
+    ).toEqual({ draft: regenerated, preservedClientEdits: false });
   });
 });
