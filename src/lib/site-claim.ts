@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { SiteStatus } from "@/generated/prisma/enums";
 import { normalizeAccountEmail } from "@/lib/account-email";
@@ -60,6 +61,10 @@ export type ClaimedSiteAccess = {
   userId: string;
   organizationId: string;
 };
+
+export function claimedSiteOrganizationId(siteId: string): string {
+  return `claim_org_${createHash("sha256").update(siteId).digest("hex").slice(0, 24)}`;
+}
 
 /**
  * Accepts one invitation, assigns its site, and records the site-specific
@@ -129,19 +134,25 @@ export async function claimSite(
     update: {},
     create: { email, name: accountName(email) },
   });
-  const membership = await tx.membership.findFirst({
-    where: { userId: user.id },
+  const organizationId = claimedSiteOrganizationId(invitation.siteId);
+  await tx.organization.upsert({
+    where: { id: organizationId },
+    update: {},
+    create: {
+      id: organizationId,
+      name: checkout.siteSlug,
+    },
   });
-  const organizationId =
-    membership?.organizationId ??
-    (
-      await tx.organization.create({
-        data: {
-          name: checkout.siteSlug,
-          memberships: { create: { userId: user.id, role: "owner" } },
-        },
-      })
-    ).id;
+  await tx.membership.upsert({
+    where: {
+      userId_organizationId: {
+        userId: user.id,
+        organizationId,
+      },
+    },
+    update: { role: "owner" },
+    create: { userId: user.id, organizationId, role: "owner" },
+  });
 
   const claimed = await tx.site.updateMany({
     where: unclaimedWhere(checkout.siteSlug),
@@ -159,6 +170,7 @@ export async function claimSite(
       metadata: {
         invitationId: invitation.id,
         proofMethod: invitation.proofMethod,
+        organizationId,
       },
       siteId: invitation.siteId,
     },
@@ -203,6 +215,7 @@ async function resolveAcceptedClaim(
     where: {
       userId: user.id,
       organizationId: accepted.site.organizationId,
+      role: "owner",
     },
   });
   if (!membership) throw rejectClaim(checkout, "accepted owner mismatch");

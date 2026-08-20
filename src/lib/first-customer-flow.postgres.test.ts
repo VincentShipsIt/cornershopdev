@@ -167,7 +167,9 @@ describe.skipIf(!enabled)(
       const { recordResendAuthEvent } = await import(
         "@/lib/auth-delivery-event-recorder"
       );
-      const { markMagicLinkConsumed } = await import("@/lib/magic-links");
+      const { markMagicLinkConsumed } = await import(
+        "@/lib/magic-link-consumption"
+      );
       const { hashAuthToken } = await import("@/lib/session");
 
       const issued = await claim.issueClaimInvitation({
@@ -285,6 +287,10 @@ describe.skipIf(!enabled)(
       });
 
       const magicLinkToken = `magic-link-${suffix}`;
+      await db.user.update({
+        where: { id: userId },
+        data: { authLinkSequence: 1, authLinkActiveGeneration: 1 },
+      });
       const magicLink = await db.authMagicLink.create({
         data: {
           tokenHash: hashAuthToken(magicLinkToken),
@@ -293,6 +299,7 @@ describe.skipIf(!enabled)(
           deliveryStatus: "SENT",
           deliveryAttempts: 1,
           providerMessageId: `resend-auth-${suffix}`,
+          rotationGeneration: 1,
           expiresAt: new Date(Date.now() + 20 * 60_000),
           userId,
         },

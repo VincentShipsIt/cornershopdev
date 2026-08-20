@@ -159,19 +159,21 @@ enum SourceMonitorSuggestionStatus {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  email          String          @unique
-  emailVerified  Boolean         @default(false)
-  name           String
-  image          String?
-  platformRole   PlatformRole    @default(USER)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  memberships    Membership[]
-  sessions       Session[]
-  accounts       Account[]
-  authMagicLinks AuthMagicLink[]
-  authSessions   AuthSession[]
+  id                       String          @id @default(cuid())
+  email                    String          @unique
+  emailVerified            Boolean         @default(false)
+  name                     String
+  image                    String?
+  platformRole             PlatformRole    @default(USER)
+  authLinkSequence         Int             @default(0)
+  authLinkActiveGeneration Int             @default(0)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  memberships              Membership[]
+  sessions                 Session[]
+  accounts                 Account[]
+  authMagicLinks           AuthMagicLink[]
+  authSessions             AuthSession[]
 }
 
 model Organization {
@@ -249,27 +251,29 @@ model Site {
 }
 
 model AuthMagicLink {
-  id                String              @id @default(cuid())
-  tokenHash         String              @unique
-  destination       AuthLinkDestination
-  brandVertical     Vertical?
-  deliveryStatus    AuthDeliveryStatus  @default(PENDING)
-  deliveryAttempts  Int                 @default(0)
-  retryCount        Int                 @default(0)
-  providerMessageId String?
-  providerEventAt   DateTime?
-  failureCode       String?
-  expiresAt         DateTime
-  deliveredAt       DateTime?
-  lastAttemptAt     DateTime?
-  consumedAt        DateTime?
-  revokedAt         DateTime?
-  userId            String
-  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  providerEvents    AuthProviderEvent[]
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id                 String              @id @default(cuid())
+  tokenHash          String              @unique
+  destination        AuthLinkDestination
+  brandVertical      Vertical?
+  deliveryStatus     AuthDeliveryStatus  @default(PENDING)
+  deliveryAttempts   Int                 @default(0)
+  retryCount         Int                 @default(0)
+  rotationGeneration Int
+  providerMessageId  String?
+  providerEventAt    DateTime?
+  failureCode        String?
+  expiresAt          DateTime
+  deliveredAt        DateTime?
+  lastAttemptAt      DateTime?
+  consumedAt         DateTime?
+  revokedAt          DateTime?
+  userId             String
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerEvents     AuthProviderEvent[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
+  @@unique([userId, rotationGeneration])
   @@index([userId, createdAt])
   @@index([deliveryStatus, createdAt])
 }

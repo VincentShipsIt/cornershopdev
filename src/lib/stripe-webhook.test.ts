@@ -278,6 +278,91 @@ describe("Stripe webhook event idempotency", () => {
     }
   });
 
+  it("restores a published platform-only site to CLAIMED after a billing pause", async () => {
+    await withConfiguredBilling(async () => {
+      const { db, state } = createWebhookDatabase();
+      let currentSubscription = subscriptionFixture();
+      const stripe = {
+        checkout: {
+          sessions: {
+            retrieve: async () => checkoutFixture(currentSubscription),
+          },
+        },
+        subscriptions: { retrieve: async () => currentSubscription },
+      } as unknown as Stripe;
+
+      await processStripeWebhookEvent(
+        checkoutEvent("evt_claim", 100),
+        stripe,
+        db,
+      );
+      state.sites[0].publishedSiteVersionId = "version_1";
+      currentSubscription = subscriptionFixture({ status: "past_due" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_pause_platform", 200, currentSubscription),
+        stripe,
+        db,
+      );
+      currentSubscription = subscriptionFixture({ status: "active" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_resume_platform", 300, currentSubscription),
+        stripe,
+        db,
+      );
+
+      expect(state.sites[0].status).toBe("CLAIMED");
+      expect(state.audits).toContainEqual({
+        data: expect.objectContaining({
+          type: "billing.site.restored",
+          metadata: expect.objectContaining({ restoredTo: "CLAIMED" }),
+        }),
+      });
+    });
+  });
+
+  it("restores a published verified-domain site to LIVE after a billing pause", async () => {
+    await withConfiguredBilling(async () => {
+      const { db, state } = createWebhookDatabase();
+      let currentSubscription = subscriptionFixture();
+      const stripe = {
+        checkout: {
+          sessions: {
+            retrieve: async () => checkoutFixture(currentSubscription),
+          },
+        },
+        subscriptions: { retrieve: async () => currentSubscription },
+      } as unknown as Stripe;
+
+      await processStripeWebhookEvent(
+        checkoutEvent("evt_claim", 100),
+        stripe,
+        db,
+      );
+      state.sites[0].publishedSiteVersionId = "version_1";
+      state.domains.push({ siteId: "site_1", verified: true });
+      currentSubscription = subscriptionFixture({ status: "past_due" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_pause_domain", 200, currentSubscription),
+        stripe,
+        db,
+      );
+      currentSubscription = subscriptionFixture({ status: "active" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_resume_domain", 300, currentSubscription),
+        stripe,
+        db,
+      );
+
+      expect(state.sites[0].status).toBe("LIVE");
+      expect(state.audits).toContainEqual({
+        data: expect.objectContaining({
+          type: "billing.site.restored",
+          metadata: expect.objectContaining({ restoredTo: "LIVE" }),
+        }),
+      });
+    });
+  });
+
   it("refuses a completed Checkout that did not collect payment", async () => {
     const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
     const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
@@ -453,7 +538,12 @@ function createWebhookDatabase(
     ] as SiteRow[],
     users: [] as Array<{ id: string; email: string }>,
     organizations: [] as Array<{ id: string; name: string }>,
-    memberships: [] as Array<{ userId: string; organizationId: string }>,
+    memberships: [] as Array<{
+      userId: string;
+      organizationId: string;
+      role: string;
+    }>,
+    domains: [] as Array<{ siteId: string; verified: boolean }>,
     subscriptions: [] as SubscriptionRow[],
     audits: [] as unknown[],
   };
@@ -515,25 +605,53 @@ function createWebhookDatabase(
       },
     },
     membership: {
-      findFirst: async ({ where }: { where: { userId: string } }) =>
-        state.memberships.find((row) => row.userId === where.userId) ?? null,
+      findFirst: async ({
+        where,
+      }: {
+        where: { userId: string; organizationId: string; role: string };
+      }) =>
+        state.memberships.find(
+          (row) =>
+            row.userId === where.userId &&
+            row.organizationId === where.organizationId &&
+            row.role === where.role,
+        ) ?? null,
+      upsert: async ({
+        where,
+        update,
+        create,
+      }: {
+        where: {
+          userId_organizationId: { userId: string; organizationId: string };
+        };
+        update: { role: string };
+        create: { userId: string; organizationId: string; role: string };
+      }) => {
+        const key = where.userId_organizationId;
+        const existing = state.memberships.find(
+          (row) =>
+            row.userId === key.userId &&
+            row.organizationId === key.organizationId,
+        );
+        if (existing) return Object.assign(existing, update);
+        state.memberships.push(create);
+        return create;
+      },
     },
     organization: {
-      create: async ({
-        data,
+      upsert: async ({
+        where,
+        create,
       }: {
-        data: {
-          name: string;
-          memberships: { create: { userId: string } };
-        };
+        where: { id: string };
+        create: { id: string; name: string };
       }) => {
-        const organization = { id: nextId("org"), name: data.name };
-        state.organizations.push(organization);
-        state.memberships.push({
-          userId: data.memberships.create.userId,
-          organizationId: organization.id,
-        });
-        return organization;
+        const existing = state.organizations.find(
+          (row) => row.id === where.id,
+        );
+        if (existing) return existing;
+        state.organizations.push(create);
+        return create;
       },
     },
     site: {
@@ -602,6 +720,13 @@ function createWebhookDatabase(
           site: {
             status: site.status,
             publishedSiteVersionId: site.publishedSiteVersionId,
+            publishedSiteVersion: site.publishedSiteVersionId
+              ? {
+                  id: site.publishedSiteVersionId,
+                  siteId: site.id,
+                  publishedAt: new Date("2026-08-20T00:00:00.000Z"),
+                }
+              : null,
           },
         };
       },
@@ -665,6 +790,17 @@ function createWebhookDatabase(
       create: async (input: unknown) => {
         state.audits.push(input);
       },
+    },
+    domain: {
+      count: async ({
+        where,
+      }: {
+        where: { siteId: string; verified: boolean };
+      }) =>
+        state.domains.filter(
+          (row) =>
+            row.siteId === where.siteId && row.verified === where.verified,
+        ).length,
     },
   };
   const db = {
@@ -764,5 +900,18 @@ function restoreEnvironment(name: string, value: string | undefined) {
     delete process.env[name];
   } else {
     process.env[name] = value;
+  }
+}
+
+async function withConfiguredBilling(run: () => Promise<void>) {
+  const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+  const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+  process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+  process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+  try {
+    await run();
+  } finally {
+    restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+    restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
   }
 }

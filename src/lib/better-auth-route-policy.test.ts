@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import { isBlockedDirectBetterAuthRoute } from "@/lib/better-auth-route-policy";
+import { describe, expect, mock, test } from "bun:test";
+import {
+  blockedDirectSessionRevocationPaths,
+  dispatchBetterAuthCatchallRequest,
+  isBlockedDirectBetterAuthRoute,
+} from "@/lib/better-auth-route-policy";
 
 const accountActions = await Bun.file(
   new URL("../components/account-actions.tsx", import.meta.url),
@@ -7,6 +11,16 @@ const accountActions = await Bun.file(
 const logoutRoute = await Bun.file(
   new URL("../app/api/auth/logout/route.ts", import.meta.url),
 ).text();
+const pinnedBetterAuthSessionRoutes = await Promise.all(
+  ["session.mjs", "sign-out.mjs"].map((filename) =>
+    Bun.file(
+      new URL(
+        `../../node_modules/better-auth/dist/api/routes/${filename}`,
+        import.meta.url,
+      ),
+    ).text(),
+  ),
+).then((sources) => sources.join("\n"));
 
 describe("Better Auth public route policy", () => {
   test("blocks the raw magic-link issuer", () => {
@@ -51,10 +65,38 @@ describe("Better Auth public route policy", () => {
     ).toBe(true);
   });
 
-  test("keeps sign-out behind the evidence-gated logout wrapper", () => {
-    expect(
-      isBlockedDirectBetterAuthRoute("POST", "/api/auth/sign-out"),
-    ).toBe(true);
+  test("keeps every pinned session-revocation route behind audited wrappers", async () => {
+    const pinnedRevocationPaths = [
+      ...pinnedBetterAuthSessionRoutes.matchAll(
+        /createAuthEndpoint\("(\/(?:sign-out|revoke-[^"]+))"/g,
+      ),
+    ].map((match) => `/api/auth${match[1]}`);
+    expect(pinnedRevocationPaths.sort()).toEqual(
+      [...blockedDirectSessionRevocationPaths].sort(),
+    );
+    expect(blockedDirectSessionRevocationPaths).toEqual([
+      "/api/auth/sign-out",
+      "/api/auth/revoke-session",
+      "/api/auth/revoke-sessions",
+      "/api/auth/revoke-other-sessions",
+    ]);
+    for (const path of blockedDirectSessionRevocationPaths) {
+      const betterAuthPath = path.replace("/api/auth", "");
+      expect(pinnedBetterAuthSessionRoutes).toContain(
+        `createAuthEndpoint("${betterAuthPath}"`,
+      );
+      expect(isBlockedDirectBetterAuthRoute("POST", path)).toBe(true);
+      expect(isBlockedDirectBetterAuthRoute("post", `${path}/`)).toBe(true);
+
+      const forward = mock(async () => Response.json({ bypassed: true }));
+      const response = await dispatchBetterAuthCatchallRequest(
+        new Request(`https://cornershop.dev${path}/`, { method: "POST" }),
+        forward,
+      );
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "Not found" });
+      expect(forward).not.toHaveBeenCalled();
+    }
     expect(accountActions).toContain('fetch("/api/auth/logout"');
     expect(accountActions).not.toContain("/api/auth/sign-out");
     expect(logoutRoute).toContain("failOnSessionLookupError: true");
@@ -67,5 +109,15 @@ describe("Better Auth public route policy", () => {
     expect(
       isBlockedDirectBetterAuthRoute("GET", "/api/auth/get-session"),
     ).toBe(false);
+  });
+
+  test("forwards a direct request only when the route policy allows it", async () => {
+    const forward = mock(async () => Response.json({ sessions: [] }));
+    const response = await dispatchBetterAuthCatchallRequest(
+      new Request("https://cornershop.dev/api/auth/list-sessions"),
+      forward,
+    );
+    expect(response.status).toBe(200);
+    expect(forward).toHaveBeenCalledTimes(1);
   });
 });

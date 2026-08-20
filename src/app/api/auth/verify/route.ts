@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { verifiedMagicLinkResponse } from "@/lib/auth-evidence-responses";
 import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
-import { markMagicLinkConsumed } from "@/lib/magic-links";
+import {
+  isMagicLinkConsumable,
+  markMagicLinkConsumed,
+} from "@/lib/magic-link-consumption";
 import { isTrustedSameOriginFormPost } from "@/lib/request-origin";
 import {
   PENDING_MAGIC_LINK_COOKIE,
@@ -52,6 +55,21 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get(PENDING_MAGIC_LINK_COOKIE)?.value;
   if (!token || !process.env.DATABASE_URL) {
     return signInError(request);
+  }
+  try {
+    if (!(await isMagicLinkConsumable(token))) {
+      const response = signInError(request);
+      response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
+      return response;
+    }
+  } catch {
+    const unavailable = NextResponse.json(
+      { error: "Sign-in could not be completed. Request a new link." },
+      { status: 503 },
+    );
+    unavailable.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
+    unavailable.headers.set("Cache-Control", "private, no-store");
+    return unavailable;
   }
 
   const verifyUrl = authRequestUrl("/api/auth/magic-link/verify", request);

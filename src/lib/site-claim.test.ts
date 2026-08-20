@@ -2,6 +2,7 @@ import { describe, expect, it, spyOn } from "bun:test";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   CLAIMABLE_STATUSES,
+  claimedSiteOrganizationId,
   claimSite,
   type CompletedCheckout,
   isClaimable,
@@ -61,6 +62,7 @@ describe("invitation-bound site claim", () => {
         metadata: {
           invitationId: "invite_1",
           proofMethod: "DOMAIN_EMAIL",
+          organizationId: claimedSiteOrganizationId("site_1"),
         },
       }),
     ]);
@@ -146,7 +148,7 @@ describe("invitation-bound site claim", () => {
     expect(state.invitations[1].acceptedAt).toBeNull();
   });
 
-  it("reuses an existing buyer organization for another invited site", async () => {
+  it("creates one deterministic tenant for each separately invited site", async () => {
     const { state, tx } = fixture({
       sites: [
         site(),
@@ -174,10 +176,10 @@ describe("invitation-bound site claim", () => {
       }),
     );
 
-    expect(state.organizations).toHaveLength(1);
+    expect(state.organizations).toHaveLength(2);
     expect(state.sites.map((row) => row.organizationId)).toEqual([
-      state.organizations[0].id,
-      state.organizations[0].id,
+      claimedSiteOrganizationId("site_1"),
+      claimedSiteOrganizationId("site_2"),
     ]);
     expect(state.subscriptions.map((row) => row.siteId)).toEqual([
       "site_1",
@@ -187,6 +189,59 @@ describe("invitation-bound site claim", () => {
       "cus_1",
       "cus_1",
     ]);
+  });
+
+  it("never guesses between multiple organizations the buyer already owns", async () => {
+    const { state, tx } = fixture({
+      users: [{ id: "user_existing", email: "owner@chez-lea.test" }],
+      organizations: [
+        { id: "org_alpha", name: "Alpha" },
+        { id: "org_beta", name: "Beta" },
+      ],
+      memberships: [
+        { userId: "user_existing", organizationId: "org_alpha", role: "owner" },
+        { userId: "user_existing", organizationId: "org_beta", role: "owner" },
+      ],
+    });
+
+    const access = await claimSite(tx, completedCheckout());
+
+    expect(access.organizationId).toBe(claimedSiteOrganizationId("site_1"));
+    expect(access.organizationId).not.toBe("org_alpha");
+    expect(access.organizationId).not.toBe("org_beta");
+    expect(state.memberships).toContainEqual({
+      userId: "user_existing",
+      organizationId: access.organizationId,
+      role: "owner",
+    });
+  });
+
+  it("does not strand a buyer whose only existing membership is non-owner", async () => {
+    const { state, tx } = fixture({
+      users: [{ id: "user_existing", email: "owner@chez-lea.test" }],
+      organizations: [{ id: "org_member", name: "Member workspace" }],
+      memberships: [
+        {
+          userId: "user_existing",
+          organizationId: "org_member",
+          role: "member",
+        },
+      ],
+    });
+
+    const access = await claimSite(tx, completedCheckout());
+
+    expect(access.organizationId).toBe(claimedSiteOrganizationId("site_1"));
+    expect(state.memberships).toContainEqual({
+      userId: "user_existing",
+      organizationId: "org_member",
+      role: "member",
+    });
+    expect(state.memberships).toContainEqual({
+      userId: "user_existing",
+      organizationId: access.organizationId,
+      role: "owner",
+    });
   });
 
   it("normalizes Stripe email before creating account identity", async () => {
@@ -326,15 +381,25 @@ function fixture(
     sites?: SiteRow[];
     invitation?: Partial<InvitationRow>;
     invitations?: InvitationRow[];
+    users?: Array<{ id: string; email: string }>;
+    organizations?: Array<{ id: string; name: string }>;
+    memberships?: Array<{
+      userId: string;
+      organizationId: string;
+      role: string;
+    }>;
   } = {},
 ) {
   const state = {
     sites: overrides.sites ?? [site(overrides.site)],
     invitations:
       overrides.invitations ?? [invitation(overrides.invitation)],
-    users: [] as Array<{ id: string; email: string }>,
-    organizations: [] as Array<{ id: string; name: string }>,
-    memberships: [] as Array<{ userId: string; organizationId: string }>,
+    users: overrides.users ?? ([] as Array<{ id: string; email: string }>),
+    organizations:
+      overrides.organizations ?? ([] as Array<{ id: string; name: string }>),
+    memberships:
+      overrides.memberships ??
+      ([] as Array<{ userId: string; organizationId: string; role: string }>),
     subscriptions: [] as SubscriptionRow[],
     auditEvents: [] as Array<Record<string, unknown>>,
   };
@@ -380,31 +445,51 @@ function fixture(
       findFirst: async ({
         where,
       }: {
-        where: { userId: string; organizationId?: string };
+        where: { userId: string; organizationId?: string; role?: string };
       }) =>
         state.memberships.find(
           (row) =>
             row.userId === where.userId &&
             (!where.organizationId ||
-              row.organizationId === where.organizationId),
+              row.organizationId === where.organizationId) &&
+            (!where.role || row.role === where.role),
         ) ?? null,
+      upsert: async ({
+        where,
+        update,
+        create,
+      }: {
+        where: {
+          userId_organizationId: { userId: string; organizationId: string };
+        };
+        update: { role: string };
+        create: { userId: string; organizationId: string; role: string };
+      }) => {
+        const key = where.userId_organizationId;
+        const existing = state.memberships.find(
+          (row) =>
+            row.userId === key.userId &&
+            row.organizationId === key.organizationId,
+        );
+        if (existing) return Object.assign(existing, update);
+        state.memberships.push(create);
+        return create;
+      },
     },
     organization: {
-      create: async ({
-        data,
+      upsert: async ({
+        where,
+        create,
       }: {
-        data: {
-          name: string;
-          memberships: { create: { userId: string } };
-        };
+        where: { id: string };
+        create: { id: string; name: string };
       }) => {
-        const created = { id: nextId("org"), name: data.name };
-        state.organizations.push(created);
-        state.memberships.push({
-          userId: data.memberships.create.userId,
-          organizationId: created.id,
-        });
-        return created;
+        const existing = state.organizations.find(
+          (row) => row.id === where.id,
+        );
+        if (existing) return existing;
+        state.organizations.push(create);
+        return create;
       },
     },
     site: {

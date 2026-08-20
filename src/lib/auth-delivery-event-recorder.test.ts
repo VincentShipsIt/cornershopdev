@@ -45,6 +45,10 @@ describe("authentication provider event persistence", () => {
       deliveryStatus: "BOUNCED",
       failureCode: "recipient_bounced",
     });
+    expect(fixture.state.link.revokedAt).toEqual(
+      new Date("2026-08-20T10:02:00.000Z"),
+    );
+    expect(fixture.state.verifications).toEqual([]);
   });
 });
 
@@ -52,6 +56,7 @@ function deliveryFixture() {
   const state = {
     link: {
       id: "link_1",
+      tokenHash: "token_hash_1",
       providerMessageId: "resend_1" as string | null,
       providerEventAt: null as Date | null,
       deliveryStatus: "SENT" as
@@ -63,6 +68,7 @@ function deliveryFixture() {
         | "FAILED",
       deliveredAt: null as Date | null,
       failureCode: null as string | null,
+      revokedAt: null as Date | null,
       createdAt: new Date("2026-08-20T10:00:00.000Z"),
     },
     events: [] as Array<{
@@ -72,6 +78,7 @@ function deliveryFixture() {
       eventType: string;
       occurredAt: Date;
     }>,
+    verifications: ["token_hash_1"],
   };
   const tx = {
     authMagicLink: {
@@ -79,16 +86,19 @@ function deliveryFixture() {
         where.id === state.link.id ? state.link : null,
       findFirst: async () => state.link,
       updateMany: async (input: {
-        where: { deliveryStatus: { in: string[] } };
-        data: {
-          providerMessageId: string;
-          providerEventAt: Date;
-          deliveryStatus: typeof state.link.deliveryStatus;
-          deliveredAt?: Date;
-          failureCode: string | null;
+        where: {
+          deliveryStatus?: { in: string[] };
+          revokedAt?: null;
         };
+        data: Partial<typeof state.link>;
       }) => {
-        if (!input.where.deliveryStatus.in.includes(state.link.deliveryStatus)) {
+        if (
+          input.where.deliveryStatus &&
+          !input.where.deliveryStatus.in.includes(state.link.deliveryStatus)
+        ) {
+          return { count: 0 };
+        }
+        if (input.where.revokedAt === null && state.link.revokedAt !== null) {
           return { count: 0 };
         }
         Object.assign(state.link, input.data);
@@ -106,6 +116,14 @@ function deliveryFixture() {
         if (existing) return existing;
         state.events.push(input.create);
         return input.create;
+      },
+    },
+    verification: {
+      deleteMany: async ({ where }: { where: { identifier: string } }) => {
+        state.verifications = state.verifications.filter(
+          (value) => value !== where.identifier,
+        );
+        return { count: 1 };
       },
     },
   };

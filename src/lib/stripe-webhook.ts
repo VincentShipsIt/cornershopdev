@@ -14,6 +14,7 @@ import {
   stripeSubscriptionSnapshot,
   type StripeSubscriptionSnapshot,
 } from "@/lib/stripe-subscription";
+import { siteStatusForDomainState } from "@/lib/domain-routing";
 
 const checkoutEventTypes = new Set<Stripe.Event.Type>([
   "checkout.session.completed",
@@ -341,6 +342,9 @@ async function synchronizeSubscription(
         select: {
           status: true,
           publishedSiteVersionId: true,
+          publishedSiteVersion: {
+            select: { id: true, siteId: true, publishedAt: true },
+          },
         },
       },
     },
@@ -353,11 +357,22 @@ async function synchronizeSubscription(
   // mid-flight does not thrash site status.
   if (snapshot.status === "ACTIVE") {
     if (subscription.site.status !== "PAUSED") return;
+    const verifiedDomainCount = await tx.domain.count({
+      where: { siteId: subscription.siteId, verified: true },
+    });
+    const published = subscription.site.publishedSiteVersion;
+    const restoredTo = siteStatusForDomainState({
+      currentStatus: "CLAIMED",
+      hasVerifiedDomain: verifiedDomainCount > 0,
+      hasValidPublishedVersion:
+        Boolean(subscription.site.publishedSiteVersionId) &&
+        published?.id === subscription.site.publishedSiteVersionId &&
+        published.siteId === subscription.siteId &&
+        published.publishedAt instanceof Date,
+    });
     await tx.site.update({
       where: { id: subscription.siteId },
-      data: {
-        status: subscription.site.publishedSiteVersionId ? "LIVE" : "CLAIMED",
-      },
+      data: { status: restoredTo },
     });
     await tx.auditEvent.create({
       data: {
@@ -367,9 +382,7 @@ async function synchronizeSubscription(
         metadata: {
           stripeEventId: event.id,
           subscriptionStatus: snapshot.status,
-          restoredTo: subscription.site.publishedSiteVersionId
-            ? "LIVE"
-            : "CLAIMED",
+          restoredTo,
         },
       },
     });

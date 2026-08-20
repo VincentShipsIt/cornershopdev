@@ -3,7 +3,7 @@ import { auth } from "@/lib/better-auth";
 import { getDb } from "@/lib/db";
 import type { MagicLinkRequestMetadata } from "@/lib/magic-link-delivery";
 import { ownerMembershipWhere } from "@/lib/owner-membership";
-import { canRetryMagicLink, hashAuthToken } from "@/lib/session";
+import { canRetryMagicLink } from "@/lib/session";
 import { isConfiguredSuperadminEmail } from "@/lib/superadmin-config";
 
 export async function requestMagicLink(
@@ -108,40 +108,6 @@ export async function retryMagicLink(
     },
     headers,
   );
-}
-
-export async function markMagicLinkConsumed(token: string): Promise<void> {
-  const now = new Date();
-  const tokenHash = hashAuthToken(token);
-  await getDb().$transaction(async (tx) => {
-    const link = await tx.authMagicLink.findUnique({
-      where: { tokenHash },
-      select: { id: true, userId: true },
-    });
-    if (!link) {
-      throw new Error("Authentication delivery evidence is unavailable.");
-    }
-    const consumed = await tx.authMagicLink.updateMany({
-      where: {
-        id: link.id,
-        consumedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: now },
-      },
-      data: { consumedAt: now },
-    });
-    if (consumed.count !== 1) {
-      throw new Error("Authentication delivery evidence changed.");
-    }
-    await tx.authEvent.create({
-      data: {
-        type: "auth.magic_link.consumed",
-        actor: "user:self",
-        subjectUserId: link.userId,
-        magicLinkId: link.id,
-      },
-    });
-  });
 }
 
 async function issueMagicLink(

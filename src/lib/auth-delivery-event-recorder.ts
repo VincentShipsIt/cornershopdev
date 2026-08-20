@@ -27,6 +27,7 @@ export async function recordResendAuthEvent(input: {
             providerMessageId: true,
             providerEventAt: true,
             deliveryStatus: true,
+            tokenHash: true,
           },
         })
       : null;
@@ -40,6 +41,7 @@ export async function recordResendAuthEvent(input: {
           providerMessageId: true,
           providerEventAt: true,
           deliveryStatus: true,
+          tokenHash: true,
         },
       }));
     if (
@@ -115,6 +117,20 @@ export async function recordResendAuthEvent(input: {
         failureCode: failureCode(input.eventType),
       },
     });
+    if (
+      updated.count === 1 &&
+      (transition.status === "FAILED" ||
+        transition.status === "BOUNCED" ||
+        transition.status === "SUPPRESSED")
+    ) {
+      await tx.authMagicLink.updateMany({
+        where: { id: link.id, revokedAt: null },
+        data: { revokedAt: input.occurredAt },
+      });
+      await tx.verification.deleteMany({
+        where: { identifier: link.tokenHash },
+      });
+    }
     return { handled: true, updated: updated.count };
   });
 }
