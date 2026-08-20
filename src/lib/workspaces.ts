@@ -1,11 +1,12 @@
 import "server-only";
 import { getDb } from "@/lib/db";
+import type { VerticalId } from "@/lib/verticals/types";
 
 export type AccountWorkspace = {
   id: string;
   slug: string;
   name: string;
-  vertical: "RESTAURANT" | "BEAUTY";
+  vertical: VerticalId;
 };
 
 export function listAccountWorkspaces(userId: string): Promise<AccountWorkspace[]> {

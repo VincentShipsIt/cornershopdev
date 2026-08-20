@@ -1,5 +1,6 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
+import { localServiceConfig } from "@/lib/verticals/local-service/config";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import type { VerticalConfig, VerticalId } from "@/lib/verticals/types";
 
@@ -22,6 +23,7 @@ export type ErasedVerticalConfig = VerticalConfig<any, any, any, any>;
 const registry = {
   [Vertical.RESTAURANT]: restaurantConfig,
   [Vertical.BEAUTY]: beautyConfig,
+  [Vertical.LOCAL_SERVICE]: localServiceConfig,
 } satisfies Record<VerticalId, ErasedVerticalConfig>;
 
 /**
@@ -69,7 +71,7 @@ export function verticalAssetNamespace(id: VerticalId): string {
   const { domain } = resolveVerticalConfig(id).marketing;
   return domain
     ? domain.toLowerCase().replace(/[^a-z0-9]+/g, "")
-    : verticalSlug(id);
+    : verticalSlug(id).replace(/[^a-z0-9]+/g, "");
 }
 
 /**
@@ -96,6 +98,10 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
   const wanted = hostname.trim().toLowerCase().split(":")[0];
   if (!wanted) return null;
   for (const id of listVerticalIds()) {
+    // A hostname claim is a public launch surface. Ignore partially configured
+    // niches even if an operator has filled in a hostname ahead of the domain
+    // and sender gates, so one config edit cannot expose an unfinished product.
+    if (!verticalLaunchReadiness(id).ready) continue;
     // Through the erased surface, not `registry[id]`: indexing with a runtime id
     // yields the union of the concrete configs, and `includes` on a union of array
     // types demands an argument assignable to every element type at once — which
@@ -114,12 +120,44 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
  */
 export function listMarketingVerticals(): VerticalId[] {
   return listVerticalIds()
-    .filter((id) => Boolean(resolveVerticalConfig(id).marketing.domain))
+    .filter((id) => verticalLaunchReadiness(id).ready)
     .sort((a, b) =>
       resolveVerticalConfig(a).marketing.brand.name.localeCompare(
         resolveVerticalConfig(b).marketing.brand.name,
       ),
     );
+}
+
+export type VerticalLaunchReadiness = {
+  ready: boolean;
+  issues: Array<"domain" | "sender" | "hostname" | "sender-domain">;
+};
+
+/**
+ * A niche is public only when the three operator-controlled launch surfaces
+ * agree: a configured domain, a niche-owned sender, and a hostname routed by
+ * the proxy. Registering templates or setting just one string cannot launch it.
+ */
+export function verticalLaunchReadiness(
+  id: VerticalId,
+): VerticalLaunchReadiness {
+  const { domain, email, hostnames } = resolveVerticalConfig(id).marketing;
+  const issues: VerticalLaunchReadiness["issues"] = [];
+  if (!domain) issues.push("domain");
+  if (!email) issues.push("sender");
+  if (domain && !hostnames.includes(domain)) issues.push("hostname");
+  if (
+    domain &&
+    email &&
+    [email.from, email.replyTo].some((value) => {
+      const emailDomain = value.match(/@([^>\s]+)>?$/)?.[1]?.toLowerCase();
+      return !emailDomain ||
+        (emailDomain !== domain && !emailDomain.endsWith(`.${domain}`));
+    })
+  ) {
+    issues.push("sender-domain");
+  }
+  return { ready: issues.length === 0, issues };
 }
 
 /**

@@ -11,7 +11,33 @@ export type CatalogVocabulary = {
 };
 
 export type IntegrationLinkType =
-  "booking" | "ordering" | "delivery" | "social";
+  | "booking"
+  | "ordering"
+  | "delivery"
+  | "social"
+  | "quote"
+  | "contact";
+
+export type VerticalProject = {
+  title: string;
+  description: string;
+  imageUrl: string | null;
+  location: string;
+};
+
+/**
+ * Optional public facts that sit outside the catalog without teaching the
+ * shared renderer which attribute keys a trade uses. A local-service vertical
+ * can map credentials, service areas and completed projects into this shape;
+ * restaurants and salons simply omit it.
+ */
+export type VerticalBusinessDetails = {
+  availability: string | null;
+  serviceAreas: string[];
+  credentials: string[];
+  trustSignals: string[];
+  projects: VerticalProject[];
+};
 
 /**
  * How a provider's own booking widget is embedded on a generated site.
@@ -251,6 +277,7 @@ export type VerticalConfig<
     // labels here, beauty surfaces duration or "with any stylist" — the renderer
     // only ever sees strings, which is what keeps `dietaryLabels` out of it.
     itemBadges?: (attributes: TItemAttributes) => string[];
+    businessDetails?: (attributes: TAttributes) => VerticalBusinessDetails;
   };
   templates: {
     definitions: Record<string, TTemplate>;
@@ -268,6 +295,11 @@ export type VerticalConfig<
   i18n: Record<string, Record<string, string>>;
   rendererCapabilities: (attributes: TAttributes) => {
     showGallery: boolean;
-    showBookingRequestForm: boolean;
+    /**
+     * Booking requests are a hospitality/appointment primitive, not the
+     * universal lead form. Local trades use phone, WhatsApp and quote links,
+     * so they must be able to turn this off even when no booking provider exists.
+     */
+    bookingRequestForm: "missing-provider" | "always" | "never";
   };
 };

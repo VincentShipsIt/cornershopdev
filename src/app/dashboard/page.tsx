@@ -16,6 +16,9 @@ import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
+import { LocalServiceDashboard } from "@/app/dashboard/local-service-dashboard";
+import { findSiteView } from "@/lib/sites";
+import type { LocalServiceSiteDraft } from "@/lib/verticals/local-service/schema";
 
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await resolveRequestBrand();
@@ -40,6 +43,30 @@ export default async function DashboardPage({
   const access =
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
+
+  if (access?.ok && access.site.vertical === Vertical.LOCAL_SERVICE) {
+    const [site, billingAccess, publicationHistory, workspaces] =
+      await Promise.all([
+        findSiteView(access.site.slug),
+        getSiteBillingAccess(access.site.id),
+        getSitePublicationHistory(access.site.id),
+        listAccountWorkspaces(access.session.userId),
+      ]);
+    if (!site || site.vertical !== Vertical.LOCAL_SERVICE) redirect("/sign-in");
+    return (
+      <LocalServiceDashboard
+        initialDraft={site.draft as LocalServiceSiteDraft}
+        email={access.user.email}
+        brand={await resolveRequestBrand()}
+        billingAccess={billingAccess}
+        publicationHistory={publicationHistory.map((item) => ({
+          ...item,
+          publishedAt: item.publishedAt.toISOString(),
+        }))}
+        canSwitchWorkspace={workspaces.length > 1}
+      />
+    );
+  }
 
   if (access?.ok && access.site.vertical !== Vertical.RESTAURANT) {
     return (

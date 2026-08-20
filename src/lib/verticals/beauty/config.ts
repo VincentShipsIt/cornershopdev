@@ -142,7 +142,7 @@ export const beautyConfig = {
    */
   rendererCapabilities: (attributes) => ({
     showGallery: attributes.showServiceImages,
-    showBookingRequestForm: true,
+    bookingRequestForm: "always",
   }),
 } satisfies VerticalConfig<
   BeautyAttributes,

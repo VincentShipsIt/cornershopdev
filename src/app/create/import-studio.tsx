@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import type { BrandContext } from "@/lib/brand-context";
 import { sampleSiteDraft } from "@/lib/restaurant";
+import { sampleLocalServiceSiteDraft } from "@/lib/verticals/local-service/fixtures";
 import type { ImportUrls } from "@/lib/import-identity";
 import type { SiteDraftView } from "@/lib/site-draft";
 import { listVerticalIds } from "@/lib/verticals/registry";
@@ -86,6 +87,22 @@ const verticalCopy = {
     // No ordering or delivery: a salon has nothing to deliver, which is the same
     // reason `beauty/providers.ts` ships no hints for those integration types.
     integrationsStage: "Preserve existing booking links",
+  },
+  [Vertical.LOCAL_SERVICE]: {
+    label: "Local trade",
+    eyebrow: "New local-service site",
+    placeholder: "trade website or business name",
+    opening: "Opening the business",
+    idlePrompt:
+      "Paste a trade website or business name. The preview stays private until it is claimed and paid.",
+    recovering:
+      "The shape is already here. We are recovering the real services, service areas, credentials, projects and contact tools now.",
+    emptyStatePrompt:
+      "Start with a website or business name. No account is needed to see the result.",
+    claimHint:
+      "Review every service, availability and trust claim, then claim the plan to keep the site current.",
+    catalogStage: "Recover services and trust evidence",
+    integrationsStage: "Preserve phone, WhatsApp and quote tools",
   },
 } satisfies Record<VerticalId, VerticalCopy>;
 
@@ -279,11 +296,19 @@ export function ImportStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSource]);
 
-  /**
-   * The only in-code fixture is a restaurant one, so the demo always switches the
-   * picker back to that vertical rather than showing salon copy around a menu.
-   */
   function useDemo() {
+    if (vertical === Vertical.LOCAL_SERVICE) {
+      setSource(sampleLocalServiceSiteDraft.name);
+      setError(null);
+      complete(
+        { draft: sampleLocalServiceSiteDraft, vertical },
+        {
+          preview: `/preview/${sampleLocalServiceSiteDraft.slug}`,
+          claim: `/claim/${sampleLocalServiceSiteDraft.slug}`,
+        },
+      );
+      return;
+    }
     setSource("Osteria Luna");
     setVertical(Vertical.RESTAURANT);
     setError(null);
@@ -383,7 +408,11 @@ export function ImportStudio({
                 disabled={loading}
               />
             </div>
-            <Button className="w-full" disabled={!source.trim() || loading}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!source.trim() || loading}
+            >
               {loading ? (
                 <>
                   <LoaderCircle className="animate-spin" />

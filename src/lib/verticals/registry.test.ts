@@ -7,6 +7,7 @@ import {
   toRestaurantDraft,
 } from "@/lib/restaurant";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
+import { localServiceConfig } from "@/lib/verticals/local-service/config";
 import {
   listMarketingVerticals,
   listVerticalIds,
@@ -15,6 +16,7 @@ import {
   resolveVerticalConfig,
   verticalAssetNamespace,
   verticalSlug,
+  verticalLaunchReadiness,
 } from "@/lib/verticals/registry";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 
@@ -27,7 +29,11 @@ import { restaurantConfig } from "@/lib/verticals/restaurant/config";
  */
 describe("vertical registry", () => {
   it("uses the generated Prisma enum as its identifier source", () => {
-    expect(listVerticalIds()).toEqual([Vertical.RESTAURANT, Vertical.BEAUTY]);
+    expect(listVerticalIds()).toEqual([
+      Vertical.RESTAURANT,
+      Vertical.BEAUTY,
+      Vertical.LOCAL_SERVICE,
+    ]);
   });
 
   it("resolves every registered id back to the config that declares it", () => {
@@ -84,14 +90,19 @@ describe("vertical registry", () => {
       beautyConfig.rendererCapabilities({
         serviceStyle: "barbershop",
         showServiceImages: false,
-      }).showBookingRequestForm,
-    ).toBe(true);
+      }).bookingRequestForm,
+    ).toBe("always");
     expect(
       restaurantConfig.rendererCapabilities({
         cuisine: "Modern Italian",
         showMenuImages: false,
-      }).showBookingRequestForm,
-    ).toBe(false);
+      }).bookingRequestForm,
+    ).toBe("missing-provider");
+    expect(
+      localServiceConfig.rendererCapabilities(
+        localServiceConfig.attributeDefaults,
+      ).bookingRequestForm,
+    ).toBe("never");
   });
 
   it("builds a vertical-neutral deterministic fallback", () => {
@@ -146,6 +157,30 @@ describe("vertical registry", () => {
     expect(draft.catalogSections[0]?.name).toBe(
       beautyConfig.vocabulary.catalog,
     );
+  });
+
+  it("builds a conservative local-service fallback without trust claims", () => {
+    const draft = deterministicDraft(
+      {
+        source: "Harbour Repairs",
+        sourceUrl: null,
+        sourceLocale: "en",
+        name: "Harbour Repairs",
+        description: "",
+        address: "",
+        phone: "",
+        heroImageUrl: null,
+        pageText: "Harbour Repairs",
+        links: [],
+      },
+      localServiceConfig,
+    );
+
+    expect(draft.attributes).toEqual(localServiceConfig.attributeDefaults);
+    expect(draft.attributes.availabilityPosture).toBe("not-stated");
+    expect(draft.attributes.credentials).toEqual([]);
+    expect(draft.attributes.insuranceStatus).toBe("not-stated");
+    expect(draft.catalogSections[0]?.name).toBe("Services");
   });
 });
 
@@ -210,6 +245,9 @@ describe("niche routing", () => {
     expect(verticalAssetNamespace(Vertical.BEAUTY)).toBe(
       verticalSlug(Vertical.BEAUTY),
     );
+    expect(verticalAssetNamespace(Vertical.LOCAL_SERVICE)).toBe(
+      "localservice",
+    );
 
     const namespaces = listVerticalIds().map(verticalAssetNamespace);
     expect(new Set(namespaces).size).toBe(namespaces.length);
@@ -241,6 +279,15 @@ describe("niche routing", () => {
         ),
     );
     expect(listed).not.toContain(Vertical.BEAUTY);
+    expect(listed).not.toContain(Vertical.LOCAL_SERVICE);
+    expect(verticalLaunchReadiness(Vertical.RESTAURANT)).toEqual({
+      ready: true,
+      issues: [],
+    });
+    expect(verticalLaunchReadiness(Vertical.LOCAL_SERVICE)).toEqual({
+      ready: false,
+      issues: ["domain", "sender"],
+    });
   });
 
   it("registers the selected Restofrontapp mark and favicon assets", () => {

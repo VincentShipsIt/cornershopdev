@@ -10,6 +10,7 @@ datasource db {
 enum Vertical {
   RESTAURANT
   BEAUTY
+  LOCAL_SERVICE
 }
 
 enum SiteStatus {
@@ -47,6 +48,8 @@ enum IntegrationType {
   ORDERING
   DELIVERY
   SOCIAL
+  QUOTE
+  CONTACT
   ANALYTICS
 }
 

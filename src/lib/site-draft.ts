@@ -47,7 +47,13 @@ export type SiteCatalogSectionView = {
 };
 
 export type SiteIntegrationView = {
-  type: "booking" | "ordering" | "delivery" | "social";
+  type:
+    | "booking"
+    | "ordering"
+    | "delivery"
+    | "social"
+    | "quote"
+    | "contact";
   label: string;
   provider: string | null;
   url: string;

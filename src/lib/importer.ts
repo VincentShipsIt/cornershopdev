@@ -3,6 +3,7 @@ import { resolve4, resolve6 } from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
 import type {
+  IntegrationLinkType,
   LinkClassificationHint,
   ProviderDefinition,
   VerticalConfig,
@@ -23,7 +24,7 @@ const bareDomainPattern =
 export type ExtractedLink = {
   label: string;
   url: string;
-  type: "booking" | "ordering" | "delivery" | "social";
+  type: IntegrationLinkType;
   provider: string | null;
 };
 
@@ -508,6 +509,10 @@ function extractLinks(
           label ||
           (type === "booking"
             ? "Book a table"
+            : type === "quote"
+              ? "Request a quote"
+              : type === "contact"
+                ? "Contact us"
             : type === "social"
               ? "Follow us"
               : "Order online"),

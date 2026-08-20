@@ -1,6 +1,11 @@
 # Cornershopdev
 
-Cornershopdev turns an existing restaurant website—or just a restaurant name—into a private, prefilled, mobile-first website preview. The restaurant keeps its existing booking, ordering, and delivery providers. It claims the finished preview, subscribes, then connects its domain.
+Cornershopdev turns an existing local-business website—or just a business name—into a private, prefilled, mobile-first website preview. Restaurant, beauty, and local-service verticals share one import, persistence, publication, and rendering engine while keeping their own bounded facts, copy, integrations, and templates.
+
+The `LOCAL_SERVICE` vertical covers plumbers, electricians, builders, repair
+trades, and artisans without mapping their work onto restaurant concepts. Its
+schema, owner workflow, launch gates, and verification evidence are documented
+in [`docs/verticals/local-service.md`](docs/verticals/local-service.md).
 
 ## Product flow
 
@@ -18,8 +23,11 @@ Cornershopdev turns an existing restaurant website—or just a restaurant name�
 
 ## Customer workspace and operator console
 
-Each claimed site has a tenant-scoped `/dashboard` workspace. Owners can edit
-their site, connect a domain, review first-party booking leads, and move each
+Each claimed site has a tenant-scoped `/dashboard` workspace. Restaurant owners
+retain the complete menu and booking workspace; local-service owners can edit
+business facts, services, pricing posture, areas, credentials, insurance,
+projects, hours, and external phone/WhatsApp/quote paths. Owners can connect a
+domain, review first-party booking leads where the vertical supports them, and move each
 request from `NEW` to `CONTACTED` or `CLOSED`. Contact details are returned only
 after the session is revalidated against that site's organization membership.
 
@@ -160,9 +168,10 @@ fails closed when it is absent or invalid.
 
 ### AI generation
 
-Restaurant crawling, same-origin page discovery, SSRF checks, contact recovery,
-and integration detection run locally without a model. OpenRouter is used only
-to normalize recovered content into a structured restaurant draft:
+Vertical-specific crawling hints, same-origin page discovery, SSRF checks,
+contact recovery, and integration detection run locally without a model.
+OpenRouter is used only to normalize recovered content into the selected
+vertical's structured draft:
 
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_TEXT_MODEL` defaults to `openrouter/auto`
@@ -318,8 +327,8 @@ this same container, where the rewrite fires again — an infinite loop.
   acceptance, and rejection events are recorded without tokens or contact data.
 - Better Auth owns revocable, database-backed dashboard sessions behind a
   signed HTTP-only, same-site cookie.
-- Restaurant mutations require a session matching the restaurant slug.
-- Image enhancement and domain management require that same restaurant-scoped session.
+- Site mutations require a session matching the exact site slug and organization.
+- Image enhancement and domain management require that same site-scoped session.
 - Public preview generation is rate limited and fails closed in production.
 - Enhanced derivatives are persisted to private S3 storage and served through CloudFront while authentic originals and provenance remain available.
 - Arbitrary restaurant images load directly in the browser instead of through the Next.js image proxy.
@@ -329,9 +338,9 @@ this same container, where the rewrite fires again — an infinite loop.
 - `/` — marketing and URL intake
 - `/create` — import and preview studio
 - `/claim/[slug]` — pricing and claim checkout
-- `/dashboard` — authenticated restaurant management
+- `/dashboard` — authenticated vertical-specific site management
 - `/dashboard?demo=1` — local demo dashboard
 - `/admin` — dual-gated superadmin operator console
 - `/api/analytics/events` — first-party cookieless live-site event intake
-- `/preview/[slug]` — private full-screen restaurant preview
-- `/preview/[slug]/[locale]` — translated restaurant preview
+- `/preview/[slug]` — private full-screen site preview
+- `/preview/[slug]/[locale]` — translated site preview

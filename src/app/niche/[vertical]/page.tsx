@@ -21,9 +21,10 @@ import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  listVerticalIds,
+  listMarketingVerticals,
   resolveVerticalBySlug,
   resolveVerticalConfig,
+  verticalLaunchReadiness,
   verticalSlug,
 } from "@/lib/verticals/registry";
 import type { MarketingIconName } from "@/lib/verticals/types";
@@ -49,11 +50,11 @@ const icons: Record<MarketingIconName, LucideIcon> = {
   cursor: MousePointerClick,
 };
 
-// The niche set is fixed at build time — it is the vertical registry — so every
-// storefront prerenders and `dynamicParams` keeps an unregistered slug a 404
-// instead of an on-demand render of nothing.
+// Only launch-ready niches are fixed at build time. Registered drafts stay 404s
+// until their domain, sender and proxy hostname agree; `dynamicParams` prevents
+// an unlaunched slug from rendering on demand between deployments.
 export function generateStaticParams() {
-  return listVerticalIds().map((id) => ({ vertical: verticalSlug(id) }));
+  return listMarketingVerticals().map((id) => ({ vertical: verticalSlug(id) }));
 }
 
 export const dynamicParams = false;
@@ -65,7 +66,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id) return {};
+  if (!id || !verticalLaunchReadiness(id).ready) return {};
   const { marketing } = resolveVerticalConfig(id);
   const { mark } = marketing.brand;
   const title = `${marketing.brand.name} — ${marketing.hero.headline}`;
@@ -129,7 +130,7 @@ export default async function NichePage({
 }) {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id) notFound();
+  if (!id || !verticalLaunchReadiness(id).ready) notFound();
 
   const { marketing } = resolveVerticalConfig(id);
   const slug = verticalSlug(id);
