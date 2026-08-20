@@ -313,6 +313,13 @@ the scoped IAM policy, SSM parameters, host bootstrap, and DNS prerequisites are
 reviewed and ready. The role may upload only Cornershopdev artifacts and send only
 `AWS-RunShellScript` commands to the production instance.
 
+The candidate image builds dependencies and runs migrations/operator commands
+with Bun 1.3.14, but the Next.js standalone web server runs on the fully pinned
+Node.js 24.19.0 LTS Alpine image. CI starts the exact candidate image, confirms
+both runtime versions and the Node PID 1 command, then exercises public,
+sign-in, Better Auth session, and unauthenticated dashboard responses before a
+release can use that image.
+
 The host deployment script:
 
 1. Loads Cornershopdev parameters from SSM without printing them.

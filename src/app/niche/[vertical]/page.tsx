@@ -18,7 +18,7 @@ import {
 import { HomepageTransformation } from "@/components/homepage-transformation";
 import { ImportForm } from "@/components/import-form";
 import { SiteHeader } from "@/components/site-header";
-import { restaurantFontVariables } from "@/components/fonts/restaurant-font-scope";
+import { nicheFontVariables } from "@/components/fonts/niche-font-scope";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -134,6 +134,7 @@ export default async function NichePage({
 
   const { marketing } = resolveVerticalConfig(id);
   const slug = verticalSlug(id);
+  const fontVariables = nicheFontVariables(id);
   // Every route out of this page carries the niche, so a lead is attached to the
   // vertical that produced it before the studio ever opens.
   const createHref = `/create?vertical=${slug}`;
@@ -159,7 +160,7 @@ export default async function NichePage({
         brand={{ ...marketing.brand }}
         links={headerLinks}
         createHref={createHref}
-        fontVariables={restaurantFontVariables}
+        fontVariables={fontVariables}
       />
       <main>
         <section className="paper-grid overflow-hidden border-b">

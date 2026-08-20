@@ -18,6 +18,13 @@ Production application data and Workflow state both use the PostgreSQL database
 and both encrypted SSM URLs were updated before the same v0.2.0 artifact was
 redeployed.
 
+The image uses Bun 1.3.14 for dependency installation, builds, database and
+Workflow migrations, and bundled operator tools. The production Next.js
+standalone server runs with the fully pinned Node.js 24.19.0 LTS image. CI must
+build and boot that candidate image and verify the public, auth, and dashboard
+runtime contract; running the standalone server under Bun is not production
+parity.
+
 ## Deploying is a release, never a merge
 
 `ci.yml` runs `deploy` only on `workflow_dispatch` or a **published,

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
   fallback: ["ui-monospace", "monospace"],
 });
 
-export const factoryFontVariables = `${geistSans.variable} ${geistMono.variable}`;
+export const factoryFontVariables = `${geistSans.variable} ${geistMono.variable} stable-geist-fallback`;
 
 export function FactoryFontScope({ children }: { children: React.ReactNode }) {
   return (

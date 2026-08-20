@@ -24,7 +24,7 @@ const instrumentSerif = Instrument_Serif({
   preload: true,
 });
 
-export const editorialFontVariables = `${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable}`;
+export const editorialFontVariables = `${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} stable-geist-fallback stable-instrument-fallback`;
 
 export function EditorialFontScope({
   children,

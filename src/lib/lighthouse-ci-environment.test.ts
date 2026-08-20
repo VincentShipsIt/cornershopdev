@@ -63,7 +63,8 @@ describe("Lighthouse CI environment", () => {
       globalStyles,
       homepage,
       factoryFonts,
-      restaurantFonts,
+      nicheFonts,
+      authFonts,
       editorialFonts,
       fullBrandFonts,
       siteHeader,
@@ -78,7 +79,11 @@ describe("Lighthouse CI environment", () => {
         "utf8",
       ),
       readFile(
-        path.join(repoRoot, "src/components/fonts/restaurant-font-scope.tsx"),
+        path.join(repoRoot, "src/components/fonts/niche-font-scope.tsx"),
+        "utf8",
+      ),
+      readFile(
+        path.join(repoRoot, "src/components/fonts/auth-font-scope.tsx"),
         "utf8",
       ),
       readFile(
@@ -104,14 +109,16 @@ describe("Lighthouse CI environment", () => {
     expect(layout).not.toContain("brand-fonts-loaded");
     expect(homepage).toContain("factoryFontVariables");
     expect(factoryFonts.match(/preload: true/g)).toHaveLength(2);
-    expect(restaurantFonts.match(/preload: true/g)).toHaveLength(2);
-    expect(restaurantFonts).not.toContain("Geist_Mono");
+    expect(nicheFonts.match(/preload: true/g)).toHaveLength(2);
+    expect(nicheFonts.match(/preload: false/g)).toHaveLength(1);
+    expect(authFonts.match(/preload: true/g)).toHaveLength(2);
     expect(editorialFonts.match(/preload: true/g)).toHaveLength(2);
     expect(editorialFonts.match(/preload: false/g)).toHaveLength(1);
     expect(fullBrandFonts.match(/preload: true/g)).toHaveLength(3);
     for (const scope of [
       factoryFonts,
-      restaurantFonts,
+      nicheFonts,
+      authFonts,
       editorialFonts,
       fullBrandFonts,
     ]) {
@@ -122,6 +129,7 @@ describe("Lighthouse CI environment", () => {
     }
     for (const monoScope of [
       factoryFonts,
+      nicheFonts,
       editorialFonts,
       fullBrandFonts,
     ]) {
@@ -133,9 +141,11 @@ describe("Lighthouse CI environment", () => {
     expect(factoryFonts).toContain("geistSans.variable");
     expect(factoryFonts).toContain("geistMono.variable");
     expect(factoryFonts).not.toContain("Instrument_Serif");
-    expect(restaurantFonts).toContain("geistSans.variable");
-    expect(restaurantFonts).toContain("instrumentSerif.variable");
-    expect(restaurantFonts).toContain("restaurant-fonts");
+    expect(nicheFonts).toContain("geistSans.variable");
+    expect(nicheFonts).toContain("geistMono.variable");
+    expect(nicheFonts).toContain("instrumentSerif.variable");
+    expect(nicheFonts).toContain("restaurant-fonts");
+    expect(nicheFonts).toContain("vertical === Vertical.RESTAURANT");
     expect(editorialFonts).toContain("geistMono.variable");
     expect(editorialFonts).toContain("instrumentSerif.variable");
     expect(fullBrandFonts).toContain("geistMono.variable");
@@ -152,8 +162,31 @@ describe("Lighthouse CI environment", () => {
       "font-family: var(--font-instrument-serif, georgia, serif);",
     );
     expect(globalStyles).toContain(
-      "--font-geist-mono: var(--font-geist-sans);",
+      "--font-geist-mono: var(--font-geist-sans) !important;",
     );
+    expect(globalStyles).toContain(
+      'src: local("Arial"), local("Liberation Sans");',
+    );
+    expect(globalStyles).toContain(
+      'src: local("Times New Roman"), local("Liberation Serif");',
+    );
+    for (const geistScope of [
+      factoryFonts,
+      nicheFonts,
+      authFonts,
+      editorialFonts,
+      fullBrandFonts,
+    ]) {
+      expect(geistScope).toContain("stable-geist-fallback");
+    }
+    for (const serifScope of [
+      nicheFonts,
+      authFonts,
+      editorialFonts,
+      fullBrandFonts,
+    ]) {
+      expect(serifScope).toContain("stable-instrument-fallback");
+    }
     expect(transformation).toContain(
       '"/marketing/restaurant-transformation.webp"',
     );
@@ -166,7 +199,6 @@ describe("Lighthouse CI environment", () => {
       "create",
       "workspace",
     ];
-    const restaurantRoutes = ["niche"];
     const fullBrandRoutes = [
       "preview",
       "themes/restaurant",
@@ -180,13 +212,12 @@ describe("Lighthouse CI environment", () => {
       );
       expect(layout).toContain("<EditorialFontScope>");
     }
-    for (const route of restaurantRoutes) {
-      const layout = await readFile(
-        path.join(repoRoot, "src/app", route, "layout.tsx"),
-        "utf8",
-      );
-      expect(layout).toContain("<RestaurantFontScope>");
-    }
+    const nicheLayout = await readFile(
+      path.join(repoRoot, "src/app/niche/[vertical]/layout.tsx"),
+      "utf8",
+    );
+    expect(nicheLayout).toContain("<NicheFontScope");
+    expect(nicheLayout).toContain("vertical={id}");
     const authLayout = await readFile(
       path.join(repoRoot, "src/app/sign-in/layout.tsx"),
       "utf8",
@@ -237,6 +268,7 @@ describe("Lighthouse CI environment", () => {
     expect(fontSwapCeiling).toBe(0.01);
     expect(0.116786).toBeGreaterThan(fontSwapCeiling);
     expect(audit).toContain('path: "/niche/restaurant"');
+    expect(audit).toContain('path: "/niche/beauty"');
     expect(audit).toContain('path: "/themes/restaurant/terroir-editorial"');
     expect(audit).toContain('path: "/sign-in"');
     expect(audit).toContain(

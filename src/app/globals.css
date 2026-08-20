@@ -2,6 +2,31 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/*
+ * Next's generated adjusted fallbacks reference Arial and Times New Roman.
+ * Ubuntu runners provide their metric-compatible Liberation equivalents
+ * instead, so name both sources explicitly while retaining Next's measured
+ * overrides. Without these aliases, the cold route reflows before the brand
+ * faces arrive even though macOS remains stable.
+ */
+@font-face {
+  font-family: "Geist Cross-Platform Fallback";
+  src: local("Arial"), local("Liberation Sans");
+  ascent-override: 95.94%;
+  descent-override: 28.16%;
+  line-gap-override: 0%;
+  size-adjust: 104.76%;
+}
+
+@font-face {
+  font-family: "Instrument Serif Cross-Platform Fallback";
+  src: local("Times New Roman"), local("Liberation Serif");
+  ascent-override: 117.94%;
+  descent-override: 36.93%;
+  line-gap-override: 0%;
+  size-adjust: 83.94%;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -147,9 +172,18 @@
 }
 
 @layer utilities {
+  .stable-geist-fallback {
+    --font-geist-sans: "Geist", "Geist Cross-Platform Fallback", sans-serif !important;
+  }
+
+  .stable-instrument-fallback {
+    --font-instrument-serif: "Instrument Serif",
+      "Instrument Serif Cross-Platform Fallback", serif !important;
+  }
+
   /* Restofront's compact labels use the brand's Geist face, not Factory Mono. */
   .restaurant-fonts {
-    --font-geist-mono: var(--font-geist-sans);
+    --font-geist-mono: var(--font-geist-sans) !important;
   }
 
   .font-display {

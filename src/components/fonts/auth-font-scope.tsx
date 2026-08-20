@@ -15,7 +15,7 @@ const instrumentSerif = Instrument_Serif({
   preload: true,
 });
 
-export const authFontVariables = `${geistSans.variable} ${instrumentSerif.variable}`;
+export const authFontVariables = `${geistSans.variable} ${instrumentSerif.variable} stable-geist-fallback stable-instrument-fallback`;
 
 export function AuthFontScope({ children }: { children: React.ReactNode }) {
   return (

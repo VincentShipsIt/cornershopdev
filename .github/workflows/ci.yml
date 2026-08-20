@@ -74,13 +74,39 @@ jobs:
       - run: shellcheck deploy/aws/*.sh
       - run: bash deploy/aws/test-host-launcher.sh
 
+  container-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: cornershopdev_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d cornershopdev_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build production candidate image
+        run: docker build --tag cornershopdev:runtime-contract .
+      - name: Verify production container runtime
+        run: bash deploy/aws/test-container-runtime.sh cornershopdev:runtime-contract
+
   deploy:
     # Ships on a manual dispatch or when a stable GitHub release is published.
     # Release events check out the release tag, so cutting a release deploys that
     # exact commit. Prereleases (RC/beta) are excluded so only stable releases reach
     # production. The verify gate and the Production environment protection still apply.
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.event.release.prerelease == false)
-    needs: verify
+    needs: [verify, container-runtime]
     permissions:
       contents: read
       id-token: write

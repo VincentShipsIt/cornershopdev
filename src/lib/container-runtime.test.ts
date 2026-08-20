@@ -1,0 +1,51 @@
+import { describe, expect, it } from "bun:test";
+
+const dockerfile = await Bun.file(
+  new URL("../../Dockerfile", import.meta.url),
+).text();
+const entrypoint = await Bun.file(
+  new URL("../../deploy/aws/container-entrypoint.sh", import.meta.url),
+).text();
+const runtimeContract = await Bun.file(
+  new URL("../../deploy/aws/test-container-runtime.sh", import.meta.url),
+).text();
+const workflow = await Bun.file(
+  new URL("../../.github/workflows/ci.yml", import.meta.url),
+).text();
+
+describe("production container runtime", () => {
+  it("serves Next standalone with pinned Node while retaining pinned Bun tools", () => {
+    expect(dockerfile).toContain("FROM node:24.19.0-alpine3.24 AS runner");
+    expect(dockerfile).toContain(
+      "COPY --from=dependencies /usr/local/bin/bun /usr/local/bin/bun",
+    );
+    expect(dockerfile).toContain(
+      "ln -s /usr/local/bin/bun /usr/local/bin/bunx",
+    );
+    expect(dockerfile).toContain("USER node");
+    expect(entrypoint).toContain("bun run db:migrate:deploy");
+    expect(entrypoint).toContain("bun run workflow:migrate");
+    expect(entrypoint).toContain("exec node server.js");
+    expect(entrypoint).not.toContain("exec bun server.js");
+  });
+
+  it("boots and exercises the candidate image in CI", () => {
+    expect(workflow).toContain("container-runtime:");
+    expect(workflow).toContain(
+      "docker build --tag cornershopdev:runtime-contract .",
+    );
+    expect(workflow).toContain(
+      "bash deploy/aws/test-container-runtime.sh cornershopdev:runtime-contract",
+    );
+    expect(runtimeContract).toContain('[[ "$pid_one" == "node server.js " ]]');
+    expect(runtimeContract).toContain('assert_status "/" "200"');
+    expect(runtimeContract).toContain(
+      'assert_status "/niche/restaurant" "200"',
+    );
+    expect(runtimeContract).toContain('assert_status "/sign-in" "200"');
+    expect(runtimeContract).toContain(
+      'assert_status "/api/auth/get-session" "200"',
+    );
+    expect(runtimeContract).toContain('assert_status "/dashboard" "307"');
+  });
+});

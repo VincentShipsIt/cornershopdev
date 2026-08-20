@@ -34,6 +34,18 @@ const audits = [
     drawer: { family: "Geist" },
   },
   {
+    name: "Salonfront",
+    path: "/niche/beauty",
+    preloadCount: 2,
+    requestCount: 3,
+    fonts: [
+      { selector: "h1", family: "Instrument Serif" },
+      { selector: "main p", family: "Geist" },
+      { selector: ".font-mono", family: "Geist Mono" },
+    ],
+    drawer: { family: "Geist" },
+  },
+  {
     name: "Terroir customer theme",
     path: "/themes/restaurant/terroir-editorial",
     preloadCount: 3,
