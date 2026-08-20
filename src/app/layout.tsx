@@ -1,6 +1,30 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import Script from "next/script";
 import { FACTORY_BRAND } from "@/lib/brand";
 import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+  display: "optional",
+  preload: false,
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+  display: "optional",
+  preload: false,
+});
+
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  weight: "400",
+  display: "optional",
+  preload: false,
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(
@@ -47,8 +71,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
-      <body className="flex min-h-full flex-col antialiased">{children}</body>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full`}
+    >
+      <body className="flex min-h-full flex-col antialiased">
+        {children}
+        <Script id="activate-brand-fonts" strategy="lazyOnload">
+          {`document.documentElement.classList.add("brand-fonts-loaded");`}
+        </Script>
+      </body>
     </html>
   );
 }

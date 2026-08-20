@@ -53,7 +53,7 @@ describe("Lighthouse CI environment", () => {
     expect(workflow).toContain("          include-hidden-files: true\n");
   });
 
-  it("keeps audited LCP text and imagery off remote critical assets", async () => {
+  it("keeps brand fonts without putting them on the critical preload path", async () => {
     const [layout, globalStyles, transformation] = await Promise.all([
       readFile(path.join(repoRoot, "src/app/layout.tsx"), "utf8"),
       readFile(path.join(repoRoot, "src/app/globals.css"), "utf8"),
@@ -63,11 +63,28 @@ describe("Lighthouse CI environment", () => {
       ),
     ]);
 
-    expect(layout).not.toContain('from "next/font/');
-    expect(globalStyles).toContain(
-      "--font-sans: ui-sans-serif, system-ui, sans-serif;",
+    expect(layout).toContain(
+      'import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";',
     );
-    expect(globalStyles).toContain("font-family: Georgia, serif;");
+    expect(layout.match(/preload: false/g)).toHaveLength(3);
+    expect(layout.match(/display: "optional"/g)).toHaveLength(3);
+    expect(layout).toContain('strategy="lazyOnload"');
+    expect(layout).toContain('classList.add("brand-fonts-loaded")');
+    expect(layout).not.toContain("fonts.googleapis.com");
+    expect(layout).not.toContain("fonts.gstatic.com");
+    expect(globalStyles).toContain(
+      '--active-font-sans: "Geist Fallback", ui-sans-serif',
+    );
+    expect(globalStyles).toContain(
+      '--active-font-mono: "Geist Mono Fallback", ui-monospace',
+    );
+    expect(globalStyles).toContain(
+      '--active-font-heading: "Instrument Serif Fallback", Georgia, serif;',
+    );
+    expect(globalStyles).toContain(
+      "--active-font-heading: var(--font-instrument-serif);",
+    );
+    expect(globalStyles).toContain("font-family: var(--active-font-heading);");
     expect(transformation).toContain(
       '"/marketing/restaurant-transformation.webp"',
     );
