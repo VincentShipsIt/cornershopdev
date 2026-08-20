@@ -80,12 +80,12 @@ describe("dashboard tab and settings surface", () => {
     expect(foodRetailDashboard).not.toContain("publishDraft");
     expect(foodRetailDashboard).not.toContain("/publish");
     expect(restaurantPublishRoute).toContain(
-      "isVerticalPublicationEnabled(access.site.vertical)",
+      "publicationCapabilityFailureResponse",
     );
     expect(rollbackRoute).toContain(
-      "isVerticalPublicationEnabled(access.site.vertical)",
+      "publicationCapabilityFailureResponse",
     );
-    expect(sitePublication.match(/isVerticalPublicationEnabled\(input\.vertical\)/g))
+    expect(sitePublication.match(/assertVerticalPublicationEnabled\(input\.vertical\)/g))
       .toHaveLength(2);
     expect(sites).toContain(
       "!isVerticalPublicationEnabled(version.vertical)",

@@ -13,12 +13,17 @@ import { hasUnreviewedFoodRetailTranslations } from "@/lib/verticals/food-retail
 import { DraftRevisionConflictError } from "@/lib/site-persistence";
 import { previewCacheTagFor } from "@/lib/site-surface";
 import {
+  assertVerticalPublicationEnabled,
+  SitePublicationCapabilityError,
+} from "@/lib/site-publication-capability";
+import {
   projectPublishedSiteVersion,
   projectSiteDraft,
   siteDraftRelations,
 } from "@/lib/sites";
-import { isVerticalPublicationEnabled } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+
+export { SitePublicationCapabilityError };
 
 const retryablePublishCodes = new Set(["P2002", "P2034"]);
 
@@ -71,13 +76,6 @@ export class SitePublicationTranslationError extends Error {
   }
 }
 
-export class SitePublicationCapabilityError extends Error {
-  constructor() {
-    super("Publishing is not available for this vertical");
-    this.name = "SitePublicationCapabilityError";
-  }
-}
-
 /**
  * Validates the persisted private draft, appends an immutable snapshot, moves
  * the live pointer, and records the audit event in one serializable transaction.
@@ -89,9 +87,7 @@ export class SitePublicationCapabilityError extends Error {
 export async function publishSiteDraft(
   input: PublishSiteDraftInput,
 ): Promise<PublishedSiteVersion> {
-  if (!isVerticalPublicationEnabled(input.vertical)) {
-    throw new SitePublicationCapabilityError();
-  }
+  assertVerticalPublicationEnabled(input.vertical);
   const changeSummary = input.changeSummary.trim();
   if (changeSummary.length < 3 || changeSummary.length > 280) {
     throw new Error("Change summary must be between 3 and 280 characters");
@@ -316,9 +312,7 @@ export async function rollbackPublishedSiteVersion(input: {
   };
   now?: Date;
 }): Promise<PublishedSiteVersion> {
-  if (!isVerticalPublicationEnabled(input.vertical)) {
-    throw new SitePublicationCapabilityError();
-  }
+  assertVerticalPublicationEnabled(input.vertical);
   if (!process.env.DATABASE_URL) {
     throw new Error("Site publishing is temporarily unavailable");
   }
