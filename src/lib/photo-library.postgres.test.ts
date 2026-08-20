@@ -100,8 +100,9 @@ describe.skipIf(!enabled)("photo library PostgreSQL persistence", () => {
   });
 
   test("enforces content dedupe and persists reviewed hero selection", async () => {
-    await expect(
-      db.photoAsset.create({
+    let duplicateCode: string | null = null;
+    try {
+      await db.photoAsset.create({
         data: {
           siteId,
           sourceUrl: "https://cdn.example/duplicate.jpg",
@@ -114,8 +115,11 @@ describe.skipIf(!enabled)("photo library PostgreSQL persistence", () => {
           byteLength: 1_024,
           candidateUsages: ["GALLERY"],
         },
-      }),
-    ).rejects.toMatchObject({ code: "P2002" });
+      });
+    } catch (error) {
+      duplicateCode = (error as { code?: string }).code ?? null;
+    }
+    expect(duplicateCode).toBe("P2002");
 
     await reviewPhoto({
       siteId,
