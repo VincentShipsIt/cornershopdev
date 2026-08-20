@@ -16,7 +16,7 @@ readonly candidate="${container}-candidate"
 readonly previous="${container}-previous"
 readonly deployed_sha="${image_name#cornershopdev:}"
 readonly expected_bootstrap_sha256="6bcc109b5e8d64592d31e56bc39b3881b5b7f62168595388d7c73fd966d8a9a3"
-readonly expected_caddy_fragment_sha256="a8c0ebf55d1b8e0f62ea677276f56c1fe79730985be8146882fe8134aa209520"
+readonly expected_caddy_fragment_sha256="9f0bb5f0c1d9cc0e4b341b2795c6c63563aff918c4e47a8570fcecc23ec72b70"
 readonly expected_host_launcher_sha256="75aa0e06cf621dd7c9c742b6a73e45a1d8c23dc7720feab08547253f1e934abc"
 
 install -d -m 700 /etc/cornershopdev /var/lib/cornershopdev
