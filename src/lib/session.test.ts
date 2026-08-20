@@ -35,6 +35,8 @@ describe("magic-link retries", () => {
           revokedAt: null,
           createdAt: now,
           lastAttemptAt: now,
+          rotationGeneration: 2,
+          authLinkSequence: 2,
         },
         now,
       ),
@@ -48,6 +50,8 @@ describe("magic-link retries", () => {
           revokedAt: null,
           createdAt: stale,
           lastAttemptAt: stale,
+          rotationGeneration: 2,
+          authLinkSequence: 2,
         },
         now,
       ),
@@ -61,6 +65,8 @@ describe("magic-link retries", () => {
           revokedAt: null,
           createdAt: stale,
           lastAttemptAt: stale,
+          rotationGeneration: 2,
+          authLinkSequence: 2,
         },
         now,
       ),
@@ -74,6 +80,8 @@ describe("magic-link retries", () => {
           revokedAt: null,
           createdAt: stale,
           lastAttemptAt: stale,
+          rotationGeneration: 2,
+          authLinkSequence: 2,
         },
         now,
       ),
@@ -88,9 +96,11 @@ describe("magic-link retries", () => {
       revokedAt: null,
       createdAt: stale,
       lastAttemptAt: stale,
+      rotationGeneration: 2,
+      authLinkSequence: 2,
     };
     expect(canRetryMagicLink({ ...base, consumedAt: now }, now)).toBe(false);
-    expect(canRetryMagicLink({ ...base, revokedAt: now }, now)).toBe(false);
+    expect(canRetryMagicLink({ ...base, revokedAt: now }, now)).toBe(true);
     expect(
       canRetryMagicLink({ ...base, retryCount: MAGIC_LINK_MAX_RETRIES }, now),
     ).toBe(false);
@@ -100,6 +110,19 @@ describe("magic-link retries", () => {
     expect(
       canRetryMagicLink({ ...base, deliveryStatus: "SUPPRESSED" }, now),
     ).toBe(true);
+    expect(
+      canRetryMagicLink({
+        ...base,
+        rotationGeneration: 1,
+      }, now),
+    ).toBe(false);
+    expect(
+      canRetryMagicLink({
+        ...base,
+        deliveryStatus: "PENDING",
+        revokedAt: now,
+      }, now),
+    ).toBe(false);
   });
 });
 

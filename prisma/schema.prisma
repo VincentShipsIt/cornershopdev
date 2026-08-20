@@ -490,6 +490,7 @@ model ClaimInvitation {
   deliveryStatus          ClaimDeliveryStatus  @default(PENDING)
   deliveryAttempts        Int                  @default(0)
   retryCount              Int                  @default(0)
+  replacesInvitationId    String?              @unique
   providerMessageId       String?              @unique
   providerEventAt         DateTime?
   deliveryFailureCode     String?

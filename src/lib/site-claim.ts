@@ -29,6 +29,22 @@ export function unclaimedWhere(slug: string): Prisma.SiteWhereInput {
   return { slug, organizationId: null, status: { in: CLAIMABLE_STATUSES } };
 }
 
+export function hasValidClaimApprovalEvidence(invitation: {
+  proofMethod: "DOMAIN_EMAIL" | "OPERATOR_APPROVAL";
+  approvalEvidenceRef: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  acceptedAt: Date | null;
+}): boolean {
+  return (
+    invitation.proofMethod !== "OPERATOR_APPROVAL" ||
+    invitation.acceptedAt !== null ||
+    (Boolean(invitation.approvalEvidenceRef?.trim()) &&
+      Boolean(invitation.approvedBy?.trim()) &&
+      invitation.approvedAt !== null)
+  );
+}
+
 function rejectClaim(
   checkout: CompletedCheckout,
   reason: string,
@@ -85,6 +101,9 @@ export async function claimSite(
       id: true,
       email: true,
       proofMethod: true,
+      approvalEvidenceRef: true,
+      approvedBy: true,
+      approvedAt: true,
       expiresAt: true,
       acceptedAt: true,
       revokedAt: true,
@@ -108,6 +127,9 @@ export async function claimSite(
     invitation.revokedAt
   ) {
     throw rejectClaim(checkout, "invitation binding mismatch");
+  }
+  if (!hasValidClaimApprovalEvidence(invitation)) {
+    throw rejectClaim(checkout, "operator approval evidence missing");
   }
   if (invitation.acceptedAt) {
     return resolveAcceptedClaim(tx, checkout, email);

@@ -35,7 +35,8 @@ export async function getRecentAuthDeliveries(): Promise<AuthDeliveryRow[]> {
       revokedAt: true,
       createdAt: true,
       lastAttemptAt: true,
-      user: { select: { email: true } },
+      rotationGeneration: true,
+      user: { select: { email: true, authLinkSequence: true } },
     },
   });
   return rows.map((row) => ({
@@ -45,7 +46,10 @@ export async function getRecentAuthDeliveries(): Promise<AuthDeliveryRow[]> {
     status: row.deliveryStatus,
     failureCode: row.failureCode,
     retryCount: row.retryCount,
-    retryable: canRetryMagicLink(row),
+    retryable: canRetryMagicLink({
+      ...row,
+      authLinkSequence: row.user.authLinkSequence,
+    }),
     createdAt: row.createdAt,
     lastAttemptAt: row.lastAttemptAt,
   }));

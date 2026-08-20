@@ -6,6 +6,7 @@ import { buildMagicLinkEmail } from "@/lib/magic-link-email";
 import { ownerMembershipWhere } from "@/lib/owner-membership";
 import { getResend } from "@/lib/resend";
 import {
+  canRetryMagicLink,
   hashAuthToken,
   MAGIC_LINK_MAX_RETRIES,
   MAGIC_LINK_TTL_MS,
@@ -85,65 +86,99 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
   const expiresAt = new Date(now.getTime() + MAGIC_LINK_TTL_MS);
   const destination = isSuperadmin ? "ADMIN" : "WORKSPACE";
   const primarySite = workspaces[0] ?? null;
-  const link = await getDb().$transaction(
-    async (tx) => {
-      const replacedLink = metadata.replacesId
-        ? await tx.authMagicLink.findFirst({
-            where: {
-              id: metadata.replacesId,
-              userId: user.id,
-              consumedAt: null,
-              revokedAt: null,
-              retryCount: { lt: MAGIC_LINK_MAX_RETRIES },
-            },
-            select: { id: true },
-          })
-        : null;
-      if (metadata.replacesId && !replacedLink) {
-        throw new Error("This delivery was already retried.");
-      }
+  let link: { id: string; rotationGeneration: number };
+  try {
+    link = await getDb().$transaction(
+      async (tx) => {
+        const sequence = await tx.user.findUniqueOrThrow({
+          where: { id: user.id },
+          select: { authLinkSequence: true },
+        });
+        const replacedLink = metadata.replacesId
+          ? await tx.authMagicLink.findFirst({
+              where: {
+                id: metadata.replacesId,
+                userId: user.id,
+                consumedAt: null,
+                retryCount: { lt: MAGIC_LINK_MAX_RETRIES },
+              },
+              select: {
+                id: true,
+                deliveryStatus: true,
+                retryCount: true,
+                consumedAt: true,
+                revokedAt: true,
+                createdAt: true,
+                lastAttemptAt: true,
+                rotationGeneration: true,
+              },
+            })
+          : null;
+        if (
+          metadata.replacesId &&
+          (!replacedLink ||
+            metadata.retryCount !== replacedLink.retryCount + 1 ||
+            !canRetryMagicLink({
+              ...replacedLink,
+              authLinkSequence: sequence.authLinkSequence,
+            }))
+        ) {
+          throw new Error("This delivery was already retried.");
+        }
 
-      const generation = await tx.user.update({
-        where: { id: user.id },
-        data: { authLinkSequence: { increment: 1 } },
-        select: { authLinkSequence: true },
-      });
-
-      const created = await tx.authMagicLink.create({
-        data: {
-          tokenHash,
-          destination,
-          brandVertical: isSuperadmin ? null : primarySite?.vertical,
-          expiresAt,
-          userId: user.id,
-          retryCount: metadata.retryCount,
-          rotationGeneration: generation.authLinkSequence,
-        },
-        select: { id: true },
-      });
-      await tx.authEvent.create({
-        data: {
-          type: metadata.replacesId
-            ? "auth.magic_link.retried"
-            : "auth.magic_link.requested",
-          actor: metadata.actor ?? "user:self",
-          subjectUserId: user.id,
-          magicLinkId: created.id,
-          metadata: {
-            destination,
-            replacesId: metadata.replacesId ?? null,
-            retryCount: metadata.retryCount,
-            provider: "better-auth",
+        const advanced = await tx.user.updateMany({
+          where: {
+            id: user.id,
+            authLinkSequence: sequence.authLinkSequence,
           },
-        },
-      });
-      return {
-        ...created,
-        rotationGeneration: generation.authLinkSequence,
-      };
-    },
-    { isolationLevel: "Serializable" },
-  );
+          data: { authLinkSequence: { increment: 1 } },
+        });
+        if (advanced.count !== 1) {
+          throw new Error("This delivery was already retried.");
+        }
+        const rotationGeneration = sequence.authLinkSequence + 1;
+
+        const created = await tx.authMagicLink.create({
+          data: {
+            tokenHash,
+            destination,
+            brandVertical: isSuperadmin ? null : primarySite?.vertical,
+            expiresAt,
+            userId: user.id,
+            retryCount: metadata.retryCount,
+            rotationGeneration,
+          },
+          select: { id: true },
+        });
+        await tx.authEvent.create({
+          data: {
+            type: metadata.replacesId
+              ? "auth.magic_link.retried"
+              : "auth.magic_link.requested",
+            actor: metadata.actor ?? "user:self",
+            subjectUserId: user.id,
+            magicLinkId: created.id,
+            metadata: {
+              destination,
+              replacesId: metadata.replacesId ?? null,
+              retryCount: metadata.retryCount,
+              provider: "better-auth",
+            },
+          },
+        });
+        return {
+          ...created,
+          rotationGeneration,
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
+  } catch (error) {
+    await getDb().verification.deleteMany({
+      where: { identifier: tokenHash },
+    });
+    throw error;
+  }
 
   const verifyUrl = new URL("/api/auth/verify", input.url);
   verifyUrl.searchParams.set("token", input.token);

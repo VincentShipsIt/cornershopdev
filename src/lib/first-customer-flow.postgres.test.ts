@@ -140,6 +140,46 @@ describe.skipIf(!enabled)(
       if (userId) await db.user.deleteMany({ where: { id: userId } });
     });
 
+    test("rejects evidence-less operator approvals written by the predecessor binary", async () => {
+      const missingEvidenceId = `legacy-missing-${suffix}`;
+      const acceptedLegacyId = `legacy-accepted-${suffix}`;
+      const validApprovalId = `operator-valid-${suffix}`;
+
+      await expect(
+        db.$executeRaw`
+          INSERT INTO "ClaimInvitation" (
+            "id", "email", "tokenHash", "proofMethod", "expiresAt", "siteId"
+          ) VALUES (
+            ${missingEvidenceId}, ${ownerEmail}, ${`token-${missingEvidenceId}`},
+            'OPERATOR_APPROVAL', ${new Date(Date.now() + 60_000)}, ${siteId}
+          )
+        `,
+      ).rejects.toThrow();
+
+      await db.$executeRaw`
+        INSERT INTO "ClaimInvitation" (
+          "id", "email", "tokenHash", "proofMethod", "expiresAt", "acceptedAt", "siteId"
+        ) VALUES (
+          ${acceptedLegacyId}, ${ownerEmail}, ${`token-${acceptedLegacyId}`},
+          'OPERATOR_APPROVAL', ${new Date(Date.now() + 60_000)}, CURRENT_TIMESTAMP, ${siteId}
+        )
+      `;
+      await db.claimInvitation.delete({ where: { id: acceptedLegacyId } });
+
+      await db.$executeRaw`
+        INSERT INTO "ClaimInvitation" (
+          "id", "email", "tokenHash", "proofMethod", "approvalEvidenceRef",
+          "approvedBy", "approvedAt", "expiresAt", "siteId"
+        ) VALUES (
+          ${validApprovalId}, ${ownerEmail}, ${`token-${validApprovalId}`},
+          'OPERATOR_APPROVAL', 'private-crm:fixture-owner-consent',
+          'operator:postgres-regression', CURRENT_TIMESTAMP,
+          ${new Date(Date.now() + 60_000)}, ${siteId}
+        )
+      `;
+      await db.claimInvitation.delete({ where: { id: validApprovalId } });
+    });
+
     test("delivers one-time claim, provisions by paid webhook, rotates workspace access, saves privately, publishes atomically, and routes the exact live version", async () => {
       const claim = await import("@/lib/claim-invitations");
       const { processStripeWebhookEvent } = await import(

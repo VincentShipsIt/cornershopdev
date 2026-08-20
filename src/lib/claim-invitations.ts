@@ -11,7 +11,10 @@ import { alertClaimInvitationDeliveryFailure } from "@/lib/billing-operator-aler
 import { getDb } from "@/lib/db";
 import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getResend } from "@/lib/resend";
-import { isClaimable } from "@/lib/site-claim";
+import {
+  hasValidClaimApprovalEvidence,
+  isClaimable,
+} from "@/lib/site-claim";
 import { getStripe } from "@/lib/stripe";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import {
@@ -183,6 +186,8 @@ export async function issueClaimInvitation(input: {
     stage: "preview_ready" | "follow_up_1";
   };
   approvalEvidenceRef?: string;
+  approvedBy?: string;
+  approvedAt?: Date;
   retryCount?: number;
   now?: Date;
 }): Promise<IssuedClaimInvitation> {
@@ -192,10 +197,20 @@ export async function issueClaimInvitation(input: {
     input.proofMethod === "OPERATOR_APPROVAL"
       ? input.outreachDispatch
         ? `outreach-dispatch:${input.outreachDispatch.id}`
-        : normalizeClaimApprovalEvidenceRef(input.approvalEvidenceRef)
+        : input.replacesInvitationId
+          ? input.approvalEvidenceRef?.trim() ?? ""
+          : normalizeClaimApprovalEvidenceRef(input.approvalEvidenceRef)
       : null;
-  const approvedBy = approvalEvidenceRef ? input.actor : null;
-  const approvedAt = approvalEvidenceRef ? now : null;
+  const approvedBy = approvalEvidenceRef
+    ? input.replacesInvitationId
+      ? input.approvedBy?.trim() ?? ""
+      : input.actor
+    : null;
+  const approvedAt = approvalEvidenceRef
+    ? input.replacesInvitationId
+      ? input.approvedAt ?? null
+      : now
+    : null;
   const expiresAt = new Date(now.getTime() + CLAIM_INVITATION_TTL_MS);
   const token = input.outreachKey
     ? claimInvitationTokenForOutreach(input.outreachKey)
@@ -397,6 +412,60 @@ export async function issueClaimInvitation(input: {
               };
             }
           }
+          if (input.replacesInvitationId) {
+            const existingSuccessor = await tx.claimInvitation.findUnique({
+              where: { replacesInvitationId: input.replacesInvitationId },
+              select: { id: true },
+            });
+            const latestInvitation = await tx.claimInvitation.findFirst({
+              where: { siteId: site.id },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              select: {
+                id: true,
+                email: true,
+                proofMethod: true,
+                approvalEvidenceRef: true,
+                approvedBy: true,
+                approvedAt: true,
+                deliveryStatus: true,
+                retryCount: true,
+                acceptedAt: true,
+                revokedAt: true,
+                checkoutSessionId: true,
+              },
+            });
+            const activeSuccessor = await tx.claimInvitation.findFirst({
+              where: {
+                siteId: site.id,
+                id: { not: input.replacesInvitationId },
+                acceptedAt: null,
+                revokedAt: null,
+              },
+              select: { id: true },
+            });
+            if (
+              existingSuccessor ||
+              !latestInvitation ||
+              latestInvitation.id !== input.replacesInvitationId ||
+              latestInvitation.email !== email ||
+              latestInvitation.proofMethod !== input.proofMethod ||
+              latestInvitation.approvalEvidenceRef !== approvalEvidenceRef ||
+              latestInvitation.approvedBy !== approvedBy ||
+              latestInvitation.approvedAt?.getTime() !== approvedAt?.getTime() ||
+              latestInvitation.acceptedAt ||
+              latestInvitation.checkoutSessionId ||
+              !isClaimInvitationDeliveryRetryable(latestInvitation) ||
+              input.retryCount !== latestInvitation.retryCount + 1 ||
+              activeSuccessor
+            ) {
+              throw new ClaimFlowError(
+                "delivery_not_retryable",
+                409,
+                "This invitation was already replaced or is no longer the latest retryable delivery.",
+                input.replacesInvitationId,
+              );
+            }
+          }
           const checkoutInProgress = await tx.claimInvitation.findFirst({
             where: {
               siteId: site.id,
@@ -443,6 +512,7 @@ export async function issueClaimInvitation(input: {
               approvedBy,
               approvedAt,
               retryCount: input.retryCount ?? 0,
+              replacesInvitationId: input.replacesInvitationId,
               expiresAt,
             },
             select: { id: true },
@@ -502,6 +572,8 @@ export async function resendClaimInvitation(input: {
       email: true,
       proofMethod: true,
       approvalEvidenceRef: true,
+      approvedBy: true,
+      approvedAt: true,
       retryCount: true,
       deliveryStatus: true,
     },
@@ -523,6 +595,19 @@ export async function resendClaimInvitation(input: {
       invitation.id,
     );
   }
+  if (
+    invitation.proofMethod === "OPERATOR_APPROVAL" &&
+    (!invitation.approvalEvidenceRef?.trim() ||
+      !invitation.approvedBy?.trim() ||
+      !invitation.approvedAt)
+  ) {
+    throw new ClaimFlowError(
+      "invalid_ownership_proof",
+      403,
+      "This concierge approval is missing its ownership evidence record.",
+      invitation.id,
+    );
+  }
 
   return issueClaimInvitation({
     siteSlug: input.siteSlug,
@@ -530,6 +615,8 @@ export async function resendClaimInvitation(input: {
     proofMethod: invitation.proofMethod,
     actor: input.actor,
     approvalEvidenceRef: invitation.approvalEvidenceRef ?? undefined,
+    approvedBy: invitation.approvedBy ?? undefined,
+    approvedAt: invitation.approvedAt ?? undefined,
     retryCount: invitation.retryCount + 1,
     auditType: "claim.invitation.resent",
     replacesInvitationId: invitation.id,
@@ -724,12 +811,7 @@ export async function authorizeClaimInvitationForCheckout(input: {
       );
     }
     if (!isClaimable(invitation.site)) throw notClaimable();
-    if (
-      invitation.proofMethod === "OPERATOR_APPROVAL" &&
-      (!invitation.approvalEvidenceRef ||
-        !invitation.approvedBy ||
-        !invitation.approvedAt)
-    ) {
+    if (!hasValidClaimApprovalEvidence(invitation)) {
       throw new ClaimFlowError(
         "invalid_ownership_proof",
         403,

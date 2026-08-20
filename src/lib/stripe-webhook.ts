@@ -9,7 +9,11 @@ import {
   RESTOFRONT_FOUNDING_PLAN_ID,
   RESTOFRONT_FOUNDING_PRICE,
 } from "@/lib/billing-plans";
-import { claimSite, SiteNotClaimableError } from "@/lib/site-claim";
+import {
+  claimSite,
+  hasValidClaimApprovalEvidence,
+  SiteNotClaimableError,
+} from "@/lib/site-claim";
 import {
   stripeSubscriptionSnapshot,
   type StripeSubscriptionSnapshot,
@@ -226,6 +230,10 @@ async function provisionCheckout(
     select: {
       id: true,
       email: true,
+      proofMethod: true,
+      approvalEvidenceRef: true,
+      approvedBy: true,
+      approvedAt: true,
       acceptedAt: true,
       checkoutSessionId: true,
       stripePriceId: true,
@@ -240,6 +248,11 @@ async function provisionCheckout(
   ) {
     throw new StripeWebhookValidationError(
       "Checkout is not bound to this claim invitation",
+    );
+  }
+  if (!hasValidClaimApprovalEvidence(invitation)) {
+    throw new StripeWebhookValidationError(
+      "Claim invitation ownership evidence is invalid",
     );
   }
 

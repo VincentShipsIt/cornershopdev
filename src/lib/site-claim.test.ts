@@ -116,6 +116,23 @@ describe("invitation-bound site claim", () => {
     expect(state.sites[0].organizationId).toBeNull();
   });
 
+  it("fails closed when an unaccepted operator approval has no durable evidence", async () => {
+    const { state, tx } = fixture({
+      invitation: {
+        proofMethod: "OPERATOR_APPROVAL",
+        approvalEvidenceRef: null,
+        approvedBy: null,
+        approvedAt: null,
+      },
+    });
+
+    await expectRejected(tx);
+
+    expect(state.invitations[0].acceptedAt).toBeNull();
+    expect(state.sites[0].organizationId).toBeNull();
+    expect(state.auditEvents).toHaveLength(0);
+  });
+
   it("does not transfer a site that already has an owner", async () => {
     const { state, tx } = fixture({
       site: { status: "CLAIMED", organizationId: "org_someone" },
@@ -336,6 +353,9 @@ type InvitationRow = {
   id: string;
   email: string;
   proofMethod: string;
+  approvalEvidenceRef: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
   expiresAt: Date;
   verifiedAt: Date | null;
   acceptedAt: Date | null;
@@ -374,6 +394,9 @@ function invitation(
     id: "invite_1",
     email: "owner@chez-lea.test",
     proofMethod: "DOMAIN_EMAIL",
+    approvalEvidenceRef: null,
+    approvedBy: null,
+    approvedAt: null,
     expiresAt: new Date("2099-01-01"),
     verifiedAt: new Date(),
     acceptedAt: null,

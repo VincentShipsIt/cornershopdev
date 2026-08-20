@@ -33,4 +33,22 @@ WHERE "proofMethod" = 'OPERATOR_APPROVAL'
   AND "revokedAt" IS NULL
   AND "checkoutSessionId" IS NULL;
 
+-- The predecessor application can remain live while the candidate runs this
+-- migration. Hold the ALTER lock until this constraint exists so that an old
+-- binary cannot create a new chargeable operator approval without the proof
+-- fields it does not know how to write. Accepted legacy and revoked rows remain
+-- readable for replay/audit purposes.
+ALTER TABLE "ClaimInvitation"
+ADD CONSTRAINT "ClaimInvitation_operator_approval_evidence_check"
+CHECK (
+  "proofMethod" <> 'OPERATOR_APPROVAL'
+  OR "acceptedAt" IS NOT NULL
+  OR "revokedAt" IS NOT NULL
+  OR (
+    NULLIF(BTRIM("approvalEvidenceRef"), '') IS NOT NULL
+    AND NULLIF(BTRIM("approvedBy"), '') IS NOT NULL
+    AND "approvedAt" IS NOT NULL
+  )
+);
+
 COMMIT;

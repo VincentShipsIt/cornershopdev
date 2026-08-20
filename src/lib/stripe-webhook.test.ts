@@ -475,6 +475,45 @@ describe("Stripe webhook event idempotency", () => {
     }
   });
 
+  it("refuses provisioning when an old operator approval lacks evidence", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase();
+    state.invitation.proofMethod = "OPERATOR_APPROVAL";
+    const stripe = {
+      checkout: {
+        sessions: { retrieve: async () => checkoutFixture(subscriptionFixture()) },
+      },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_missing_approval_evidence", 560),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.invitation.acceptedAt).toBeNull();
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          status: "REJECTED",
+          failureReason: "Claim invitation ownership evidence is invalid",
+        }),
+      ]);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
   it("refuses a discounted founding Checkout even when Stripe marks it paid", async () => {
     const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
     const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
@@ -593,6 +632,9 @@ function createWebhookDatabase(
       id: "invite_1",
       email: "owner@chez-lea.test",
       proofMethod: "DOMAIN_EMAIL",
+      approvalEvidenceRef: null as string | null,
+      approvedBy: null as string | null,
+      approvedAt: null as Date | null,
       expiresAt: new Date("2099-01-01"),
       acceptedAt: null as Date | null,
       revokedAt: null as Date | null,

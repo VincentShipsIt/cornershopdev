@@ -64,10 +64,12 @@ export async function retryMagicLink(
       consumedAt: true,
       revokedAt: true,
       lastAttemptAt: true,
+      rotationGeneration: true,
       user: {
         select: {
           id: true,
           email: true,
+          authLinkSequence: true,
           platformRole: true,
           memberships: {
             where: ownerMembershipWhere(),
@@ -83,7 +85,13 @@ export async function retryMagicLink(
       },
     },
   });
-  if (!source || !canRetryMagicLink(source)) {
+  if (
+    !source ||
+    !canRetryMagicLink({
+      ...source,
+      authLinkSequence: source.user.authLinkSequence,
+    })
+  ) {
     throw new Error("This delivery cannot be retried.");
   }
 

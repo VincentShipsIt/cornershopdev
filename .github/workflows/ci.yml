@@ -56,6 +56,14 @@ jobs:
         env:
           SOURCE_MONITORING_POSTGRES_TEST: "1"
         run: bun test src/lib/source-monitoring.postgres.test.ts
+      - name: Postgres claim-invitation concurrency suite
+        env:
+          CLAIM_INVITATIONS_POSTGRES_TEST: "1"
+        run: bun test src/lib/claim-invitations.postgres.test.ts
+      - name: Postgres authentication retry concurrency suite
+        env:
+          AUTH_MAGIC_LINK_RETRY_POSTGRES_TEST: "1"
+        run: bun test src/lib/magic-link-retry.postgres.test.ts
       - name: First-customer service integration journey
         id: first_customer_service_journey
         env:

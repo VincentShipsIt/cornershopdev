@@ -13,6 +13,7 @@ ALTER TABLE "ClaimInvitation"
 ADD COLUMN "deliveryStatus" "ClaimDeliveryStatus" NOT NULL DEFAULT 'PENDING',
 ADD COLUMN "deliveryAttempts" INTEGER NOT NULL DEFAULT 0,
 ADD COLUMN "retryCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "replacesInvitationId" TEXT,
 ADD COLUMN "providerMessageId" TEXT,
 ADD COLUMN "providerEventAt" TIMESTAMP(3),
 ADD COLUMN "deliveryFailureCode" TEXT,
@@ -34,6 +35,9 @@ CREATE TABLE "ClaimProviderEvent" (
 
 CREATE UNIQUE INDEX "ClaimInvitation_providerMessageId_key"
 ON "ClaimInvitation"("providerMessageId");
+
+CREATE UNIQUE INDEX "ClaimInvitation_replacesInvitationId_key"
+ON "ClaimInvitation"("replacesInvitationId");
 
 CREATE INDEX "ClaimInvitation_deliveryStatus_createdAt_idx"
 ON "ClaimInvitation"("deliveryStatus", "createdAt");

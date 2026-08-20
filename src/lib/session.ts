@@ -53,6 +53,8 @@ export type MagicLinkRetrySnapshot = {
   revokedAt: Date | null;
   createdAt: Date;
   lastAttemptAt: Date | null;
+  rotationGeneration: number;
+  authLinkSequence: number;
 };
 
 export function canRetryMagicLink(
@@ -61,10 +63,10 @@ export function canRetryMagicLink(
 ): boolean {
   if (
     link.consumedAt ||
-    link.revokedAt ||
     link.deliveryStatus === "SENT" ||
     link.deliveryStatus === "DELIVERED" ||
-    link.retryCount >= MAGIC_LINK_MAX_RETRIES
+    link.retryCount >= MAGIC_LINK_MAX_RETRIES ||
+    link.rotationGeneration !== link.authLinkSequence
   ) {
     return false;
   }
@@ -76,6 +78,7 @@ export function canRetryMagicLink(
     return true;
   }
   if (link.deliveryStatus !== "PENDING") return false;
+  if (link.revokedAt) return false;
   const lastActivityAt = link.lastAttemptAt ?? link.createdAt;
   return (
     now.getTime() - lastActivityAt.getTime() >=
