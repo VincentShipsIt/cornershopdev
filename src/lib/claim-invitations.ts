@@ -712,6 +712,17 @@ export async function authorizeClaimInvitationForCheckout(input: {
     if (!invitation || invitation.site.slug !== input.siteSlug) {
       throw invalidInvitation();
     }
+    // A successful claim makes the site itself non-claimable. Classify a
+    // matching consumed bearer as a replay before checking site availability
+    // so the rejection keeps its invitation correlation evidence.
+    if (invitation.acceptedAt) {
+      throw new ClaimFlowError(
+        "invitation_used",
+        409,
+        "This invitation has already been accepted.",
+        invitation.id,
+      );
+    }
     if (!isClaimable(invitation.site)) throw notClaimable();
     if (
       invitation.proofMethod === "OPERATOR_APPROVAL" &&
@@ -723,14 +734,6 @@ export async function authorizeClaimInvitationForCheckout(input: {
         "invalid_ownership_proof",
         403,
         "This concierge approval is missing its ownership evidence record.",
-      );
-    }
-    if (invitation.acceptedAt) {
-      throw new ClaimFlowError(
-        "invitation_used",
-        409,
-        "This invitation has already been accepted.",
-        invitation.id,
       );
     }
     if (invitation.revokedAt || invitation.expiresAt <= now) {
