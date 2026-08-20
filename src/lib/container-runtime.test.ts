@@ -6,6 +6,9 @@ const dockerfile = await Bun.file(
 const entrypoint = await Bun.file(
   new URL("../../deploy/aws/container-entrypoint.sh", import.meta.url),
 ).text();
+const packageJson = await Bun.file(
+  new URL("../../package.json", import.meta.url),
+).text();
 const runtimeContract = await Bun.file(
   new URL("../../deploy/aws/test-container-runtime.sh", import.meta.url),
 ).text();
@@ -15,9 +18,13 @@ const workflow = await Bun.file(
 
 describe("production container runtime", () => {
   it("serves Next standalone with pinned Node while retaining pinned Bun tools", () => {
-    expect(dockerfile).toContain("FROM node:24.19.0-alpine3.24 AS runner");
     expect(dockerfile).toContain(
-      "COPY --from=dependencies /usr/local/bin/bun /usr/local/bin/bun",
+      "FROM node:24.19.0-alpine3.24 AS node-toolchain",
+    );
+    expect(dockerfile).toContain("FROM node-toolchain AS dependencies");
+    expect(dockerfile).toContain("FROM node-toolchain AS runner");
+    expect(dockerfile).toContain(
+      "COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun",
     );
     expect(dockerfile).toContain(
       "ln -s /usr/local/bin/bun /usr/local/bin/bunx",
@@ -27,6 +34,10 @@ describe("production container runtime", () => {
     expect(entrypoint).toContain("bun run workflow:migrate");
     expect(entrypoint).toContain("exec node server.js");
     expect(entrypoint).not.toContain("exec bun server.js");
+    expect(packageJson).toContain(
+      "node node_modules/next/dist/bin/next build",
+    );
+    expect(packageJson).not.toContain('&& next build"');
   });
 
   it("boots and exercises the candidate image in CI", () => {

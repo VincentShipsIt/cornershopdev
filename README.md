@@ -101,8 +101,9 @@ The canonical site is available at `/preview/[slug]`; translations use
 ## Stack
 
 - Next.js 16 App Router and React 19
-- Bun 1.3.14 for installs, builds, migrations, and operator tooling; pinned
-  Node.js 24.19.0 LTS for the production Next.js standalone server
+- Bun 1.3.14 for installs, Prisma/Workflow migrations, and operator tooling;
+  pinned Node.js 24.19.0 LTS for Next.js builds and the production standalone
+  server
 - Tailwind CSS v4 and shadcn/ui
 - Prisma 7 with PostgreSQL and the `pg` driver adapter
 - Vercel AI SDK 6 with OpenRouter for structured text generation and optional
