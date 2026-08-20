@@ -397,9 +397,7 @@ export function FoodRetailDashboard({
                         <Input aria-label={`${translation.locale} product ${itemIndex + 1} description`} placeholder="Localized product description" value={translatedItem.description} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].description = event.target.value; })} />
                         <Input aria-label={`${translation.locale} product ${itemIndex + 1} seasonal availability`} placeholder="Localized sourced seasonal wording" value={translatedItem.attributes.seasonalAvailability} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.seasonalAvailability = event.target.value; })} />
                         <Input aria-label={`${translation.locale} product ${itemIndex + 1} preorder note`} placeholder="Localized sourced preorder note" value={translatedItem.attributes.preorderNote} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.preorderNote = event.target.value; })} />
-                        {translatedItem.attributes.allergens.map((allergen, allergenIndex) => (
-                          <Input key={allergenIndex} aria-label={`${translation.locale} product ${itemIndex + 1} allergen ${allergenIndex + 1}`} value={allergen} onChange={(event) => changeTranslation(translation.locale, (next) => { next.catalogSections[sectionIndex].items[itemIndex].attributes.allergens[allergenIndex] = event.target.value; })} />
-                        ))}
+                        {translatedItem.attributes.allergens.length > 0 ? <p className="text-xs text-muted-foreground sm:col-span-2">Sourced allergen terms remain unchanged: {translatedItem.attributes.allergens.join(", ")}</p> : null}
                       </div>
                     ))}
                   </div>

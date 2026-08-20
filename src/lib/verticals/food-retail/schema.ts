@@ -109,10 +109,7 @@ export const foodRetailSiteDraftSchema = z
     ...baseSiteDraftCoreShape,
     attributes: foodRetailAttributesSchema,
     integrations: z.array(foodRetailIntegrationSchema).max(12),
-    translations: z
-      .array(foodRetailSiteTranslationSchema)
-      .max(8)
-      .default([]),
+    translations: z.array(foodRetailSiteTranslationSchema).max(8).default([]),
     catalogSections: z
       .array(
         catalogSectionSchema.extend({
@@ -161,7 +158,12 @@ export const foodRetailSiteDraftSchema = z
       ) {
         context.addIssue({
           code: "custom",
-          path: ["translations", translationIndex, "attributes", "pickupDetails"],
+          path: [
+            "translations",
+            translationIndex,
+            "attributes",
+            "pickupDetails",
+          ],
           message:
             "Translated pickup details must match the canonical claim presence",
         });
@@ -208,13 +210,17 @@ export const foodRetailSiteDraftSchema = z
           }
           if (
             translatedAttributes.allergens.length !==
-            canonicalAttributes.allergens.length
+              canonicalAttributes.allergens.length ||
+            translatedAttributes.allergens.some(
+              (allergen, allergenIndex) =>
+                allergen !== canonicalAttributes.allergens[allergenIndex],
+            )
           ) {
             context.addIssue({
               code: "custom",
               path: [...attributePath, "allergens"],
               message:
-                "Translated allergen labels must match the canonical allergen count",
+                "Translated allergen labels must preserve the canonical sourced facts",
             });
           }
         });
@@ -223,12 +229,8 @@ export const foodRetailSiteDraftSchema = z
   });
 
 export type FoodShopType = z.infer<typeof foodShopTypeSchema>;
-export type FoodRetailAttributes = z.infer<
-  typeof foodRetailAttributesSchema
->;
+export type FoodRetailAttributes = z.infer<typeof foodRetailAttributesSchema>;
 export type FoodRetailItemAttributes = z.infer<
   typeof foodRetailItemAttributesSchema
 >;
-export type FoodRetailSiteDraft = z.infer<
-  typeof foodRetailSiteDraftSchema
->;
+export type FoodRetailSiteDraft = z.infer<typeof foodRetailSiteDraftSchema>;

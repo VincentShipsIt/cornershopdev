@@ -66,9 +66,7 @@ describe("food-retail bilingual dashboard editing", () => {
     const translation = draft.translations[0];
 
     expect(translation.status).toBe("stale");
-    expect(translation.catalogSections[2].name).toBe(
-      sourcedCategoryName,
-    );
+    expect(translation.catalogSections[2].name).toBe(sourcedCategoryName);
     expect(translation.catalogSections[2].items[0].name).toBe(
       sourcedProductName,
     );
@@ -97,6 +95,8 @@ describe("food-retail bilingual dashboard editing", () => {
     expect(html).toContain('aria-label="fr category 3 name"');
     expect(html).toContain('aria-label="fr product 1 name"');
     expect(html).toContain('aria-label="fr link 2 label"');
+    expect(html).not.toContain('aria-label="fr product 1 allergen');
+    expect(html).toContain("Sourced allergen terms remain unchanged: gluten");
     expect(html).toContain("Mark reviewed");
   });
 
@@ -122,9 +122,7 @@ describe("food-retail bilingual dashboard editing", () => {
         translation.catalogSections[2].items[0].name = "";
       },
     );
-    expect(() =>
-      markFoodRetailTranslationReviewed(incomplete, "fr"),
-    ).toThrow();
+    expect(() => markFoodRetailTranslationReviewed(incomplete, "fr")).toThrow();
     expect(hasUnreviewedFoodRetailTranslations(incomplete)).toBe(true);
   });
 
@@ -207,5 +205,23 @@ describe("food-retail bilingual dashboard editing", () => {
     expect(translatedItem.attributes.preorderNote).toBe("");
     expect(translatedItem.attributes.allergens).toEqual(["gluten", "nuts"]);
     expect(foodRetailSiteDraftSchema.parse(synchronized)).toEqual(synchronized);
+  });
+
+  it("rejects a same-cardinality translated allergen substitution", () => {
+    const adversarial = structuredClone(sampleFoodRetailDraft);
+    adversarial.translations[0].catalogSections[0].items[0].attributes.allergens =
+      ["nuts"];
+
+    const result = foodRetailSiteDraftSchema.safeParse(adversarial);
+
+    expect(result.success).toBeFalse();
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            "Translated allergen labels must preserve the canonical sourced facts",
+        }),
+      ]),
+    );
   });
 });

@@ -93,10 +93,10 @@ export function markFoodRetailTranslationsStale(
             canonical.attributes.preorderNote,
             item.attributes.preorderNote,
           );
-          item.attributes.allergens = canonical.attributes.allergens.map(
-            (allergen, allergenIndex) =>
-              item.attributes.allergens[allergenIndex]?.trim() || allergen,
-          );
+          // Allergens are evidence, not localizable marketing copy. Keeping the
+          // exact canonical sequence prevents a same-cardinality translation
+          // from substituting a different allergen claim.
+          item.attributes.allergens = [...canonical.attributes.allergens];
         });
       });
       return translation;
@@ -112,9 +112,7 @@ function syncTranslatedClaim(canonical: string, translated: string): string {
 export function updateFoodRetailTranslation(
   input: FoodRetailSiteDraft,
   locale: string,
-  updater: (
-    translation: FoodRetailSiteDraft["translations"][number],
-  ) => void,
+  updater: (translation: FoodRetailSiteDraft["translations"][number]) => void,
 ): FoodRetailSiteDraft {
   const draft = structuredClone(input);
   const translation = draft.translations.find(
