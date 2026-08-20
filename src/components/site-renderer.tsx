@@ -11,6 +11,7 @@ import { BookingRequestForm } from "@/components/booking-request-form";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { RestaurantStructuredData } from "@/components/restaurant-themes/shared";
 import { SiteAnalytics } from "@/components/site-analytics";
+import { SitePhotoGallery } from "@/components/site-photo-gallery";
 import { Vertical } from "@/generated/prisma/enums";
 import { resolveBookingEmbed } from "@/lib/booking-embed";
 import {
@@ -310,7 +311,14 @@ export function SiteRenderer({
         </section>
       )}
 
-      {capabilities.showGallery && picturedItems.length > 0 ? (
+      {capabilities.showGallery && draft.galleryImages.length > 0 ? (
+        <SitePhotoGallery
+          draft={draft}
+          eyebrow={copy.featuredHeading}
+          heading={copy.featuredSubheading}
+          className="mx-auto max-w-7xl border-t-0"
+        />
+      ) : capabilities.showGallery && picturedItems.length > 0 ? (
         <section className="mx-auto max-w-7xl px-6 py-14 md:px-10 md:py-20">
           <div className="mb-8 flex items-end justify-between gap-6">
             <div>

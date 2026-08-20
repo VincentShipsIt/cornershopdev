@@ -43,6 +43,17 @@ export const siteDraftRelations = {
     orderBy: { position: "asc" },
     include: { items: { orderBy: { position: "asc" } } },
   },
+  photos: {
+    where: { selectedUsage: "GALLERY", reviewStatus: "APPROVED" },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      originalUrl: true,
+      provenance: true,
+      activeVariant: true,
+      enhancedUrl: true,
+      enhancedReviewStatus: true,
+    },
+  },
 } satisfies Prisma.SiteInclude;
 
 export type PersistedSiteDraftRecord = Prisma.SiteGetPayload<{
@@ -104,6 +115,16 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     heroImageProvenance: fromDatabaseImageProvenance(
       site.heroImageProvenance,
     ),
+    galleryImages: site.photos.map((photo) => ({
+      url:
+        photo.activeVariant === "ENHANCED" &&
+        photo.enhancedReviewStatus === "APPROVED" &&
+        photo.enhancedUrl
+          ? photo.enhancedUrl
+          : photo.originalUrl,
+      originalUrl: photo.originalUrl,
+      provenance: fromDatabaseImageProvenance(photo.provenance)!,
+    })),
     palette: storedPalette(
       site.draftPalette,
       config.presentation.fallbackPalette,

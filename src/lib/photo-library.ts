@@ -413,6 +413,8 @@ export async function reviewPhoto(input: {
           where: { id: input.siteId },
           data: { draftRevision: { increment: 1 } },
         });
+      } else if (photo.selectedUsage === "GALLERY") {
+        await incrementDraftRevision(transaction, input.siteId);
       }
     } else if (action === "reject_enhancement" || action === "restore_original") {
       await transaction.photoAsset.update({
@@ -435,6 +437,11 @@ export async function reviewPhoto(input: {
           where: { id: input.siteId },
           data: { draftRevision: { increment: 1 } },
         });
+      } else if (
+        photo.selectedUsage === "GALLERY" &&
+        photo.activeVariant !== "ORIGINAL"
+      ) {
+        await incrementDraftRevision(transaction, input.siteId);
       }
     } else {
       if (photo.reviewStatus !== "APPROVED" && action !== "unselect") {
@@ -478,6 +485,8 @@ export async function reviewPhoto(input: {
             where: { id: input.siteId },
             data: { draftRevision: { increment: 1 } },
           });
+        } else if (photo.selectedUsage !== "GALLERY") {
+          await incrementDraftRevision(transaction, input.siteId);
         }
         await transaction.photoAsset.update({
           where: { id: photo.id },
@@ -558,6 +567,8 @@ export async function reviewPhoto(input: {
               draftRevision: { increment: 1 },
             },
           });
+        } else if (photo.selectedUsage === "GALLERY") {
+          await incrementDraftRevision(transaction, input.siteId);
         }
       }
     }
@@ -572,6 +583,16 @@ export async function reviewPhoto(input: {
     });
   });
   return getPhotoLibrary(input.siteId);
+}
+
+async function incrementDraftRevision(
+  transaction: Prisma.TransactionClient,
+  siteId: string,
+) {
+  await transaction.site.update({
+    where: { id: siteId },
+    data: { draftRevision: { increment: 1 } },
+  });
 }
 
 function activePhotoUrl(photo: {

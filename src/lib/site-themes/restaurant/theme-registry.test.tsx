@@ -441,4 +441,32 @@ describe("restaurant theme renderers", () => {
     expect(html).not.toContain(hiddenLabel);
     expect(html).toContain(fixture.integrations[1].label);
   });
+
+  it("renders approved gallery projections with their preserved provenance", () => {
+    const fixture = restaurantThemeFixtures["terroir-editorial"];
+    const selection = restaurantThemeSelectionSchema.parse(
+      fixture.attributes.themeSelection,
+    );
+    const html = renderToStaticMarkup(
+      <RestaurantThemeRenderer
+        draft={{
+          ...fixture,
+          attributes: { ...fixture.attributes, showMenuImages: true },
+          galleryImages: [
+            {
+              url: "https://assets.example/approved-gallery.webp",
+              originalUrl: "https://assets.example/authentic-original.jpg",
+              provenance: "owner",
+            },
+          ],
+        }}
+        selection={selection}
+      />,
+    );
+
+    expect(html).toContain("data-site-photo-gallery");
+    expect(html).toContain('data-image-provenance="owner"');
+    expect(html).toContain("https://assets.example/approved-gallery.webp");
+    expect(html).not.toContain("https://assets.example/authentic-original.jpg");
+  });
 });

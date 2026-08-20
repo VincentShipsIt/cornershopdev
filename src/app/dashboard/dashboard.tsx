@@ -140,6 +140,18 @@ export function Dashboard({
     },
     [],
   );
+  const handlePhotoGalleryChange = useCallback(
+    (
+      galleryImages: Array<{
+        url: string;
+        originalUrl: string;
+        provenance: "official" | "owner" | "permissioned-ugc";
+      }>,
+    ) => {
+      setDraft((current) => ({ ...current, galleryImages }));
+    },
+    [],
+  );
   const handlePhotoCatalogChange = useCallback(
     (change: {
       sectionIndex: number;
@@ -1352,6 +1364,7 @@ export function Dashboard({
                   siteSlug={draft.slug}
                   onRevision={handlePhotoRevision}
                   onHeroChange={handlePhotoHeroChange}
+                  onGalleryChange={handlePhotoGalleryChange}
                   onCatalogChange={handlePhotoCatalogChange}
                 />
               )}

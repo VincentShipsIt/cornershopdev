@@ -30,6 +30,12 @@ export const siteImageUrlSchema = z.union([
   z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
 ]);
 
+export const siteGalleryImageSchema = z.object({
+  url: siteImageUrlSchema,
+  originalUrl: siteImageUrlSchema,
+  provenance: imageProvenanceSchema,
+});
+
 export const supportedCurrencySchema = z.enum([
   "EUR",
   "USD",
@@ -186,6 +192,7 @@ export const baseSiteDraftCoreShape = {
   heroImageUrl: siteImageUrlSchema.nullable(),
   heroOriginalImageUrl: siteImageUrlSchema.nullable().optional(),
   heroImageProvenance: imageProvenanceSchema.nullable().optional(),
+  galleryImages: z.array(siteGalleryImageSchema).max(24).default([]),
   palette: z.object({
     background: z.string(),
     foreground: z.string(),

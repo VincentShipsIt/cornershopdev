@@ -34,6 +34,11 @@ export type PersistableSiteDraft = {
   heroImageUrl: string | null;
   heroOriginalImageUrl?: string | null;
   heroImageProvenance?: "official" | "owner" | "permissioned-ugc" | null;
+  galleryImages?: Array<{
+    url: string;
+    originalUrl: string;
+    provenance: "official" | "owner" | "permissioned-ugc";
+  }>;
   palette: {
     background: string;
     foreground: string;

@@ -212,6 +212,9 @@ logos and decorative assets, copies validated bytes to content-addressed immutab
 storage, and deduplicates them by SHA-256. Owners may also upload a file or add an
 HTTPS reference. Source page, provenance, candidate classification, review state,
 selection, original, and enhanced derivative remain durable records.
+Approved gallery selections are projected into the private draft and copied into
+an immutable published version; restoring an original updates preview first and
+reaches the live site only after the owner publishes again.
 
 Allowed edits are exposure, white balance, highlight and shadow recovery,
 denoising, sharpness, resolution, straightening, subtle cropping, and removal of

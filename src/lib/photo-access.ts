@@ -4,12 +4,13 @@ import {
   getSuperadminAccess,
   type AccessFailure,
 } from "@/lib/authorization";
+import type { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 
 export type PhotoLibraryAccess =
   | {
       ok: true;
-      site: { id: string; slug: string; vertical: "RESTAURANT" | "BEAUTY" };
+      site: { id: string; slug: string; vertical: Vertical };
       actor: { id: string; role: "owner" | "operator" };
     }
   | AccessFailure;

@@ -14,6 +14,12 @@ export type SitePaletteView = {
   accent: string;
 };
 
+export type SiteGalleryImageView = {
+  url: string;
+  originalUrl: string;
+  provenance: "official" | "owner" | "permissioned-ugc";
+};
+
 export const LEGACY_THEME_VERSION = "legacy-v1";
 
 /**
@@ -86,6 +92,7 @@ export type SiteDraftView = {
   phone: string;
   sourceUrl: string | null;
   heroImageUrl: string | null;
+  galleryImages: SiteGalleryImageView[];
   palette: SitePaletteView;
   defaultLocale: string;
   businessHours: Array<{ days: string; hours: string }>;

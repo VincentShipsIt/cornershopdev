@@ -11,6 +11,7 @@ import {
   ThemeLocation,
   type RestaurantThemeRendererProps,
 } from "@/components/restaurant-themes/shared";
+import { SitePhotoGallery } from "@/components/site-photo-gallery";
 import { cn } from "@/lib/utils";
 
 export function CounterServiceTheme({
@@ -193,6 +194,13 @@ export function CounterServiceTheme({
           </div>
         </div>
       </section>
+
+      <SitePhotoGallery
+        draft={draft}
+        eyebrow={dictionary.featuredHeading}
+        heading={dictionary.featuredSubheading}
+        enabled={draft.attributes.showMenuImages === true}
+      />
 
       <footer
         className={cn(

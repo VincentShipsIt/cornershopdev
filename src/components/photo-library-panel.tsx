@@ -53,12 +53,20 @@ type PhotoLibrary = {
 export function PhotoLibraryPanel({
   siteSlug,
   onHeroChange,
+  onGalleryChange,
   onRevision,
   onCatalogChange,
 }: {
   siteSlug: string;
   onHeroChange: (
     hero: { url: string; originalUrl: string; provenance: "official" | "owner" | "permissioned-ugc" } | null,
+  ) => void;
+  onGalleryChange: (
+    images: Array<{
+      url: string;
+      originalUrl: string;
+      provenance: "official" | "owner" | "permissioned-ugc";
+    }>,
   ) => void;
   onRevision: (revision: number) => void;
   onCatalogChange: (change: {
@@ -111,6 +119,23 @@ export function PhotoLibraryPanel({
           | "permissioned-ugc",
       });
     }
+    onGalleryChange(
+      next.photos
+        .filter((photo) => photo.selectedUsage === "GALLERY")
+        .map((photo) => ({
+          url:
+            photo.activeVariant === "ENHANCED" &&
+            photo.enhancedReviewStatus === "APPROVED" &&
+            photo.enhancedUrl
+              ? photo.enhancedUrl
+              : photo.originalUrl,
+          originalUrl: photo.originalUrl,
+          provenance: photo.provenance.toLowerCase().replaceAll("_", "-") as
+            | "official"
+            | "owner"
+            | "permissioned-ugc",
+        })),
+    );
     const hero = next.photos.find((photo) => photo.selectedUsage === "HERO");
     if (!hero) {
       if (clearMissingHero) onHeroChange(null);
@@ -129,7 +154,7 @@ export function PhotoLibraryPanel({
         | "owner"
         | "permissioned-ugc",
     });
-  }, [onCatalogChange, onHeroChange, onRevision]);
+  }, [onCatalogChange, onGalleryChange, onHeroChange, onRevision]);
 
   useEffect(() => {
     let active = true;

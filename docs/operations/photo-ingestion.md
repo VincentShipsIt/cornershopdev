@@ -19,8 +19,12 @@ building, logo, or material scene element.
    `OWNER` provenance and are approved by the authenticated owner action that
    supplied them. Rejected originals cannot be selected.
 5. Candidate `HERO`, `GALLERY`, and `CATALOG` roles are deterministic hints.
-   The owner chooses the real placement; hero and catalog selections update the
-   draft only, increment its revision, and never publish automatically.
+   The owner chooses the real placement. All selections increment the private
+   draft revision and never publish automatically. Gallery reads project only
+   approved selected assets, retain original URL plus provenance, and fall back
+   to the immutable original unless an enhanced derivative is explicitly
+   approved. Publishing copies that projection into the immutable site version,
+   so later restore/reject actions change private preview only until republished.
 6. Enhancement accepts approved originals only. The model and numeric policy are
    validated at startup/use, batches and global concurrent runs are bounded,
    Redis meters requests, and a serializable reservation enforces per-image and
@@ -61,5 +65,8 @@ A run without `--execute` performs no writes.
 - `src/lib/photo-policy.test.ts`: model/config validation, ceilings, concurrency.
 - `src/lib/photo-library.test.ts`: upload binary signature validation.
 - `src/lib/photo-library.postgres.test.ts`: immutable dedupe, review/selection,
-  restore behavior, audit history, and site cost persistence.
+  gallery preview/live projection, restore fallback, immutable publication,
+  audit history, and site cost persistence.
+- `src/lib/site-themes/restaurant/theme-registry.test.tsx`: selected gallery
+  rendering and provenance across every bounded restaurant renderer.
 - `src/lib/storage/images.test.ts`: safe content/config-addressed object keys.
