@@ -84,7 +84,7 @@ export function SignInForm({
               {error}
             </p>
           ) : null}
-          <Button className="h-11 w-full" disabled={loading}>
+          <Button type="submit" className="h-11 w-full" disabled={loading}>
             {loading ? <LoaderCircle className="animate-spin" /> : null}
             Email me a secure link
             {!loading ? <ArrowRight /> : null}
