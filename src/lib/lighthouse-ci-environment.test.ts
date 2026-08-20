@@ -224,13 +224,18 @@ describe("Lighthouse CI environment", () => {
     expect(audit).toContain('request.timestamp <= firstContentfulPaint');
     expect(audit).toContain('fontRequests.length === audit.requestCount');
     expect(audit).toContain('[aria-label="Open navigation"]');
-    expect(audit).toContain(
-      'Math.abs(finalRect[key] - initialRect[key]) <= 0.5',
-    );
+    expect(audit).toContain('finalRect[key] === initialRect[key]');
     expect(audit).toContain(
       'finalRect.lineCount === initialRect.lineCount',
     );
-    expect(audit).toContain('cumulativeLayoutShift <= 0.001');
+    expect(audit).toContain(
+      'cumulativeLayoutShift <= maxFontSwapLayoutShift',
+    );
+    const fontSwapCeiling = Number(
+      audit.match(/maxFontSwapLayoutShift = ([\d.]+);/)?.[1],
+    );
+    expect(fontSwapCeiling).toBe(0.01);
+    expect(0.116786).toBeGreaterThan(fontSwapCeiling);
     expect(audit).toContain('path: "/niche/restaurant"');
     expect(audit).toContain('path: "/themes/restaurant/terroir-editorial"');
     expect(audit).toContain('path: "/sign-in"');

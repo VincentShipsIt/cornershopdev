@@ -4,6 +4,10 @@ import puppeteer from "puppeteer-core";
 
 const port = Number(process.env.BRAND_FONT_AUDIT_PORT ?? 4174);
 const origin = `http://127.0.0.1:${port}`;
+// Linux and macOS rasterize fallback glyph baselines differently even when the
+// containing blocks and line counts are identical. Keep this sentinel 10x
+// stricter than the production CLS budget while allowing that platform noise.
+const maxFontSwapLayoutShift = 0.01;
 
 const audits = [
   {
@@ -276,7 +280,7 @@ async function auditSurface(browser, audit) {
       finalRect.selector === initialRect.selector &&
       finalRect.lineCount === initialRect.lineCount &&
       ["width", "height", "top", "left"].every(
-        (key) => Math.abs(finalRect[key] - initialRect[key]) <= 0.5,
+        (key) => finalRect[key] === initialRect[key],
       )
     );
   });
@@ -321,7 +325,7 @@ async function auditSurface(browser, audit) {
     0,
   );
   assert(
-    cumulativeLayoutShift <= 0.001,
+    cumulativeLayoutShift <= maxFontSwapLayoutShift,
     `${audit.name} shifted by ${cumulativeLayoutShift}: ${JSON.stringify({ initialRects, finalRects, layoutShifts, fontEvents: await page.evaluate(() => window.__brandFontEvents) })}`,
   );
 
