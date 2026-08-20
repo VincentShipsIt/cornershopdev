@@ -1,4 +1,8 @@
 import { Resend } from "resend";
+import {
+  assertFirstCustomerTestModeSafety,
+  firstCustomerTestModeEnabled,
+} from "@/lib/first-customer-test-mode";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 
@@ -9,7 +13,12 @@ export function getResend(): Resend {
   if (!process.env.RESEND_API_KEY) {
     throw new Error("RESEND_API_KEY is not configured");
   }
-  resend = new Resend(process.env.RESEND_API_KEY);
+  assertFirstCustomerTestModeSafety();
+  resend = new Resend(process.env.RESEND_API_KEY, {
+    ...(firstCustomerTestModeEnabled()
+      ? { baseUrl: process.env.RESEND_API_BASE_URL }
+      : {}),
+  });
   return resend;
 }
 

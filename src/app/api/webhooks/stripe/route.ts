@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { alertPersistedStripeWebhookRejection } from "@/lib/billing-operator-alerts";
 import { after } from "next/server";
 import { getDb } from "@/lib/db";
 import { getStripe } from "@/lib/stripe";
@@ -6,6 +7,21 @@ import { processStripeWebhookEvent } from "@/lib/stripe-webhook";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
 
 export const runtime = "nodejs";
+
+type WebhookLifecycle = (callback: () => void | Promise<void>) => void;
+type RejectionAlert = (
+  event: Pick<Stripe.Event, "id" | "type">,
+) => Promise<unknown>;
+
+export function schedulePersistedStripeWebhookRejection(
+  event: Pick<Stripe.Event, "id" | "type">,
+  schedule: WebhookLifecycle = after,
+  alert: RejectionAlert = alertPersistedStripeWebhookRejection,
+): void {
+  schedule(async () => {
+    await alert(event);
+  });
+}
 
 export async function POST(request: Request) {
   const signature = request.headers.get("stripe-signature");
@@ -64,6 +80,9 @@ export async function POST(request: Request) {
       getStripe(),
       getDb(),
     );
+    if (result === "rejected") {
+      schedulePersistedStripeWebhookRejection(event);
+    }
     return Response.json({ received: true, persisted: true, result });
   } catch (error) {
     console.error("[stripe-webhook] processing failed", {

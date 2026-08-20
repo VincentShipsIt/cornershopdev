@@ -24,9 +24,11 @@ umask 077
 
 required_parameters=(
   AWS_REGION
+  BETTER_AUTH_SECRET
   CLAIM_TOKEN_SECRET
   CUSTOM_DOMAIN_CNAME
   DATABASE_URL
+  FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY
   HEALTHCHECK_TOKEN
   NEXT_PUBLIC_APP_URL
   OPERATOR_ALERT_EMAILS
@@ -41,6 +43,7 @@ required_parameters=(
   STRIPE_SECRET_KEY
   STRIPE_STARTER_PRICE_ID
   STRIPE_WEBHOOK_SECRET
+  SUPERADMIN_EMAILS
   WORKFLOW_POSTGRES_JOB_PREFIX
   WORKFLOW_POSTGRES_MAX_POOL_SIZE
   WORKFLOW_POSTGRES_URL
@@ -52,13 +55,11 @@ optional_parameters=(
   AI_GATEWAY_API_KEY
   AI_IMAGE_MODEL
   AI_TEXT_MODEL
-  BETTER_AUTH_SECRET
   EMAIL_FROM
   EMAIL_REPLY_TO
   OPENROUTER_API_KEY
   OPENROUTER_TEXT_MODEL
   STRIPE_LEGACY_PRICE_IDS
-  SUPERADMIN_EMAILS
 )
 
 read_parameter() {
@@ -111,6 +112,20 @@ aws s3 cp "$artifact_uri" "$artifact_file" --region us-west-1 --only-show-errors
 gzip -dc "$artifact_file" | docker load >/dev/null
 docker image inspect "$image_name" >/dev/null
 
+# Run from the reviewed image before its entrypoint can apply migrations. This
+# uses only predecessor-schema columns and blocks a chargeable legacy Checkout
+# from being stranded by the migration. Remediation is an explicit operator
+# procedure after the matching Stripe Session has been expired.
+docker run --rm \
+  --network shipshit \
+  --env-file "$environment_file" \
+  --entrypoint bun \
+  "$image_name" \
+  run operator:preflight-first-customer-migration \
+  --environment production \
+  --mode check \
+  --execute >/dev/null
+
 docker rm -f "$candidate" >/dev/null 2>&1 || true
 docker run -d \
   --name "$candidate" \
@@ -137,6 +152,10 @@ wait_for_health() {
 }
 
 wait_for_health "$candidate"
+# One deployment-time provider read proves the configured live Price still
+# matches the approved founding offer. It is intentionally separate from the
+# five-second health probe so normal readiness never hammers Stripe.
+docker exec "$candidate" bun run operator:preflight-stripe --mode live >/dev/null
 docker rm -f "$previous" >/dev/null 2>&1 || true
 if docker inspect "$container" >/dev/null 2>&1; then
   docker stop "$container" >/dev/null

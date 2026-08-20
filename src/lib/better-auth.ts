@@ -11,12 +11,15 @@ import {
 import { checkoutAuthPlugin } from "@/lib/checkout-auth-plugin";
 import { getDb } from "@/lib/db";
 import { deliverMagicLink } from "@/lib/magic-link-delivery";
+import { secureCookieRequired } from "@/lib/first-customer-test-mode";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 import {
   hashAuthToken,
   MAGIC_LINK_TTL_MS,
   SESSION_COOKIE,
 } from "@/lib/session";
 import { isConfiguredSuperadminEmail } from "@/lib/superadmin-config";
+import { workspaceAuthPlugin } from "@/lib/workspace-auth-plugin";
 
 const sessionLifetimeSeconds = 30 * 24 * 60 * 60;
 const configuredAppUrl =
@@ -77,6 +80,7 @@ export const auth = betterAuth({
               email: true,
               platformRole: true,
               memberships: {
+                where: ownerMembershipWhere(),
                 select: {
                   organization: {
                     select: {
@@ -163,6 +167,7 @@ export const auth = betterAuth({
       sendMagicLink: deliverMagicLink,
     }),
     checkoutAuthPlugin(),
+    workspaceAuthPlugin(),
   ],
   advanced: {
     trustedProxyHeaders: true,
@@ -173,7 +178,7 @@ export const auth = betterAuth({
         attributes: {
           httpOnly: true,
           sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
+          secure: secureCookieRequired(),
           path: "/",
         },
       },

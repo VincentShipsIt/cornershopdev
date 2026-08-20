@@ -3,7 +3,13 @@ import { revalidateTag } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { siteStatusForDomainState } from "@/lib/domain-routing";
+import {
+  evidenceDigest,
+  integrationUrlDigest,
+} from "@/lib/evidence-digests";
 import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
+import { DraftRevisionConflictError } from "@/lib/site-persistence";
 import { previewCacheTagFor } from "@/lib/site-surface";
 import {
   projectPublishedSiteVersion,
@@ -23,6 +29,7 @@ export type PublishSiteDraftInput = {
     email: string;
   };
   changeSummary: string;
+  expectedRevision: number;
   now?: Date;
 };
 
@@ -99,6 +106,9 @@ export async function publishSiteDraft(
             // Publishing must not resurrect a prospect or bypass an operator or
             // billing pause by changing PAUSED back to LIVE.
             throw new SitePublicationStateError();
+          }
+          if (site.draftRevision !== input.expectedRevision) {
+            throw new DraftRevisionConflictError(site.draftRevision);
           }
 
           // `projectSiteDraft` is the private-preview projection. Parsing it
@@ -181,6 +191,20 @@ export async function publishSiteDraft(
                 themeId: loaded.theme.id,
                 themeVersion: loaded.theme.version,
                 live: verifiedDomainCount > 0,
+                draftRevision: site.draftRevision,
+                draftContentDigest: evidenceDigest(loaded.draft),
+                integrationUrlDigest: integrationUrlDigest(
+                  (
+                    loaded.draft as {
+                      integrations: Array<{
+                        type: string;
+                        url: string;
+                        enabled: boolean;
+                      }>;
+                    }
+                  ).integrations,
+                ),
+                previousSiteVersionId: site.publishedSiteVersionId,
               },
             },
           });
@@ -356,6 +380,14 @@ export async function rollbackPublishedSiteVersion(input: {
             },
             select: { id: true, version: true },
           });
+          const verifiedDomainCount = await tx.domain.count({
+            where: { siteId: input.siteId, verified: true },
+          });
+          const nextStatus = siteStatusForDomainState({
+            currentStatus: site.status,
+            hasVerifiedDomain: verifiedDomainCount > 0,
+            hasValidPublishedVersion: true,
+          });
 
           const moved = await tx.site.updateMany({
             where: {
@@ -365,7 +397,7 @@ export async function rollbackPublishedSiteVersion(input: {
             },
             data: {
               publishedSiteVersionId: version.id,
-              status: "LIVE",
+              status: nextStatus,
             },
           });
           if (moved.count !== 1) {
@@ -386,6 +418,7 @@ export async function rollbackPublishedSiteVersion(input: {
                 actorEmail: input.actor.email,
                 themeId: projected.theme.id,
                 themeVersion: projected.theme.version,
+                live: nextStatus === "LIVE",
               },
             },
           });

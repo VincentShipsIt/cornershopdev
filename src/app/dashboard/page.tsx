@@ -9,7 +9,7 @@ import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { Vertical } from "@/generated/prisma/enums";
 import { publicSiteOrigin } from "@/lib/domain-routing";
-import { getRestaurantDraft } from "@/lib/restaurants";
+import { getRestaurantOwnerDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
 import { getSitePublicationHistory } from "@/lib/site-publication";
 import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
@@ -56,7 +56,7 @@ export default async function DashboardPage({
   }
 
   const [
-    draft,
+    ownerDraft,
     analyticsSummary,
     bookingInbox,
     billingAccess,
@@ -65,7 +65,7 @@ export default async function DashboardPage({
     sourceMonitoring,
   ] = access?.ok
     ? await Promise.all([
-        getRestaurantDraft(access.site.slug),
+        getRestaurantOwnerDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
         getSiteBillingAccess(access.site.id),
@@ -74,7 +74,7 @@ export default async function DashboardPage({
         getSourceMonitoringDashboard(access.site.id),
       ])
     : [
-        sampleRestaurant,
+        { draft: sampleRestaurant, revision: 0 },
         buildEmptyAnalyticsSummary(),
         {
           requests: [],
@@ -99,14 +99,15 @@ export default async function DashboardPage({
 
   // A claimed restaurant without a loadable draft is a data integrity problem,
   // not a cue to invent sample content under the owner's real slug.
-  if (access?.ok && !draft) {
+  if (access?.ok && !ownerDraft) {
     redirect("/sign-in");
   }
 
   return (
     <EditorialFontScope>
       <Dashboard
-        initialDraft={draft ?? sampleRestaurant}
+        initialDraft={ownerDraft?.draft ?? sampleRestaurant}
+        initialDraftRevision={ownerDraft?.revision ?? 0}
         email={access?.ok ? access.user.email : "demo@cornershop.dev"}
         checkoutComplete={query.checkout === "success"}
         demo={!session}

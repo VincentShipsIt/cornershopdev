@@ -1,6 +1,10 @@
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import {
+  evidenceDigest,
+  integrationUrlDigest,
+} from "@/lib/evidence-digests";
 import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
 import { restaurantSiteTheme } from "@/lib/site-themes/restaurant/configuration";
 import {
@@ -337,6 +341,10 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 sourceKey,
                 previousStatus: existing?.status ?? null,
                 contactEmailUpdated: Boolean(input.contactEmail),
+                draftContentDigest: evidenceDigest(draft),
+                integrationUrlDigest: integrationUrlDigest(
+                  draft.integrations,
+                ),
               },
               siteId: site.id,
             },
@@ -446,6 +454,10 @@ export async function createOperatorSiteImport<
                 vertical: input.vertical,
                 source: storedImportSource(input.source),
                 sourceKey: identity.sourceKey,
+                draftContentDigest: evidenceDigest(draft),
+                integrationUrlDigest: integrationUrlDigest(
+                  draft.integrations,
+                ),
               },
               siteId: site.id,
             },
@@ -559,7 +571,11 @@ export async function updateSiteDraft(
           // relation replaces, so the optimistic guard is a read-then-update.
           const current = await tx.site.findFirst({
             where: { slug, vertical },
-            select: { id: true, draftRevision: true },
+            select: {
+              id: true,
+              draftRevision: true,
+              publishedSiteVersionId: true,
+            },
           });
           if (!current) throw new Error("Site not found");
           if (
@@ -590,6 +606,12 @@ export async function updateSiteDraft(
                   enabledIntegrationCount: parsed.integrations.filter(
                     (integration) => integration.enabled,
                   ).length,
+                  draftContentDigest: evidenceDigest(parsed),
+                  integrationUrlDigest: integrationUrlDigest(
+                    parsed.integrations,
+                  ),
+                  publishedSiteVersionIdAtSave:
+                    current.publishedSiteVersionId,
                 },
               },
             });

@@ -18,13 +18,16 @@ membership, invitation, and active subscription are revalidated.
 2. Confirm `DATABASE_URL`, `REDIS_URL`, `RESEND_API_KEY`,
    `NEXT_PUBLIC_APP_URL`, and the dual-gated `SUPERADMIN_EMAILS` are configured.
    Configure a dedicated `BETTER_AUTH_SECRET` with at least 32 random
-   characters. `CLAIM_TOKEN_SECRET` is accepted as a rollout fallback only.
+   characters, distinct from `CLAIM_TOKEN_SECRET`; production has no fallback.
 3. Request one owner link and one operator link from the production hostname.
-4. In `/admin/auth`, confirm each attempt shows `sent` or a safe failure code.
+4. In `/admin/auth`, distinguish provider API acceptance (`sent`) from a signed
+   provider delivery event (`delivered`). Record the latter for acceptance, or
+   confirm a safe bounce/suppression/failure code and bounded retry.
 5. Use the owner link once. Confirm a second use redirects to
    `/sign-in?error=invalid-link`.
 6. For a multi-site account, confirm sign-in opens `/workspace/select`, then
-   selection binds the same revocable session to one tenant.
+   selection creates a fresh site-bound session and invalidates the workspace-
+   selection cookie/token. Confirm non-owner memberships are not listed.
 7. Sign out and confirm the old cookie no longer resolves.
 8. Remove a test membership and confirm its still-unexpired site session is
    denied immediately.
@@ -39,6 +42,7 @@ receipt or link use as verified unless the real owner performed those actions.
 
 ## Failed delivery
 
-Only `FAILED` or stale `PENDING` attempts are retryable. A retry revokes the old
-link, creates a new 20-minute credential, and is capped at two replacements.
-The console masks account emails and never exposes provider response bodies.
+`FAILED`, `BOUNCED`, `SUPPRESSED`, or stale `PENDING` attempts are retryable. A
+replacement is capped at two retries; an ordinary new request leaves an existing
+usable link valid unless the provider accepts the replacement. The console
+masks account emails and never exposes provider response bodies.

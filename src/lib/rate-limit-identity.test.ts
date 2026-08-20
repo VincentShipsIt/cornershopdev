@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { clientIpFromHeaders } from "@/lib/rate-limit";
+import { normalizeAccountEmail } from "@/lib/account-email";
+import {
+  clientIpFromHeaders,
+  rateLimitIdentityKey,
+} from "@/lib/rate-limit";
 
 describe("rate limit IP identity", () => {
   it("prefers Caddy-set X-Real-IP over X-Forwarded-For", () => {
@@ -31,5 +35,21 @@ describe("rate limit IP identity", () => {
     const identifier = createHash("sha256").update(ip).digest("hex");
     expect(identifier).toHaveLength(64);
     expect(identifier).not.toContain(ip);
+  });
+
+  it("gives normalized email its own privacy-safe magic-link bucket", () => {
+    const email = "owner@example.test";
+    const ipKey = rateLimitIdentityKey("magic-link-ip", "203.0.113.10");
+    const emailKey = rateLimitIdentityKey("magic-link-email", email);
+
+    expect(ipKey).not.toBe(emailKey);
+    expect(emailKey).toStartWith("cornershopdev:magic-link-email:");
+    expect(emailKey).not.toContain(email);
+    expect(emailKey).toBe(
+      rateLimitIdentityKey(
+        "magic-link-email",
+        normalizeAccountEmail("  OWNER@EXAMPLE.TEST "),
+      ),
+    );
   });
 });

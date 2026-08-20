@@ -205,6 +205,89 @@ export function applyRegeneratedRestaurantTranslation(
   return restaurantDraftSchema.parse(draft);
 }
 
+export function reconcileRegeneratedRestaurantDraft(
+  requestedDraft: RestaurantDraft,
+  currentDraft: RestaurantDraft,
+  regeneratedDraft: RestaurantDraft,
+): { draft: RestaurantDraft; preservedClientEdits: boolean } {
+  return reconcileServerRestaurantDraft(
+    requestedDraft,
+    currentDraft,
+    regeneratedDraft,
+  );
+}
+
+export function reconcileAcceptedSourceMonitoringDraft(
+  requestedDraft: RestaurantDraft,
+  currentDraft: RestaurantDraft,
+  acceptedServerDraft: RestaurantDraft,
+): { draft: RestaurantDraft; preservedClientEdits: boolean } {
+  return reconcileServerRestaurantDraft(
+    requestedDraft,
+    currentDraft,
+    acceptedServerDraft,
+  );
+}
+
+function reconcileServerRestaurantDraft(
+  requestedDraft: RestaurantDraft,
+  currentDraft: RestaurantDraft,
+  serverDraft: RestaurantDraft,
+): { draft: RestaurantDraft; preservedClientEdits: boolean } {
+  const preservedClientEdits = !sameJson(requestedDraft, currentDraft);
+  return {
+    draft: restaurantDraftSchema.parse(
+      mergeServerAndClientValue(requestedDraft, currentDraft, serverDraft),
+    ),
+    preservedClientEdits,
+  };
+}
+
+function mergeServerAndClientValue(
+  base: unknown,
+  client: unknown,
+  server: unknown,
+): unknown {
+  if (sameJson(client, base)) return structuredClone(server);
+  if (sameJson(server, base) || sameJson(client, server)) {
+    return structuredClone(client);
+  }
+  if (Array.isArray(base) && Array.isArray(client) && Array.isArray(server)) {
+    if (base.length !== client.length || base.length !== server.length) {
+      return structuredClone(client);
+    }
+    return base.map((value, index) =>
+      mergeServerAndClientValue(value, client[index], server[index]),
+    );
+  }
+  if (isPlainRecord(base) && isPlainRecord(client) && isPlainRecord(server)) {
+    const merged: Record<string, unknown> = {};
+    for (const key of new Set([
+      ...Object.keys(base),
+      ...Object.keys(client),
+      ...Object.keys(server),
+    ])) {
+      merged[key] = mergeServerAndClientValue(
+        base[key],
+        client[key],
+        server[key],
+      );
+    }
+    return merged;
+  }
+  // Both sides changed the same scalar or incompatible structure. The owner's
+  // later in-browser edit wins; its next OCC save becomes the explicit audit.
+  return structuredClone(client);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function markRestaurantTranslationsStale(
   draft: RestaurantDraft,
 ): RestaurantDraft {
