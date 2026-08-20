@@ -53,6 +53,8 @@ jobs:
       - run: bun run lint
       - run: bun run design:lint
       - run: bun run build
+      - name: Cold-cache brand font contract
+        run: bun run verify:brand-fonts
       # These static-route audits do not exercise workflows. Keep the server on
       # the local world instead of inheriting the job's Postgres test backend.
       - name: Lighthouse budgets
