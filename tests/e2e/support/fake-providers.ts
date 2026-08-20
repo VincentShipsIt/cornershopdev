@@ -38,6 +38,7 @@ Bun.serve({
         livemode: false,
         currency: "eur",
         unit_amount: 4_900,
+        type: "recurring",
         tax_behavior: "exclusive",
         recurring: {
           interval: "month",
