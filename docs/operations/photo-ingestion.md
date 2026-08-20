@@ -11,7 +11,9 @@ building, logo, or material scene element.
    avatar, map, GIF, and SVG assets.
 2. Every accepted URL passes the existing DNS-pinned SSRF boundary and a 12 MB
    response limit. Uploads are authenticated, limited to 12 MB, and checked by
-   binary signature rather than trusting `Content-Type`.
+   binary signature rather than trusting `Content-Type`. Multipart requests are
+   stream-counted through a 12.5 MB hard body ceiling before parsing; missing,
+   chunked, invalid, or dishonest `Content-Length` values cannot bypass it.
 3. Bytes are SHA-256 addressed under the site's vertical namespace. S3 writes
    use `If-None-Match: *`; `(siteId, contentSha256)` is unique in PostgreSQL.
    Replays therefore return the existing immutable original.
@@ -64,6 +66,8 @@ A run without `--execute` performs no writes.
 - `src/lib/photo-discovery.test.ts`: bounded discovery, filtering, classification.
 - `src/lib/photo-policy.test.ts`: model/config validation, ceilings, concurrency.
 - `src/lib/photo-library.test.ts`: upload binary signature validation.
+- `src/lib/photo-upload-body.test.ts`: streaming multipart body ceiling across
+  missing, chunked, invalid, dishonest, and oversized length cases.
 - `src/lib/photo-library.postgres.test.ts`: immutable dedupe, review/selection,
   gallery preview/live projection, restore fallback, immutable publication,
   audit history, and site cost persistence.

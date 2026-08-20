@@ -6,6 +6,10 @@ import {
   ingestOwnerPhoto,
   PhotoLibraryError,
 } from "@/lib/photo-library";
+import {
+  parseBoundedPhotoForm,
+  PhotoUploadBodyError,
+} from "@/lib/photo-upload-body";
 import { limitPhotoIngest } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 
@@ -49,11 +53,7 @@ export async function POST(
   try {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.startsWith("multipart/form-data")) {
-      const length = Number(request.headers.get("content-length") ?? "0");
-      if (Number.isFinite(length) && length > 12_500_000) {
-        throw new PhotoLibraryError("The uploaded image is larger than 12 MB", 413);
-      }
-      const form = await request.formData();
+      const form = await parseBoundedPhotoForm(request);
       const photo = form.get("photo");
       if (!(photo instanceof File)) {
         throw new PhotoLibraryError("Choose an image file to upload");
@@ -92,6 +92,7 @@ export async function POST(
   } catch (error) {
     const expected =
       error instanceof PhotoLibraryError ||
+      error instanceof PhotoUploadBodyError ||
       error instanceof z.ZodError ||
       error instanceof SyntaxError;
     return Response.json(
@@ -105,6 +106,8 @@ export async function POST(
         status:
           error instanceof PhotoLibraryError
             ? error.status
+            : error instanceof PhotoUploadBodyError
+              ? error.status
             : expected
               ? 400
               : 500,
