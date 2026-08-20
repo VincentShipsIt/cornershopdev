@@ -44,6 +44,7 @@ export function assertFirstCustomerTestModeSafety(
     !isLoopbackUrl(environment.STRIPE_API_BASE_URL) ||
     !isLoopbackUrl(environment.RESEND_API_BASE_URL) ||
     !isLoopbackUrl(environment.DATABASE_URL) ||
+    !isLoopbackUrl(environment.WORKFLOW_POSTGRES_URL) ||
     !environment.STRIPE_SECRET_KEY?.startsWith("sk_test_") ||
     !environment.RESEND_API_KEY?.startsWith("re_test_")
   ) {

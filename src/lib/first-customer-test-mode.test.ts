@@ -12,6 +12,7 @@ const safe = {
   STRIPE_API_BASE_URL: "http://127.0.0.1:4100",
   RESEND_API_BASE_URL: "http://127.0.0.1:4100",
   DATABASE_URL: "postgresql://test:test@127.0.0.1:5432/test",
+  WORKFLOW_POSTGRES_URL: "postgresql://test:test@127.0.0.1:5432/test",
   STRIPE_SECRET_KEY: "sk_test_first_customer",
   RESEND_API_KEY: "re_test_first_customer",
 };
@@ -33,6 +34,11 @@ describe("first-customer provider test mode", () => {
       { ...safe, STRIPE_SECRET_KEY: "sk_live_forbidden" },
       { ...safe, STRIPE_API_BASE_URL: "https://api.stripe.com" },
       { ...safe, DATABASE_URL: "postgresql://prod:prod@db.example.com/prod" },
+      {
+        ...safe,
+        WORKFLOW_POSTGRES_URL:
+          "postgresql://workflow:workflow@db.example.com/workflow",
+      },
     ]) {
       expect(() => assertFirstCustomerTestModeSafety(environment)).toThrow(
         "Unsafe first-customer test-mode configuration",
