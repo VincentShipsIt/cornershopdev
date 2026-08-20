@@ -28,7 +28,21 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   await expect(page.getByText("€49.00 per month")).toBeVisible();
   await page.getByRole("button", { name: "Pay €49 in test mode" }).click();
 
+  await expect(page).toHaveURL(/\/workspace\/select$/);
+  await expect(page.getByText(e2e.targetName)).toBeVisible();
+  await expect(page.getByText(e2e.existingName)).toBeVisible();
+  await expect(page.getByText(e2e.unauthorizedName)).not.toBeVisible();
+  expect(await currentSessionBinding(page)).toMatchObject({
+    purpose: "WORKSPACE_SELECTION",
+    siteId: null,
+  });
+  expect(await selectWorkspace(page, e2e.unauthorizedId)).toBe(403);
+  await page.getByRole("button", { name: `Open ${e2e.targetName}` }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+  expect(await currentSessionBinding(page)).toMatchObject({
+    purpose: "SITE",
+    siteId: e2e.targetId,
+  });
   await expect(page.getByText(`Good afternoon, ${e2e.targetName}.`)).toBeVisible();
 
   const replay = await request.post("/api/checkout", {
@@ -61,15 +75,7 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   await expect(page).toHaveURL(/\/workspace\/select$/);
   await expect(page.getByText(e2e.targetName)).toBeVisible();
   await expect(page.getByText(e2e.existingName)).toBeVisible();
-  const unauthorized = await page.evaluate(async () => {
-    const response = await fetch("/api/auth/workspace", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ siteId: "not-an-owner-workspace" }),
-    });
-    return response.status;
-  });
-  expect(unauthorized).toBe(403);
+  expect(await selectWorkspace(page, e2e.unauthorizedId)).toBe(403);
   const selectionCookies = await context.cookies();
   await page.getByRole("button", { name: `Open ${e2e.targetName}` }).click();
   await expect(page).toHaveURL(/\/dashboard/);
@@ -187,4 +193,31 @@ async function latestMailboxLink(
   const link = payload.html.match(/href="([^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
   if (!link || link === previous) throw new Error("Mailbox link unavailable");
   return link;
+}
+
+async function selectWorkspace(
+  page: import("@playwright/test").Page,
+  siteId: string,
+): Promise<number> {
+  return page.evaluate(async (selectedSiteId) => {
+    const response = await fetch("/api/auth/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteId: selectedSiteId }),
+    });
+    return response.status;
+  }, siteId);
+}
+
+async function currentSessionBinding(
+  page: import("@playwright/test").Page,
+): Promise<{ purpose?: string; siteId?: string | null }> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/auth/get-session");
+    if (!response.ok) throw new Error("Session lookup failed");
+    const payload = (await response.json()) as {
+      session?: { purpose?: string; siteId?: string | null };
+    };
+    return payload.session ?? {};
+  });
 }

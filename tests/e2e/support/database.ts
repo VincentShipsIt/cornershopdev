@@ -24,6 +24,20 @@ export async function seedFirstCustomerBrowserJourney() {
       },
     },
   });
+  await db.organization.create({
+    data: {
+      name: "Browser Journey Unauthorized Organization",
+      sites: {
+        create: {
+          id: e2e.unauthorizedId,
+          slug: e2e.unauthorizedSlug,
+          name: e2e.unauthorizedName,
+          vertical: "RESTAURANT",
+          status: "CLAIMED",
+        },
+      },
+    },
+  });
   await db.site.create({
     data: {
       id: e2e.targetId,
@@ -95,10 +109,19 @@ export async function cleanupFirstCustomerBrowserJourney() {
     where: { eventId: { startsWith: "evt_first_customer_" } },
   });
   await db.site.deleteMany({
-    where: { id: { in: [e2e.targetId, e2e.existingId] } },
+    where: {
+      id: { in: [e2e.targetId, e2e.existingId, e2e.unauthorizedId] },
+    },
   });
   await db.organization.deleteMany({
-    where: { name: "Browser Journey Existing Organization" },
+    where: {
+      name: {
+        in: [
+          "Browser Journey Existing Organization",
+          "Browser Journey Unauthorized Organization",
+        ],
+      },
+    },
   });
   await db.user.deleteMany({ where: { email: e2e.ownerEmail } });
 }

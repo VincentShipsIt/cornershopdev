@@ -51,6 +51,24 @@ type WorkspaceRotationDependencies<Session extends CreatedWorkspaceSession> = {
   clearSessionCookie: () => void;
 };
 
+export function workspaceSessionCreationArguments(input: {
+  userId: string;
+  siteId: string;
+  organizationId: string;
+  purpose: "SITE";
+}) {
+  return [
+    input.userId,
+    false,
+    {
+      purpose: input.purpose,
+      organizationId: input.organizationId,
+      siteId: input.siteId,
+    },
+    true,
+  ] as const;
+}
+
 export async function rotateWorkspaceSession<
   Session extends CreatedWorkspaceSession,
 >(
@@ -184,11 +202,14 @@ export function workspaceAuthPlugin(): BetterAuthPlugin {
                   select: { id: true, organizationId: true },
                 }),
               createSession: ({ userId, organizationId, siteId, purpose }) =>
-                ctx.context.internalAdapter.createSession(userId, false, {
-                  purpose,
-                  organizationId,
-                  siteId,
-                }),
+                ctx.context.internalAdapter.createSession(
+                  ...workspaceSessionCreationArguments({
+                    userId,
+                    purpose,
+                    organizationId,
+                    siteId,
+                  }),
+                ),
               setSessionCookie: (session) =>
                 setSessionCookie(ctx, {
                   session,

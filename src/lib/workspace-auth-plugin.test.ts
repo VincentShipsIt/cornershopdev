@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import {
   persistWorkspaceRotation,
   rotateWorkspaceSession,
+  workspaceSessionCreationArguments,
 } from "@/lib/workspace-auth-plugin";
 
 const current = {
@@ -13,6 +14,26 @@ const current = {
 const created = { id: "session_new", token: "token_new" };
 
 describe("Better Auth workspace session rotation", () => {
+  it("uses Better Auth's final override slot for the selected SITE binding", () => {
+    expect(
+      workspaceSessionCreationArguments({
+        userId: "user_1",
+        siteId: "site_1",
+        organizationId: "organization_1",
+        purpose: "SITE",
+      }),
+    ).toEqual([
+      "user_1",
+      false,
+      {
+        purpose: "SITE",
+        organizationId: "organization_1",
+        siteId: "site_1",
+      },
+      true,
+    ]);
+  });
+
   it("deletes the exact old token and audits both session IDs atomically", async () => {
     const deleted: unknown[] = [];
     const audited: unknown[] = [];
