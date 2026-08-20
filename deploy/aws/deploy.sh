@@ -183,13 +183,17 @@ docker rm -f "$previous" >/dev/null 2>&1 || true
 
 monitor_service="/etc/systemd/system/cornershopdev-public-health.service"
 monitor_timer="/etc/systemd/system/cornershopdev-public-health.timer"
+alert_service="/etc/systemd/system/cornershopdev-operator-alerts.service"
+alert_timer="/etc/systemd/system/cornershopdev-operator-alerts.timer"
 temporary_monitor_service="$(mktemp /etc/systemd/system/cornershopdev-public-health.service.XXXXXX)"
 temporary_monitor_timer="$(mktemp /etc/systemd/system/cornershopdev-public-health.timer.XXXXXX)"
-trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_service" "$temporary_monitor_timer"' EXIT
+temporary_alert_service="$(mktemp /etc/systemd/system/cornershopdev-operator-alerts.service.XXXXXX)"
+temporary_alert_timer="$(mktemp /etc/systemd/system/cornershopdev-operator-alerts.timer.XXXXXX)"
+trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_service" "$temporary_monitor_timer" "$temporary_alert_service" "$temporary_alert_timer"' EXIT
 
 {
   printf '%s\n' '[Unit]'
-  printf '%s\n' 'Description=Cornershopdev public-site health and operator alert check'
+  printf '%s\n' 'Description=Cornershopdev public-site health check'
   printf '%s\n' 'After=docker.service network-online.target'
   printf '%s\n' 'Wants=network-online.target'
   printf '\n%s\n' '[Service]'
@@ -210,9 +214,35 @@ trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_monitor_servic
   printf '%s\n' 'WantedBy=timers.target'
 } >"$temporary_monitor_timer"
 
+{
+  printf '%s\n' '[Unit]'
+  printf '%s\n' 'Description=Dispatch due Cornershopdev operator alerts'
+  printf '%s\n' 'After=docker.service network-online.target'
+  printf '%s\n' 'Wants=network-online.target'
+  printf '\n%s\n' '[Service]'
+  printf '%s\n' 'Type=oneshot'
+  printf '%s\n' 'TimeoutStartSec=45s'
+  printf '%s\n' "ExecStart=/usr/bin/docker run --rm --network shipshit --memory 256m --cpus 0.25 --env-file ${environment_file} --entrypoint bun ${image_name} run operator:dispatch-alerts"
+} >"$temporary_alert_service"
+
+{
+  printf '%s\n' '[Unit]'
+  printf '%s\n' 'Description=Dispatch Cornershopdev operator alerts every minute'
+  printf '\n%s\n' '[Timer]'
+  printf '%s\n' 'OnBootSec=1min'
+  printf '%s\n' 'OnUnitActiveSec=1min'
+  printf '%s\n' 'RandomizedDelaySec=15s'
+  printf '%s\n' 'Persistent=true'
+  printf '\n%s\n' '[Install]'
+  printf '%s\n' 'WantedBy=timers.target'
+} >"$temporary_alert_timer"
+
 install -m 644 "$temporary_monitor_service" "$monitor_service"
 install -m 644 "$temporary_monitor_timer" "$monitor_timer"
+install -m 644 "$temporary_alert_service" "$alert_service"
+install -m 644 "$temporary_alert_timer" "$alert_timer"
 systemctl daemon-reload
 systemctl enable --now cornershopdev-public-health.timer >/dev/null
+systemctl enable --now cornershopdev-operator-alerts.timer >/dev/null
 
 echo "Cornershopdev deployment is healthy: ${image_name}"

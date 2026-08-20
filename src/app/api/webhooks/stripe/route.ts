@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { alertPersistedStripeWebhookRejection } from "@/lib/billing-operator-alerts";
+import { after } from "next/server";
 import { getDb } from "@/lib/db";
 import { getStripe } from "@/lib/stripe";
 import { processStripeWebhookEvent } from "@/lib/stripe-webhook";
@@ -7,18 +8,35 @@ import { captureOperatorAlert } from "@/lib/operator-alerts";
 
 export const runtime = "nodejs";
 
+type WebhookLifecycle = (callback: () => void | Promise<void>) => void;
+type RejectionAlert = (
+  event: Pick<Stripe.Event, "id" | "type">,
+) => Promise<unknown>;
+
+export function schedulePersistedStripeWebhookRejection(
+  event: Pick<Stripe.Event, "id" | "type">,
+  schedule: WebhookLifecycle = after,
+  alert: RejectionAlert = alertPersistedStripeWebhookRejection,
+): void {
+  schedule(async () => {
+    await alert(event);
+  });
+}
+
 export async function POST(request: Request) {
   const signature = request.headers.get("stripe-signature");
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
-    await captureOperatorAlert({
-      kind: "CHECKOUT_WEBHOOK_FAILURE",
-      dedupKey: "webhook-configuration",
-      title: "Stripe webhook configuration is missing",
-      message:
-        "A Stripe webhook reached the application without a configured signing secret. Restore the encrypted parameter and redeploy.",
-      context: { category: "configuration" },
-    });
+    after(() =>
+      captureOperatorAlert({
+        kind: "CHECKOUT_WEBHOOK_FAILURE",
+        dedupKey: "webhook-configuration",
+        title: "Stripe webhook configuration is missing",
+        message:
+          "A Stripe webhook reached the application without a configured signing secret. Restore the encrypted parameter and redeploy.",
+        context: { category: "configuration" },
+      }),
+    );
     return Response.json(
       { error: "Stripe webhook is not configured" },
       { status: 400 },
@@ -40,14 +58,16 @@ export async function POST(request: Request) {
   }
 
   if (!process.env.DATABASE_URL) {
-    await captureOperatorAlert({
-      kind: "CHECKOUT_WEBHOOK_FAILURE",
-      dedupKey: "webhook-persistence",
-      title: "Stripe webhook persistence is unavailable",
-      message:
-        "A signed webhook could not reach PostgreSQL. Stripe will retry; restore database availability before replaying events.",
-      context: { category: "database" },
-    });
+    after(() =>
+      captureOperatorAlert({
+        kind: "CHECKOUT_WEBHOOK_FAILURE",
+        dedupKey: "webhook-persistence",
+        title: "Stripe webhook persistence is unavailable",
+        message:
+          "A signed webhook could not reach PostgreSQL. Stripe will retry; restore database availability before replaying events.",
+        context: { category: "database" },
+      }),
+    );
     return Response.json(
       { error: "Webhook persistence is unavailable" },
       { status: 503 },
@@ -61,7 +81,7 @@ export async function POST(request: Request) {
       getDb(),
     );
     if (result === "rejected") {
-      await alertPersistedStripeWebhookRejection(event);
+      schedulePersistedStripeWebhookRejection(event);
     }
     return Response.json({ received: true, persisted: true, result });
   } catch (error) {
@@ -70,14 +90,16 @@ export async function POST(request: Request) {
       eventType: event.type,
       error: error instanceof Error ? error.message : "unknown",
     });
-    await captureOperatorAlert({
-      kind: "CHECKOUT_WEBHOOK_FAILURE",
-      dedupKey: `${event.type}:${event.id}`,
-      title: "Stripe webhook processing failed",
-      message:
-        "A signed Stripe event returned a server failure and remains eligible for Stripe retry. Inspect the event ledger, provider status, and application logs.",
-      context: { eventId: event.id, eventType: event.type },
-    });
+    after(() =>
+      captureOperatorAlert({
+        kind: "CHECKOUT_WEBHOOK_FAILURE",
+        dedupKey: `${event.type}:${event.id}`,
+        title: "Stripe webhook processing failed",
+        message:
+          "A signed Stripe event returned a server failure and remains eligible for Stripe retry. Inspect the event ledger, provider status, and application logs.",
+        context: { eventId: event.id, eventType: event.type },
+      }),
+    );
     return Response.json(
       { error: "Webhook processing failed" },
       { status: 500 },

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
 import { configuredBillingPlans } from "@/lib/billing-plans";
 import { getDb } from "@/lib/db";
+import { isDatabaseLoopbackHostname } from "@/lib/environment-isolation";
 import { getRedisClient } from "@/lib/redis";
 import { configuredOperatorAlertRecipients } from "@/lib/operator-alert-policy";
 
@@ -73,7 +74,7 @@ function validateDatabase(
     }
     if (
       isDeployedEnvironment(environment) &&
-      ["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+      isDatabaseLoopbackHostname(url.hostname)
     ) {
       return {
         service: "database",

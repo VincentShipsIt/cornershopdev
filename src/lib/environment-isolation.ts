@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { normalizeHostname } from "@/lib/request-hostname";
 
 export type DatabaseIsolationEvidence = {
   isolated: true;
@@ -24,6 +25,15 @@ export function verifyDatabaseIsolation(input: {
   };
 }
 
+export function isDatabaseLoopbackHostname(hostname: string): boolean {
+  const normalized = normalizeHostname(hostname);
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized.startsWith("127.")
+  );
+}
+
 function databaseIdentity(value: string): string {
   let url: URL;
   try {
@@ -34,7 +44,7 @@ function databaseIdentity(value: string): string {
   if (url.protocol !== "postgresql:" && url.protocol !== "postgres:") {
     throw new Error("Both database values must be PostgreSQL URLs.");
   }
-  if (["localhost", "127.0.0.1", "::1"].includes(url.hostname)) {
+  if (isDatabaseLoopbackHostname(url.hostname)) {
     throw new Error("Deployed database identities cannot use a local host.");
   }
   const database = decodeURIComponent(url.pathname.replace(/^\/+/, ""));

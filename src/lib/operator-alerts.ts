@@ -3,11 +3,15 @@ import { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db";
 import {
   configuredOperatorAlertRecipients,
+  dispatchOperatorAlertBatch,
+  OPERATOR_ALERT_DELIVERY_TIMEOUT_MS,
+  OPERATOR_ALERT_DISPATCH_BATCH_SIZE,
   OPERATOR_ALERT_LEASE_MS,
   OPERATOR_ALERT_MAX_ATTEMPTS,
+  operatorAlertFailureState,
   operatorAlertFingerprint,
+  type AlertDeliveryOutcome,
   type OperatorAlertKind,
-  operatorAlertRetryAt,
   safeAlertText,
 } from "@/lib/operator-alert-policy";
 import { emailSender, getResend } from "@/lib/resend";
@@ -21,13 +25,7 @@ export type CaptureOperatorAlertInput = {
   occurredAt?: Date;
 };
 
-export type AlertDeliveryOutcome =
-  | "delivered"
-  | "pending"
-  | "exhausted"
-  | "deduplicated"
-  | "fallback-delivered"
-  | "unavailable";
+export type { AlertDeliveryOutcome } from "@/lib/operator-alert-policy";
 
 export async function captureOperatorAlert(
   input: CaptureOperatorAlertInput,
@@ -70,7 +68,7 @@ export async function captureOperatorAlert(
 }
 
 export async function dispatchDueOperatorAlerts(
-  limit = 25,
+  limit = OPERATOR_ALERT_DISPATCH_BATCH_SIZE,
 ): Promise<Record<AlertDeliveryOutcome, number>> {
   const boundedLimit = Math.max(1, Math.min(100, limit));
   const ids = await getDb().operatorAlert.findMany({
@@ -83,11 +81,10 @@ export async function dispatchDueOperatorAlerts(
     take: boundedLimit,
     select: { id: true },
   });
-  const totals = emptyOutcomeTotals();
-  for (const { id } of ids) {
-    totals[await deliverOperatorAlert(id)] += 1;
-  }
-  return totals;
+  return dispatchOperatorAlertBatch(
+    ids.map(({ id }) => id),
+    deliverOperatorAlert,
+  );
 }
 
 async function deliverOperatorAlert(id: string): Promise<AlertDeliveryOutcome> {
@@ -154,19 +151,18 @@ async function deliverOperatorAlert(id: string): Promise<AlertDeliveryOutcome> {
     });
     return "delivered";
   } catch (error) {
-    const exhausted = attempt >= OPERATOR_ALERT_MAX_ATTEMPTS;
+    const failureState = operatorAlertFailureState(attempt, new Date());
     await getDb().operatorAlert.updateMany({
       where: { id, deliveryLeaseToken: leaseToken },
       data: {
-        status: exhausted ? "EXHAUSTED" : "PENDING",
+        ...failureState,
         attempts: attempt,
-        nextAttemptAt: operatorAlertRetryAt(attempt, new Date()),
         lastFailureCode: alertFailureCode(error),
         deliveryLeaseToken: null,
         deliveryLeaseUntil: null,
       },
     });
-    return exhausted ? "exhausted" : "pending";
+    return failureState.status === "EXHAUSTED" ? "exhausted" : "pending";
   }
 }
 
@@ -215,7 +211,7 @@ async function withDeliveryTimeout<T>(delivery: Promise<T>): Promise<T> {
       new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(
           () => reject(new Error("Operator alert delivery timed out")),
-          5_000,
+          OPERATOR_ALERT_DELIVERY_TIMEOUT_MS,
         );
       }),
     ]);
@@ -262,17 +258,6 @@ function alertFailureCode(error: unknown): string {
     return "sender_rejected";
   }
   return "provider_error";
-}
-
-function emptyOutcomeTotals(): Record<AlertDeliveryOutcome, number> {
-  return {
-    delivered: 0,
-    pending: 0,
-    exhausted: 0,
-    deduplicated: 0,
-    "fallback-delivered": 0,
-    unavailable: 0,
-  };
 }
 
 function escapeHtml(value: string): string {
