@@ -15,14 +15,11 @@
 module.exports = {
   ci: {
     collect: {
-      url: [
-        "http://127.0.0.1:4173/",
-        "http://127.0.0.1:4173/niche/restaurant",
-      ],
-      // 3 runs so assertions check the median (LHCI's default aggregation),
-      // not a single noisy sample — `ubuntu-latest` CI runners are
-      // materially slower/noisier than a local machine, and a lone run can
-      // land a spurious long task during an otherwise-fine build.
+      url: ["http://127.0.0.1:4173/", "http://127.0.0.1:4173/niche/restaurant"],
+      // Three runs give the explicit median aggregation below enough samples
+      // to reject one noisy outlier without letting one lucky run pass a real
+      // regression. LHCI's implicit default is `optimistic` (best run), not
+      // median, so keep the aggregation contract explicit and tested.
       numberOfRuns: 3,
       // `next.config.ts` sets `output: "standalone"`, which `next start` (and
       // therefore `bun run start`) does not support — Next itself warns
@@ -46,38 +43,36 @@ module.exports = {
       // i.e. the "mobile preset" this budget targets is the tool's default.
     },
     assert: {
+      aggregationMethod: "median",
       assertions: {
-        // A prior CI run (ubuntu-latest, numberOfRuns: 1) failed here —
-        // performance 0.82 and TBT 335ms on `/`, driven by `mainthread-work-
-        // breakdown`/`bootup-time` showing the mobile-nav `Sheet` (wraps
-        // `@base-ui/react/dialog`, the header's single biggest client-only
-        // dependency) bundled eagerly into every route's main chunk. Fixed
-        // by code-splitting it via `next/dynamic` in `site-header.tsx` (see
-        // `site-header-mobile-nav.tsx`) so its portal/focus-trap JS isn't on
-        // the critical hydration path. Reproduced locally at
-        // `cpuSlowdownMultiplier: 8` (close to ubuntu-latest's throttle
-        // relative to a fast local CPU) both before and after that fix and
-        // never got below 0.90 performance or above ~54ms TBT on either
-        // route — the CI failure looks like `numberOfRuns: 1` catching a
-        // genuinely noisy sample (GC pause / neighboring-job contention on a
-        // shared runner) rather than a real regression. `numberOfRuns: 3`
-        // above (LHCI asserts the median) is the primary fix for that.
-        // Kept these two as `error`, not `warn`, since local 8x throttling
-        // never reproduced a sub-budget score after the real fix landed.
+        // Three independent control PRs that did not change these marketing
+        // routes still failed on ubuntu-latest: #110 scored 0.88/0.88/0.88,
+        // #111 scored 0.86/0.89/0.88 (and later 0.78/0.89/0.89 on `/`), and
+        // #116 ranged from 0.85–0.88. Retained reports from #118 then isolated
+        // the median failure to simulated LCP (3873ms) while observed LCP
+        // (~205ms), server response (~9ms), TBT (~148ms), and CLS (0) remained
+        // healthy. Route-owned self-hosted fonts now preload only the faces each
+        // surface needs, while metric-compatible fallbacks prevent font-swap
+        // reflow. Restofront's own design contract uses
+        // Geist—not Factory Mono—for compact labels, eliminating a third font
+        // request from its LCP window. Cross-surface links also opt out of eager
+        // prefetch where that would download unrelated font scopes. Serving the
+        // restaurant mock from one first-party asset removes its remaining image
+        // variance. Keep these as errors: repeated local six-report proof scores
+        // 0.93 on `/` and 0.91 on `/niche/restaurant`, with median LCP around
+        // 3.23s and 3.53s respectively.
         "categories:performance": ["error", { minScore: 0.9 }],
-        // Measured baseline on this build is ~3.32s on both routes (LCP
-        // element is the H1 hero text on `/`, already server-rendered with
-        // zero render-blocking resources — see `render-blocking-resources`
-        // and `lcp-lazy-loaded` in the recorded reports). That's consistent
-        // with Lighthouse's *default* Lantern-simulated profile (mobile,
+        // The LCP element is the server-rendered H1 hero text on both routes.
+        // The measured medians above use Lighthouse's default Lantern-simulated
+        // profile (mobile,
         // rtt 150ms, throughput 1638.4kbps, 4x CPU slowdown), which is known
         // to run well above field data for any moderately-styled page —
         // every other Core Web Vital here is excellent (performance score
-        // 0.92, TBT ~14ms, CLS 0, FCP ~1.1s), so this is a throttling-model
+        // 0.91+, TBT <=24ms, CLS 0, FCP ~1.1s), so this is a throttling-model
         // characteristic, not a real regression. 2500ms was never reachable
         // under this simulation without gutting the design; 3800ms keeps
-        // ~13% headroom over the measured baseline so a genuine regression
-        // still fails the build.
+        // measurable headroom over the slower route's median so a genuine
+        // regression still fails the build.
         "largest-contentful-paint": ["error", { maxNumericValue: 3800 }],
         "cumulative-layout-shift": ["error", { maxNumericValue: 0.1 }],
         "total-blocking-time": ["error", { maxNumericValue: 200 }],

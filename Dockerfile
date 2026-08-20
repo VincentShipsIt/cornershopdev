@@ -1,4 +1,17 @@
-FROM oven/bun:1.3.14-alpine AS dependencies
+FROM oven/bun:1.3.14-alpine AS bun-source
+
+FROM node:24.19.0-alpine3.24 AS node-toolchain
+ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+
+# Next builds and serves on the pinned Node LTS. Bun remains available for
+# dependency installation, Prisma/Workflow migrations, and operator bundles.
+COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
+RUN apk add --no-cache libgcc libstdc++ \
+  && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
+  && test "$(node --version)" = "v24.19.0" \
+  && test "$(bun --version)" = "1.3.14"
+
+FROM node-toolchain AS dependencies
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG DATABASE_URL=postgresql://build:build@127.0.0.1:5432/cornershopdev_build
@@ -46,7 +59,7 @@ RUN bun build scripts/preflight-outreach.ts \
   --packages=external \
   --outfile=.operator-scripts/preflight-outreach.ts
 
-FROM oven/bun:1.3.14-alpine AS runner
+FROM node-toolchain AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
@@ -59,17 +72,17 @@ ADD --checksum=sha256:e5bb2084ccf45087bda1c9bffdea0eb15ee67f0b91646106e466714f9d
   /app/certs/aws-rds-global-bundle.pem
 RUN chmod 0444 /app/certs/aws-rds-global-bundle.pem
 
-COPY --from=builder --chown=bun:bun /app/node_modules ./node_modules
-COPY --from=builder --chown=bun:bun /app/.next/standalone ./
-COPY --from=builder --chown=bun:bun /app/.next/static ./.next/static
-COPY --from=builder --chown=bun:bun /app/public ./public
-COPY --from=builder --chown=bun:bun /app/prisma ./prisma
-COPY --from=builder --chown=bun:bun /app/prisma.config.ts ./prisma.config.ts
-COPY --from=builder --chown=bun:bun /app/package.json ./package.json
-COPY --from=builder --chown=bun:bun /app/.operator-scripts ./scripts
-COPY --chown=bun:bun deploy/aws/container-entrypoint.sh ./deploy/aws/container-entrypoint.sh
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/prisma ./prisma
+COPY --from=builder --chown=node:node /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app/.operator-scripts ./scripts
+COPY --chown=node:node deploy/aws/container-entrypoint.sh ./deploy/aws/container-entrypoint.sh
 
-USER bun
+USER node
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=18 \
   CMD wget --header="Authorization: Bearer ${HEALTHCHECK_TOKEN}" \

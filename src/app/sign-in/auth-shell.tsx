@@ -4,7 +4,7 @@ import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import type { SignInSurface } from "@/lib/sign-in-surface";
 import { cn } from "@/lib/utils";
-import factoryStyles from "../factory-home.module.css";
+import factoryStyles from "../factory-surface.module.css";
 
 export function AuthShell({
   surface,
@@ -29,7 +29,7 @@ export function AuthShell({
         )}
       >
         <Button
-          render={<Link href={backHref} />}
+          render={<Link href={backHref} prefetch={false} />}
           variant="ghost"
           size="icon-sm"
           className={
@@ -40,7 +40,7 @@ export function AuthShell({
         >
           <ArrowLeft />
         </Button>
-        <Brand {...surface.brand} inverse={surface.inverse} />
+        <Brand {...surface.brand} inverse={surface.inverse} prefetch={false} />
       </header>
       <div
         className={cn(
