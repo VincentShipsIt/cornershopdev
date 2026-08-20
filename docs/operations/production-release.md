@@ -18,8 +18,8 @@ customer-accepted release.
 
 | Check | Evidence | Verdict |
 | --- | --- | --- |
-| Latest merged code | `origin/main` = `b958ecd8554edf27e0747755504e03ede30f3dff`; refresh this SHA and its required CI once more immediately before cutting the release. | `CODE_MERGED`, not deployed. |
-| Running production image | SSM inspection `6a4d128d-5f53-4f3c-af67-b8c683da74c5` found `cornershopdev:feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, healthy since 2026-07-27. | 12 commits behind main. |
+| Latest merged code | `origin/main` = `3f398556a7b849aceb222a1cca12a6663b468681`; refresh this SHA and its required CI once more immediately before cutting the release. | `CODE_MERGED`, not deployed. |
+| Running production image | SSM inspection `6a4d128d-5f53-4f3c-af67-b8c683da74c5` found `cornershopdev:feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, healthy since 2026-07-27. | 15 commits behind main. |
 | Published release | Latest stable release is `v0.2.0` at `2abae11cb4205a2ca600d73ca9389be98637e6f2`. Later production changes were manual workflow dispatches. | Release history alone does not identify the running image. |
 | Schema | The running image reports 15 migrations and “up to date”; main contains 18. | Up to date only for the old image, not for main. |
 | Outreach | The running image has no `operator:preflight-outreach` command. Metadata-only SSM checks find neither `RESEND_WEBHOOK_SECRET` nor `RESEND_INBOUND_WEBHOOK_SECRET`; the configured sender is `Vincent from Restofront`, not the required `Vincent from Restofrontapp`. | Not configured or deployed. |

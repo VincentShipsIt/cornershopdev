@@ -8,7 +8,7 @@ status: durable
 ## Release truth audit (2026-08-20)
 
 Production runs `feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, not current main
-`b958ecd8554edf27e0747755504e03ede30f3dff`. It is 14 commits behind, exposes
+`3f398556a7b849aceb222a1cca12a6663b468681`. It is 15 commits behind, exposes
 15 migrations while main contains 18, and has no outreach preflight command.
 The current production SSM set is missing the explicit delivery signing secret
 `RESEND_WEBHOOK_SECRET`, the explicit inbound signing secret
