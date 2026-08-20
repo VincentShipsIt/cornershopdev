@@ -18,7 +18,7 @@ encrypted SSM parameters on the EC2 host.
 | Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
 | Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
 | Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
-| Restofront outreach | Explicit operator send, Workflow follow-up, signed Resend delivery events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
+| Restofront outreach | Explicit operator send, Workflow follow-up, separately signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -72,9 +72,13 @@ and explicitly confirms the initial send. Creating or reopening a lead never
 sends an email. The global pause in `/admin` is checked before every Workflow
 send and every pause/resume change is written to the operator audit log.
 
-Store `RESEND_WEBHOOK_SECRET` as a SecureString at
-`/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register
-and enable this exact endpoint:
+Resend assigns a signing secret to each webhook endpoint. Store the delivery
+endpoint's secret as `RESEND_WEBHOOK_SECRET` and the inbound reply endpoint's
+different secret as `RESEND_INBOUND_WEBHOOK_SECRET`, both as SecureStrings
+under `/shipshit/production/cornershopdev/`. Never copy one endpoint's secret
+to the other variable.
+
+In Resend, register and enable this delivery endpoint:
 
 ```text
 https://cornershop.dev/api/webhooks/resend
@@ -82,7 +86,8 @@ https://cornershop.dev/api/webhooks/resend
 
 Subscribe it to `email.sent`, `email.delivered`, `email.bounced`,
 `email.complained`, `email.failed`, and `email.suppressed`. Also register
-`https://cornershop.dev/api/webhooks/resend/inbound` for `email.received`.
+`https://cornershop.dev/api/webhooks/resend/inbound` for `email.received` and
+store that endpoint's own signing secret in `RESEND_INBOUND_WEBHOOK_SECRET`.
 Before approving a release, run the read-only preflight inside the exact
 candidate image with its deployment env:
 
@@ -98,8 +103,11 @@ docker run --rm \
 The command opens read-only PostgreSQL transactions to verify
 `20260819120000_outreach_inbound_mailbox`, its required tables/columns/index,
 and Workflow database reachability; lists Resend webhook metadata for both
-endpoints; and validates the registered Restofront identity (`Vincent from
-Restofrontapp` with replies to `vincent@restofront.com`). It performs no
+endpoints; requires both endpoint-specific secrets to be present and unequal;
+and validates the registered Restofront identity (`Vincent from Restofrontapp`
+with replies to `vincent@restofront.com`). Resend's webhook-list API does not
+return signing secrets, so metadata proves endpoint/event registration while
+the runtime contract and route tests prove key separation. It performs no
 database writes, configuration changes, or email sends. Output contains only
 check names, booleans, the public webhook endpoint, and timestamps—never
 database URLs, API keys, signing secrets, or provider error bodies. A failed

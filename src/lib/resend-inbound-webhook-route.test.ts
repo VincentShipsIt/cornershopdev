@@ -24,23 +24,33 @@ mock.module("@/lib/outreach-inbound", () => ({
 mock.module("@/lib/operator-alerts", () => ({ captureOperatorAlert }));
 
 const previousDatabaseUrl = process.env.DATABASE_URL;
-const previousWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-const webhookSecret = `whsec_${Buffer.from(
-  "test-only-webhook-signing-key",
+const previousDeliveryWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+const previousInboundWebhookSecret =
+  process.env.RESEND_INBOUND_WEBHOOK_SECRET;
+const deliveryWebhookSecret = `whsec_${Buffer.from(
+  "test-only-delivery-webhook-signing-key",
+).toString("base64")}`;
+const inboundWebhookSecret = `whsec_${Buffer.from(
+  "test-only-inbound-webhook-signing-key",
 ).toString("base64")}`;
 const { POST } = await import("@/app/api/webhooks/resend/inbound/route");
 
 describe("Resend inbound webhook", () => {
   beforeEach(() => {
     process.env.DATABASE_URL = "postgresql://unused-by-mocked-test.invalid/db";
-    process.env.RESEND_WEBHOOK_SECRET = webhookSecret;
+    process.env.RESEND_WEBHOOK_SECRET = deliveryWebhookSecret;
+    process.env.RESEND_INBOUND_WEBHOOK_SECRET = inboundWebhookSecret;
     recordInbound.mockClear();
     captureOperatorAlert.mockClear();
   });
 
   afterAll(() => {
     restoreEnvironment("DATABASE_URL", previousDatabaseUrl);
-    restoreEnvironment("RESEND_WEBHOOK_SECRET", previousWebhookSecret);
+    restoreEnvironment("RESEND_WEBHOOK_SECRET", previousDeliveryWebhookSecret);
+    restoreEnvironment(
+      "RESEND_INBOUND_WEBHOOK_SECRET",
+      previousInboundWebhookSecret,
+    );
   });
 
   it("rejects an invalid signature without storing a reply", async () => {
@@ -48,6 +58,30 @@ describe("Resend inbound webhook", () => {
 
     expect(response.status).toBe(400);
     expect(recordInbound).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid delivery-endpoint signature", async () => {
+    const response = await POST(
+      signedInbound(undefined, deliveryWebhookSecret),
+    );
+
+    expect(response.status).toBe(400);
+    expect(recordInbound).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to the delivery secret when inbound is unconfigured", async () => {
+    delete process.env.RESEND_INBOUND_WEBHOOK_SECRET;
+
+    const response = await POST(
+      signedInbound(undefined, deliveryWebhookSecret),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Resend webhook is not configured",
+    });
+    expect(recordInbound).not.toHaveBeenCalled();
+    expect(captureOperatorAlert).toHaveBeenCalledTimes(1);
   });
 
   it("stores a signed inbound reply on the matched lead thread", async () => {
@@ -82,7 +116,10 @@ describe("Resend inbound webhook", () => {
   });
 });
 
-function signedInbound(signatureOverride?: string): Request {
+function signedInbound(
+  signatureOverride?: string,
+  signingSecret = inboundWebhookSecret,
+): Request {
   const timestamp = new Date();
   const messageId = "inbound_webhook_1";
   const body = JSON.stringify({
@@ -98,7 +135,7 @@ function signedInbound(signatureOverride?: string): Request {
   });
   const signature =
     signatureOverride ??
-    new Webhook(webhookSecret).sign(messageId, timestamp, body);
+    new Webhook(signingSecret).sign(messageId, timestamp, body);
 
   return new Request("https://cornershop.dev/api/webhooks/resend/inbound", {
     method: "POST",

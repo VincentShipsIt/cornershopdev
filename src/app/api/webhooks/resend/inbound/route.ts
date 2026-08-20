@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
 import { recordInboundOutreachMessage } from "@/lib/outreach-inbound";
-import {
-  resendInboundWebhookSecret,
-  verifyResendWebhook,
-} from "@/lib/resend-webhook";
+import { verifyResendWebhook } from "@/lib/resend-webhook";
 
 export const runtime = "nodejs";
 
@@ -22,7 +19,7 @@ const inboundEventSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const secret = resendInboundWebhookSecret();
+  const secret = process.env.RESEND_INBOUND_WEBHOOK_SECRET;
   const rawBody = await request.text();
   const verified = verifyResendWebhook(request, rawBody, secret);
   if (!verified.ok) {
@@ -32,7 +29,7 @@ export async function POST(request: Request) {
         dedupKey: "inbound-webhook-configuration",
         title: "Resend inbound webhook configuration is missing",
         message:
-          "An inbound Resend webhook reached the application without a signing secret. Restore RESEND_WEBHOOK_SECRET or RESEND_INBOUND_WEBHOOK_SECRET and redeploy.",
+          "An inbound Resend webhook reached the application without its configured signing secret. Restore RESEND_INBOUND_WEBHOOK_SECRET and redeploy.",
         context: { category: "configuration" },
       });
     }

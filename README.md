@@ -263,14 +263,17 @@ instructions are in
 
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
+- `RESEND_INBOUND_WEBHOOK_SECRET` (must be present and different from the
+  delivery webhook secret)
 - `WORKFLOW_ENABLED=true`
 - the complete `WORKFLOW_POSTGRES_*` contract listed above
 
 Before release, run the read-only outreach preflight inside the reviewed
 container. It checks the committed migration, registered Restofront sender and
-reply-to, Workflow configuration, and the enabled Resend delivery and inbound
-webhooks. It prints only check names, booleans, the public webhook endpoint, and timestamps;
-it never prints secret values and never sends an email.
+reply-to, Workflow configuration, both distinct endpoint-specific signing
+secrets, and the enabled Resend delivery and inbound webhooks. It prints only
+check names, booleans, the public webhook endpoint, and timestamps; it never
+prints secret values and never sends an email.
 
 ```bash
 bun run operator:preflight-outreach --environment production

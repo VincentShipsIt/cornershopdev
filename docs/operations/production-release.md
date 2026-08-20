@@ -18,11 +18,11 @@ customer-accepted release.
 
 | Check | Evidence | Verdict |
 | --- | --- | --- |
-| Latest merged code | `origin/main` = `09e2e730566724b3d229c1dfbdc76d720c384f2c`; main CI run `32258783998` passed. | `CODE_MERGED`, not deployed. |
+| Latest merged code | `origin/main` = `b958ecd8554edf27e0747755504e03ede30f3dff`; refresh this SHA and its required CI once more immediately before cutting the release. | `CODE_MERGED`, not deployed. |
 | Running production image | SSM inspection `6a4d128d-5f53-4f3c-af67-b8c683da74c5` found `cornershopdev:feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, healthy since 2026-07-27. | 12 commits behind main. |
 | Published release | Latest stable release is `v0.2.0` at `2abae11cb4205a2ca600d73ca9389be98637e6f2`. Later production changes were manual workflow dispatches. | Release history alone does not identify the running image. |
 | Schema | The running image reports 15 migrations and “up to date”; main contains 18. | Up to date only for the old image, not for main. |
-| Outreach | The running image has no `operator:preflight-outreach` command. SSM lacks `RESEND_WEBHOOK_SECRET`; the configured sender is `Vincent from Restofront`, not the required `Vincent from Restofrontapp`. | Not configured or deployed. |
+| Outreach | The running image has no `operator:preflight-outreach` command. Metadata-only SSM checks find neither `RESEND_WEBHOOK_SECRET` nor `RESEND_INBOUND_WEBHOOK_SECRET`; the configured sender is `Vincent from Restofront`, not the required `Vincent from Restofrontapp`. | Not configured or deployed. |
 | Authentication secret | SSM lacks `BETTER_AUTH_SECRET`; the old image uses the claim-secret rollout fallback. | Explicit production auth configuration not ready. |
 | Platform wildcard DNS | Random labels under `*.restofront.com` and `*.cornershop.dev` return no A records; neither hosted zone contains a wildcard. | Not ready. |
 | Caddy on-demand TLS | Caddy validates successfully and its loaded JSON uses `http://api-cornershop-dev:3000/api/domains/authorize` as the on-demand permission endpoint. | Caddy policy ready; wildcard DNS and new application authorization are not. |
@@ -73,11 +73,21 @@ aws ssm put-parameter \
   --value "$CORNERSHOP_RESEND_WEBHOOK_SECRET" \
   --overwrite
 unset CORNERSHOP_RESEND_WEBHOOK_SECRET
+
+read -r -s CORNERSHOP_RESEND_INBOUND_WEBHOOK_SECRET
+aws ssm put-parameter \
+  --region us-east-1 \
+  --name /shipshit/production/cornershopdev/RESEND_INBOUND_WEBHOOK_SECRET \
+  --type SecureString \
+  --value "$CORNERSHOP_RESEND_INBOUND_WEBHOOK_SECRET" \
+  --overwrite
+unset CORNERSHOP_RESEND_INBOUND_WEBHOOK_SECRET
 ```
 
-`BETTER_AUTH_SECRET` must contain at least 32 random characters. The Resend
-secret must be the current signing secret for the registered production
-webhooks; generating an unrelated value makes signature verification fail.
+`BETTER_AUTH_SECRET` must contain at least 32 random characters. Each Resend
+value must be the current signing secret for its mapped production endpoint,
+and the two values must differ. Reusing one endpoint's value or generating an
+unrelated value makes the corresponding signature verification fail.
 
 ### 3. Correct the production sender identity
 
@@ -98,11 +108,14 @@ In Resend, enable both exact HTTPS endpoints:
 - `https://cornershop.dev/api/webhooks/resend/inbound` with `email.received`.
 
 The release preflight lists provider webhook metadata and fails closed unless
-both endpoints and their complete event sets are enabled.
+both endpoints and their complete event sets are enabled. Provider metadata
+does not reveal signing secrets, so the same preflight separately requires the
+two configured secrets to be present and unequal without printing either value.
 
 ## Release procedure
 
-1. Merge the complete release scope to `main`; required CI must be green.
+1. Merge the complete release scope to `main`; required CI must be green. Fetch
+   and refresh `origin/main` again immediately before choosing the release SHA.
 2. Confirm the external blockers above with read-only SSM, Route 53, DNS, and
    Resend checks. Never print secret values.
 3. Publish one stable `vX.Y.Z` GitHub release targeting the exact full main SHA.

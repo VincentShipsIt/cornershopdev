@@ -11,7 +11,8 @@ import {
 const configuredEnvironment = {
   DATABASE_URL: "postgresql://user:private@example.test/cornershopdev",
   RESEND_API_KEY: "re_private_value",
-  RESEND_WEBHOOK_SECRET: "whsec_private_value",
+  RESEND_WEBHOOK_SECRET: "whsec_delivery_private_value",
+  RESEND_INBOUND_WEBHOOK_SECRET: "whsec_inbound_private_value",
   CLAIM_TOKEN_SECRET: "a-private-value-that-is-at-least-32-characters",
   NEXT_PUBLIC_APP_URL: "https://cornershop.dev",
   WORKFLOW_ENABLED: "true",
@@ -29,7 +30,8 @@ describe("outreach environment readiness", () => {
       checks: {
         database: true,
         resendApiKey: true,
-        resendWebhookSecret: true,
+        resendDeliveryWebhookSecret: true,
+        resendInboundWebhookSecret: true,
         claimTokenSecret: true,
         workflow: true,
         appOrigin: true,
@@ -60,11 +62,42 @@ describe("outreach environment readiness", () => {
       configuredEnvironment.DATABASE_URL,
       configuredEnvironment.RESEND_API_KEY,
       configuredEnvironment.RESEND_WEBHOOK_SECRET,
+      configuredEnvironment.RESEND_INBOUND_WEBHOOK_SECRET,
       configuredEnvironment.CLAIM_TOKEN_SECRET,
       configuredEnvironment.WORKFLOW_POSTGRES_URL,
     ]) {
       expect(serialized).not.toContain(value);
     }
+  });
+
+  it("requires an explicit inbound signing secret", () => {
+    const readiness = evaluateOutreachEnvironment({
+      ...configuredEnvironment,
+      RESEND_INBOUND_WEBHOOK_SECRET: undefined,
+    });
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.checks.resendInboundWebhookSecret).toBe(false);
+    expect(readiness.missingOrInvalid).toContain(
+      "RESEND_INBOUND_WEBHOOK_SECRET (present and distinct)",
+    );
+  });
+
+  it("rejects a shared delivery and inbound signing secret without exposing it", () => {
+    const readiness = evaluateOutreachEnvironment({
+      ...configuredEnvironment,
+      RESEND_INBOUND_WEBHOOK_SECRET:
+        configuredEnvironment.RESEND_WEBHOOK_SECRET,
+    });
+    const serialized = JSON.stringify(readiness);
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.checks.resendDeliveryWebhookSecret).toBe(true);
+    expect(readiness.checks.resendInboundWebhookSecret).toBe(false);
+    expect(readiness.missingOrInvalid).toContain(
+      "RESEND_INBOUND_WEBHOOK_SECRET (present and distinct)",
+    );
+    expect(serialized).not.toContain(configuredEnvironment.RESEND_WEBHOOK_SECRET);
   });
 
   it("rejects a preview origin when production requires the canonical origin", () => {
@@ -188,5 +221,19 @@ describe("complete outreach preflight", () => {
         inboundWebhookRegistered: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("production outreach deployment", () => {
+  it("loads both endpoint-specific signing secrets as required parameters", async () => {
+    const deployScript = await Bun.file(
+      new URL("../../deploy/aws/deploy.sh", import.meta.url),
+    ).text();
+    const requiredParameters = deployScript.match(
+      /required_parameters=\(([\s\S]*?)\)\noptional_parameters=/,
+    )?.[1];
+
+    expect(requiredParameters).toContain("RESEND_WEBHOOK_SECRET");
+    expect(requiredParameters).toContain("RESEND_INBOUND_WEBHOOK_SECRET");
   });
 });
