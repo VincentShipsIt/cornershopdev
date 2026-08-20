@@ -1,5 +1,6 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
+import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import type { VerticalConfig, VerticalId } from "@/lib/verticals/types";
 
@@ -22,6 +23,7 @@ export type ErasedVerticalConfig = VerticalConfig<any, any, any, any>;
 const registry = {
   [Vertical.RESTAURANT]: restaurantConfig,
   [Vertical.BEAUTY]: beautyConfig,
+  [Vertical.FOOD_RETAIL]: foodRetailConfig,
 } satisfies Record<VerticalId, ErasedVerticalConfig>;
 
 /**
@@ -67,9 +69,7 @@ export function verticalSlug(id: VerticalId): string {
  */
 export function verticalAssetNamespace(id: VerticalId): string {
   const { domain } = resolveVerticalConfig(id).marketing;
-  return domain
-    ? domain.toLowerCase().replace(/[^a-z0-9]+/g, "")
-    : verticalSlug(id);
+  return (domain ?? verticalSlug(id)).toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 /**
@@ -96,6 +96,7 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
   const wanted = hostname.trim().toLowerCase().split(":")[0];
   if (!wanted) return null;
   for (const id of listVerticalIds()) {
+    if (!isVerticalPubliclyLaunched(id)) continue;
     // Through the erased surface, not `registry[id]`: indexing with a runtime id
     // yields the union of the concrete configs, and `includes` on a union of array
     // types demands an argument assignable to every element type at once — which
@@ -107,14 +108,25 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
 }
 
 /**
+ * A registered vertical is not automatically a public product. Launch requires
+ * the real canonical domain to be claimed by its hostname routing and a
+ * niche-specific sender to be configured. Keeping this check here makes the
+ * factory listing, direct niche route and social card share one hard gate.
+ */
+export function isVerticalPubliclyLaunched(id: VerticalId): boolean {
+  const { domain, email, hostnames } = resolveVerticalConfig(id).marketing;
+  return Boolean(domain && email && hostnames.includes(domain));
+}
+
+/**
  * Every launched niche for the factory homepage. A registered vertical can stay
  * private while its positioning and storefront are still being developed; a
- * public domain is the launch gate. Sorting by the niche's own brand name keeps
- * the order independent of registration order.
+ * routed public domain and a dedicated sender are the launch gate. Sorting by
+ * the niche's own brand name keeps the order independent of registration order.
  */
 export function listMarketingVerticals(): VerticalId[] {
   return listVerticalIds()
-    .filter((id) => Boolean(resolveVerticalConfig(id).marketing.domain))
+    .filter(isVerticalPubliclyLaunched)
     .sort((a, b) =>
       resolveVerticalConfig(a).marketing.brand.name.localeCompare(
         resolveVerticalConfig(b).marketing.brand.name,

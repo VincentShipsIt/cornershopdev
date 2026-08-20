@@ -1,7 +1,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, Output } from "ai";
 import type { ExtractedSite } from "@/lib/importer";
-import { slugify } from "@/lib/restaurant";
+import { slugify } from "@/lib/site-draft";
 import type { RestaurantDraft } from "@/lib/restaurant";
 import { applyRegeneratedRestaurantTranslation } from "@/lib/restaurant-menu-editor";
 import { restaurantTranslationCandidateSchema } from "@/lib/verticals/restaurant/schema";

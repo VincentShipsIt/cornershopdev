@@ -12,6 +12,7 @@ import {
   MousePointerClick,
   RefreshCcw,
   ShieldCheck,
+  ShoppingBasket,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
@@ -21,7 +22,8 @@ import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  listVerticalIds,
+  isVerticalPubliclyLaunched,
+  listMarketingVerticals,
   resolveVerticalBySlug,
   resolveVerticalConfig,
   verticalSlug,
@@ -44,6 +46,7 @@ const icons: Record<MarketingIconName, LucideIcon> = {
   catalog: MenuSquare,
   imagery: Images,
   booking: CalendarCheck2,
+  ordering: ShoppingBasket,
   refresh: RefreshCcw,
   shield: ShieldCheck,
   cursor: MousePointerClick,
@@ -53,7 +56,7 @@ const icons: Record<MarketingIconName, LucideIcon> = {
 // storefront prerenders and `dynamicParams` keeps an unregistered slug a 404
 // instead of an on-demand render of nothing.
 export function generateStaticParams() {
-  return listVerticalIds().map((id) => ({ vertical: verticalSlug(id) }));
+  return listMarketingVerticals().map((id) => ({ vertical: verticalSlug(id) }));
 }
 
 export const dynamicParams = false;
@@ -65,7 +68,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id) return {};
+  if (!id || !isVerticalPubliclyLaunched(id)) return {};
   const { marketing } = resolveVerticalConfig(id);
   const { mark } = marketing.brand;
   const title = `${marketing.brand.name} — ${marketing.hero.headline}`;
@@ -129,7 +132,7 @@ export default async function NichePage({
 }) {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id) notFound();
+  if (!id || !isVerticalPubliclyLaunched(id)) notFound();
 
   const { marketing } = resolveVerticalConfig(id);
   const slug = verticalSlug(id);

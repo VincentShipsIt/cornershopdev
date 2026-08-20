@@ -442,19 +442,9 @@ export function fromRestaurantDraft(
   });
 }
 
-export function slugify(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 72);
-}
-
 // Price formatting is pure Intl and belongs to no vertical; it lives in the
 // shared draft module so the renderer can reach it without importing a vertical.
-export { formatPrice } from "@/lib/site-draft";
+export { formatPrice, slugify } from "@/lib/site-draft";
 
 export function getRestaurantLocales(draft: RestaurantDraft): string[] {
   return [

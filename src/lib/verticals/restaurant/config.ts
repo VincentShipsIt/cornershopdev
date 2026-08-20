@@ -160,7 +160,8 @@ export const restaurantConfig = {
   i18n: restaurantDictionaryExtensions,
   rendererCapabilities: (attributes) => ({
     showGallery: attributes.showMenuImages,
-    showBookingRequestForm: false,
+    primaryAction: "booking",
+    bookingRequestMode: "when-missing",
   }),
 } satisfies VerticalConfig<
   RestaurantAttributes,

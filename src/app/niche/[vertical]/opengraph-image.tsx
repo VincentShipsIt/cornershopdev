@@ -1,7 +1,8 @@
 import { ImageResponse } from "next/og";
 import { notFound } from "next/navigation";
 import {
-  listVerticalIds,
+  isVerticalPubliclyLaunched,
+  listMarketingVerticals,
   resolveVerticalBySlug,
   resolveVerticalConfig,
   verticalSlug,
@@ -26,7 +27,7 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export function generateStaticParams() {
-  return listVerticalIds().map((id) => ({ vertical: verticalSlug(id) }));
+  return listMarketingVerticals().map((id) => ({ vertical: verticalSlug(id) }));
 }
 
 export default async function OpenGraphImage({
@@ -36,7 +37,7 @@ export default async function OpenGraphImage({
 }) {
   const { vertical } = await params;
   const id = resolveVerticalBySlug(vertical);
-  if (!id) notFound();
+  if (!id || !isVerticalPubliclyLaunched(id)) notFound();
   const { marketing } = resolveVerticalConfig(id);
   const { brand, hero, tagline } = marketing;
 

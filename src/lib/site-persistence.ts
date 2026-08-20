@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
-import { LEGACY_THEME_VERSION } from "@/lib/site-draft";
+import { LEGACY_THEME_VERSION, slugify } from "@/lib/site-draft";
 import { restaurantSiteTheme } from "@/lib/site-themes/restaurant/configuration";
 import {
   buildImportUrls,
@@ -11,7 +11,6 @@ import {
   storedImportSource,
   type ImportUrls,
 } from "@/lib/import-identity";
-import { slugify } from "@/lib/verticals/restaurant/schema";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 

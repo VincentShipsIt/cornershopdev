@@ -9,6 +9,7 @@ import {
   DraftRevisionConflictError,
   updateSiteDraft,
 } from "@/lib/site-persistence";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
 
 export async function PUT(
   request: Request,
@@ -21,9 +22,7 @@ export async function PUT(
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
 
-  // Owner editors are restaurant-shaped today. Reject other verticals so a
-  // beauty site can never be rewritten as Osteria Luna through this route.
-  if (access.site.vertical !== Vertical.RESTAURANT) {
+  if (access.site.vertical === Vertical.BEAUTY) {
     return Response.json(
       {
         error:
@@ -46,13 +45,18 @@ export async function PUT(
         : undefined;
     const draftBody = { ...body };
     delete draftBody.expectedRevision;
-    const draft = restaurantDraftSchema.parse(draftBody);
+    const draft =
+      access.site.vertical === Vertical.RESTAURANT
+        ? fromRestaurantDraft(restaurantDraftSchema.parse(draftBody))
+        : resolveVerticalConfig(access.site.vertical).draftSchema.parse(
+            draftBody,
+          );
     // Same column and relation mapping as the import path, so an owner edit can
     // never write a shape the read path refuses to parse. Vertical always comes
     // from the authorized site record, never the request body.
     const saved = await updateSiteDraft(
       slug,
-      fromRestaurantDraft(draft),
+      draft,
       access.site.vertical,
       { actor: access.user, expectedRevision },
     );
@@ -77,7 +81,7 @@ export async function PUT(
         error:
           error instanceof Error
             ? error.message
-            : "Restaurant could not be saved",
+            : "Site could not be saved",
       },
       { status: 400 },
     );

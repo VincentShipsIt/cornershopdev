@@ -94,7 +94,13 @@ export type LinkClassificationHint = {
  * mapping, so an unmapped name is a build error rather than a blank square.
  */
 export type MarketingIconName =
-  "catalog" | "imagery" | "booking" | "refresh" | "shield" | "cursor";
+  | "catalog"
+  | "imagery"
+  | "booking"
+  | "ordering"
+  | "refresh"
+  | "shield"
+  | "cursor";
 
 export type MarketingPlan = {
   name: string;
@@ -250,7 +256,12 @@ export type VerticalConfig<
     // Short pills printed under a catalog item. Restaurants surface dietary
     // labels here, beauty surfaces duration or "with any stylist" — the renderer
     // only ever sees strings, which is what keeps `dietaryLabels` out of it.
-    itemBadges?: (attributes: TItemAttributes) => string[];
+    itemBadges?: (attributes: TItemAttributes, locale: string) => string[];
+    /** Optional sourced pickup/fulfilment note rendered beside location data. */
+    fulfillmentNote?: (
+      attributes: TAttributes,
+      locale: string,
+    ) => string | null;
   };
   templates: {
     definitions: Record<string, TTemplate>;
@@ -268,6 +279,9 @@ export type VerticalConfig<
   i18n: Record<string, Record<string, string>>;
   rendererCapabilities: (attributes: TAttributes) => {
     showGallery: boolean;
-    showBookingRequestForm: boolean;
+    /** Which existing integration becomes the conversion-first header action. */
+    primaryAction: "booking" | "ordering";
+    /** Prevents non-appointment trades from inheriting reservation lead capture. */
+    bookingRequestMode: "when-missing" | "always" | "never";
   };
 };
