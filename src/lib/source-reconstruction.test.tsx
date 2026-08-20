@@ -539,8 +539,21 @@ describe("deterministic source reconstruction", () => {
               },
               {
                 "@type": "Offer",
+                "name": "Anonymous product promotion",
+                "price": "15",
+                "priceCurrency": "EUR",
+                "itemOffered": {
+                  "@type": "Product"
+                }
+              },
+              {
+                "@type": "Offer",
                 "price": "20",
                 "priceCurrency": "EUR",
+                "item": {
+                  "@type": "Thing",
+                  "name": "Promotion card"
+                },
                 "itemOffered": {
                   "@type": "Product",
                   "name": "Source-backed care kit"
@@ -591,7 +604,11 @@ describe("deterministic source reconstruction", () => {
     ]);
     expect(
       reconstructed.evidence.some(
-        (entry) => entry.field === "catalog.item" && entry.value === "Summer sale",
+        (entry) =>
+          entry.field === "catalog.item" &&
+          ["Summer sale", "Anonymous product promotion", "Promotion card"].includes(
+            entry.value,
+          ),
       ),
     ).toBe(false);
   });

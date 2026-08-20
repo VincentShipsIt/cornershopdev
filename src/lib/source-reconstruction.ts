@@ -984,16 +984,19 @@ function catalogItem(
   evidence: ReconstructionEvidence[],
   brandAssets: ExtractedBrandAsset[],
 ): ExtractedCatalogItem | null {
+  const isOfferWrapper = jsonTypes(entity).includes("offer");
   const offeredItem = isRecord(entity.itemOffered)
     ? entity.itemOffered
     : null;
   if (
-    jsonTypes(entity).includes("offer") &&
+    isOfferWrapper &&
     (!offeredItem || !isCatalogItemEntity(offeredItem))
   ) {
     return null;
   }
-  const nested = isRecord(entity.item)
+  const nested = isOfferWrapper
+    ? offeredItem!
+    : isRecord(entity.item)
     ? entity.item
     : offeredItem
       ? offeredItem
@@ -1004,7 +1007,10 @@ function catalogItem(
   ) {
     return null;
   }
-  const name = boundedText(stringValue(nested.name) || stringValue(entity.name), 120);
+  const name = boundedText(
+    stringValue(nested.name) || (isOfferWrapper ? "" : stringValue(entity.name)),
+    120,
+  );
   if (!name) return null;
   const offer = asJsonRecords(nested.offers ?? entity.offers)[0] ?? null;
   const rawPrice = offer?.price ?? nested.price ?? entity.price;
@@ -1073,7 +1079,12 @@ function catalogAvailability(value: unknown): boolean | null {
 function asJsonRecords(value: unknown): JsonRecord[] {
   return (Array.isArray(value) ? value : [value]).flatMap((entry) => {
     if (!isRecord(entry)) return [];
-    if (isRecord(entry.item)) return [entry.item];
+    if (
+      !jsonTypes(entry).includes("offer") &&
+      isRecord(entry.item)
+    ) {
+      return [entry.item];
+    }
     return [entry];
   });
 }
