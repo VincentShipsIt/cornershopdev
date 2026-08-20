@@ -9,9 +9,11 @@ import {
 } from "@/lib/billing-access";
 import {
   rollbackPublishedSiteVersion,
+  SitePublicationCapabilityError,
   SitePublicationStateError,
 } from "@/lib/site-publication";
 import { isSameOriginMutation } from "@/lib/request-origin";
+import { isVerticalPublicationEnabled } from "@/lib/verticals/registry";
 
 const rollbackRequestSchema = z
   .object({
@@ -29,6 +31,12 @@ export async function POST(
   const { slug } = await params;
   const access = await getSiteAccess(slug);
   if (!access.ok) return accessFailureResponse(access);
+  if (!isVerticalPublicationEnabled(access.site.vertical)) {
+    return Response.json(
+      { error: "Publishing is not available for this vertical" },
+      { status: 409 },
+    );
+  }
   const billing = await getSiteBillingAccess(access.site.id);
   if (!billing.ok) return billingAccessFailureResponse(billing);
 
@@ -52,7 +60,10 @@ export async function POST(
     });
     return Response.json({ ok: true, published });
   } catch (error) {
-    if (error instanceof SitePublicationStateError) {
+    if (
+      error instanceof SitePublicationCapabilityError ||
+      error instanceof SitePublicationStateError
+    ) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     if (

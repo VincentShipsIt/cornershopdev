@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Check, ExternalLink, Languages, Plus, Save, Send, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Languages, Plus, Save, Trash2 } from "lucide-react";
 import { AccountActions } from "@/components/account-actions";
 import { Brand } from "@/components/brand";
 import { SiteRenderer } from "@/components/site-renderer";
@@ -51,7 +51,6 @@ export function FoodRetailDashboard({
   }
   const [revision, setRevision] = useState(initialRevision);
   const [saving, setSaving] = useState(false);
-  const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -235,7 +234,7 @@ export function FoodRetailDashboard({
       setRevision(result.revision);
       if (hadNewerEdits) {
         setError(
-          "New edits were made while saving. Save them before publishing.",
+          "New edits were made while saving. Save them before leaving this private preview.",
         );
         return null;
       }
@@ -246,39 +245,6 @@ export function FoodRetailDashboard({
       return null;
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function publishDraft() {
-    const changeSummary = window
-      .prompt("Summarize what will change on the public site:", "Update product ranges and shop details")
-      ?.trim();
-    if (!changeSummary) return;
-    if (changeSummary.length < 3 || changeSummary.length > 280) {
-      setError("Use a change summary between 3 and 280 characters");
-      return;
-    }
-    if (!window.confirm("Publish this saved food-shop draft now?")) return;
-    setPublishing(true);
-    setError(null);
-    try {
-      const reviewedRevision = await saveDraft();
-      if (reviewedRevision === null) return;
-      const response = await fetch(`/api/sites/${draft.slug}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          changeSummary,
-          expectedRevision: reviewedRevision,
-        }),
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "Publish failed");
-      setNotice("Published to the site’s configured public address.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Publish failed");
-    } finally {
-      setPublishing(false);
     }
   }
 
@@ -301,16 +267,16 @@ export function FoodRetailDashboard({
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Food retail owner workspace</p>
                 <CardTitle className="mt-1">Products, pickup and hours</CardTitle>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                  Private pilot: save and review changes here. Public publishing and rollback stay unavailable until launch configuration is approved.
+                </p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button render={<Link href={`/preview/${draft.slug}`} target="_blank" />} nativeButton={false} variant="outline">
                   Preview <ExternalLink />
                 </Button>
-                <Button variant="outline" disabled={saving || publishing} onClick={() => void saveDraft()}>
+                <Button variant="outline" disabled={saving} onClick={() => void saveDraft()}>
                   <Save /> {saving ? "Saving…" : "Save"}
-                </Button>
-                <Button disabled={saving || publishing} onClick={() => void publishDraft()}>
-                  <Send /> {publishing ? "Publishing…" : "Publish"}
                 </Button>
               </div>
             </CardHeader>
@@ -391,7 +357,7 @@ export function FoodRetailDashboard({
                     <CardTitle>{translation.locale.toUpperCase()} localized copy</CardTitle>
                   </div>
                   <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
-                    New entries temporarily reuse the canonical source wording so the private draft stays saveable without inventing a translation. Translate the wording below, then review it before publishing. Prices, stock, links and source evidence stay canonical.
+                    New entries temporarily reuse the canonical source wording so the private draft stays saveable without inventing a translation. Translate the wording below, then review it before any future launch. Prices, stock, links and source evidence stay canonical.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

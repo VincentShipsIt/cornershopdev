@@ -21,6 +21,7 @@ import {
 import { parseRestaurantThemeSelection } from "@/lib/site-themes/restaurant/selection";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 import {
+  isVerticalPublicationEnabled,
   resolveVerticalConfig,
   type ErasedVerticalConfig,
 } from "@/lib/verticals/registry";
@@ -250,7 +251,8 @@ export async function findPublishedSiteView(
           },
         })
       )?.publishedSiteVersion;
-  return version ? projectPublishedSiteVersion(version) : null;
+  if (!version || !isVerticalPublicationEnabled(version.vertical)) return null;
+  return projectPublishedSiteVersion(version);
 }
 
 /**

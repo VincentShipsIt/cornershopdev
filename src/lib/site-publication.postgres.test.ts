@@ -7,6 +7,7 @@ import {
   mock,
   test,
 } from "bun:test";
+import type { Prisma } from "@/generated/prisma/client";
 
 mock.module("server-only", () => ({}));
 mock.module("next/cache", () => ({
@@ -178,6 +179,16 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         verificationToken: randomUUID(),
         verified: true,
         verifiedAt: new Date(),
+      },
+    });
+    await db.site.create({
+      data: {
+        id: foodSiteId,
+        slug: foodSlug,
+        name: sampleFoodRetailDraft.name,
+        vertical: Vertical.FOOD_RETAIL,
+        attributes: sampleFoodRetailDraft.attributes,
+        organizationId,
       },
     });
   });
@@ -468,16 +479,6 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
   });
 
   test("round-trips nullable, evidence-backed food-retail stock separately from visibility", async () => {
-    await db.site.create({
-      data: {
-        id: foodSiteId,
-        slug: foodSlug,
-        name: sampleFoodRetailDraft.name,
-        vertical: Vertical.FOOD_RETAIL,
-        attributes: sampleFoodRetailDraft.attributes,
-        organizationId,
-      },
-    });
     const editedDraft = structuredClone(sampleFoodRetailDraft);
     editedDraft.slug = foodSlug;
     editedDraft.catalogSections[0].items[0].available = false;
@@ -508,7 +509,10 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     });
   });
 
-  test("rejects a food editor publish when a concurrent save advances its reviewed revision", async () => {
+  test("keeps legacy food-retail snapshots private and rejects publish or rollback without mutation", async () => {
+    const canonicalDraft = structuredClone(sampleFoodRetailDraft);
+    canonicalDraft.slug = foodSlug;
+    await updateSiteDraft(foodSlug, canonicalDraft, Vertical.FOOD_RETAIL);
     const loaded = await findOwnerSiteDraft(foodSlug);
     if (!loaded) throw new Error("Expected the food editor draft");
     const reviewed = await updateSiteDraft(
@@ -520,114 +524,47 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       Vertical.FOOD_RETAIL,
       { actor, expectedRevision: loaded.revision },
     );
-    const concurrent = await updateSiteDraft(
-      foodSlug,
-      {
-        ...(loaded.draft as typeof sampleFoodRetailDraft),
-        description: "Concurrent unreviewed food-retail edit.",
-      },
-      Vertical.FOOD_RETAIL,
-      { actor, expectedRevision: reviewed.revision },
+    expect((await findOwnerSiteDraft(foodSlug))?.revision).toBe(
+      reviewed.revision,
     );
-    await db.site.update({
-      where: { id: foodSiteId },
-      data: { status: "CLAIMED" },
-    });
-    const before = await db.site.findUniqueOrThrow({
-      where: { id: foodSiteId },
-      select: {
-        publishedSiteVersionId: true,
-        _count: { select: { siteVersions: true, auditEvents: true } },
+    expect((await findSiteView(foodSlug))?.draft.description).toBe(
+      "Reviewed food-retail editor save.",
+    );
+
+    const privateView = await findSiteView(foodSlug);
+    if (!privateView) throw new Error("Expected private food-retail preview");
+    // Each value was parsed by the registered draft/theme schemas immediately
+    // above; the casts bridge those JSON-safe domain types to Prisma's write type.
+    const legacyVersion = await db.siteVersion.create({
+      data: {
+        siteId: foodSiteId,
+        version: 1,
+        vertical: Vertical.FOOD_RETAIL,
+        theme: privateView.theme.selection as Prisma.InputJsonValue,
+        themeVersion: privateView.theme.version,
+        palette: privateView.draft.palette as Prisma.InputJsonValue,
+        content: privateView.draft as Prisma.InputJsonValue,
+        translations:
+          privateView.draft.translations as Prisma.InputJsonValue,
+        integrations:
+          privateView.draft.integrations as Prisma.InputJsonValue,
+        publishedAt: new Date(),
+        publishedBy: actor.id,
+        changeSummary: "Legacy snapshot created before the launch gate",
       },
     });
-
-    await expect(
-      publishSiteDraft({
-        siteId: foodSiteId,
-        slug: foodSlug,
-        vertical: Vertical.FOOD_RETAIL,
-        actor,
-        changeSummary: "Publish the reviewed food editor save",
-        expectedRevision: reviewed.revision,
-      }),
-    ).rejects.toMatchObject({
-      name: "DraftRevisionConflictError",
-      currentRevision: concurrent.revision,
-    });
-    expect(
-      await db.site.findUniqueOrThrow({
-        where: { id: foodSiteId },
-        select: {
-          publishedSiteVersionId: true,
-          _count: { select: { siteVersions: true, auditEvents: true } },
-        },
-      }),
-    ).toEqual(before);
-  });
-
-  test("refuses to publish stale food-retail translations without moving the live pointer", async () => {
-    const current = await findSiteView(foodSlug);
-    if (!current) throw new Error("Expected the persisted food-retail draft");
-    const staleDraft = structuredClone(current.draft) as typeof sampleFoodRetailDraft;
-    staleDraft.translations = staleDraft.translations.map((translation) => ({
-      ...translation,
-      status: "stale" as const,
-    }));
-    await updateSiteDraft(foodSlug, staleDraft, Vertical.FOOD_RETAIL);
-    await db.site.update({
-      where: { id: foodSiteId },
-      data: { status: "CLAIMED" },
-    });
-    const before = await db.site.findUniqueOrThrow({
-      where: { id: foodSiteId },
-      select: {
-        publishedSiteVersionId: true,
-        _count: { select: { siteVersions: true, auditEvents: true } },
-      },
-    });
-
-    await expect(
-      publishSiteDraft({
-        siteId: foodSiteId,
-        slug: foodSlug,
-        vertical: Vertical.FOOD_RETAIL,
-        actor,
-        changeSummary: "Stale food-shop translation must not publish",
-        expectedRevision: (
-          await db.site.findUniqueOrThrow({ where: { id: foodSiteId } })
-        ).draftRevision,
-      }),
-    ).rejects.toThrow("Review every stale translation before publishing");
-
-    expect(
-      await db.site.findUniqueOrThrow({
-        where: { id: foodSiteId },
-        select: {
-          publishedSiteVersionId: true,
-          _count: { select: { siteVersions: true, auditEvents: true } },
-        },
-      }),
-    ).toEqual(before);
-  });
-
-  test("refuses to publish a translated pickup claim absent from canonical evidence", async () => {
-    const adversarial = structuredClone(sampleFoodRetailDraft);
-    adversarial.slug = foodSlug;
-    adversarial.attributes.pickupDetails = "";
-    adversarial.translations[0].status = "current";
-    adversarial.translations[0].attributes.pickupDetails =
-      "Retrait garanti en dix minutes";
     await db.site.update({
       where: { id: foodSiteId },
       data: {
-        attributes: adversarial.attributes,
-        translations: adversarial.translations,
         status: "CLAIMED",
+        publishedSiteVersionId: legacyVersion.id,
       },
     });
     const before = await db.site.findUniqueOrThrow({
       where: { id: foodSiteId },
       select: {
+        status: true,
+        draftRevision: true,
         publishedSiteVersionId: true,
         _count: { select: { siteVersions: true, auditEvents: true } },
       },
@@ -639,24 +576,41 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         slug: foodSlug,
         vertical: Vertical.FOOD_RETAIL,
         actor,
-        changeSummary: "Invented translated pickup must not publish",
-        expectedRevision: (
-          await db.site.findUniqueOrThrow({ where: { id: foodSiteId } })
-        ).draftRevision,
+        changeSummary: "Food publishing must stay closed",
+        expectedRevision: reviewed.revision,
       }),
-    ).rejects.toThrow(
-      "Translated pickup details must match the canonical claim presence",
-    );
+    ).rejects.toMatchObject({
+      name: "SitePublicationCapabilityError",
+      message: "Publishing is not available for this vertical",
+    });
+    await expect(
+      rollbackPublishedSiteVersion({
+        siteId: foodSiteId,
+        slug: foodSlug,
+        vertical: Vertical.FOOD_RETAIL,
+        targetSiteVersionId: legacyVersion.id,
+        actor,
+      }),
+    ).rejects.toMatchObject({
+      name: "SitePublicationCapabilityError",
+      message: "Publishing is not available for this vertical",
+    });
 
     expect(
       await db.site.findUniqueOrThrow({
         where: { id: foodSiteId },
         select: {
+          status: true,
+          draftRevision: true,
           publishedSiteVersionId: true,
           _count: { select: { siteVersions: true, auditEvents: true } },
         },
       }),
     ).toEqual(before);
+    expect(await findPublishedSiteView(foodSlug)).toBeNull();
+    expect((await findSiteView(foodSlug))?.draft.description).toBe(
+      "Reviewed food-retail editor save.",
+    );
   });
 
   test("versions and audits authorized integration saves without publishing", async () => {

@@ -18,6 +18,13 @@ const ownerSiteSave = await Bun.file(
 const restaurantPublishRoute = await Bun.file(
   new URL("../app/api/sites/[slug]/publish/route.ts", import.meta.url),
 ).text();
+const rollbackRoute = await Bun.file(
+  new URL("../app/api/sites/[slug]/rollback/route.ts", import.meta.url),
+).text();
+const sitePublication = await Bun.file(
+  new URL("./site-publication.ts", import.meta.url),
+).text();
+const sites = await Bun.file(new URL("./sites.ts", import.meta.url)).text();
 const translationRegenerationRoute = await Bun.file(
   new URL(
     "../app/api/sites/[slug]/translations/[locale]/regenerate/route.ts",
@@ -61,11 +68,27 @@ describe("dashboard tab and settings surface", () => {
     expect(ownerSiteSave).toContain('code: "EXPECTED_REVISION_REQUIRED"');
     expect(dashboard).toContain("expectedRevision: revisionToPublish");
     expect(foodRetailDashboard).toContain("expectedRevision: revision");
-    expect(foodRetailDashboard).toContain(
-      "expectedRevision: reviewedRevision",
-    );
     expect(restaurantPublishRoute).toContain(
       'code: "DRAFT_REVISION_CONFLICT"',
+    );
+  });
+
+  it("keeps food retail review private at the UI, API and service boundaries", () => {
+    expect(foodRetailDashboard).toContain(
+      "Public publishing and rollback stay unavailable",
+    );
+    expect(foodRetailDashboard).not.toContain("publishDraft");
+    expect(foodRetailDashboard).not.toContain("/publish");
+    expect(restaurantPublishRoute).toContain(
+      "isVerticalPublicationEnabled(access.site.vertical)",
+    );
+    expect(rollbackRoute).toContain(
+      "isVerticalPublicationEnabled(access.site.vertical)",
+    );
+    expect(sitePublication.match(/isVerticalPublicationEnabled\(input\.vertical\)/g))
+      .toHaveLength(2);
+    expect(sites).toContain(
+      "!isVerticalPublicationEnabled(version.vertical)",
     );
   });
 

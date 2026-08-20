@@ -91,7 +91,7 @@ can show or hide the gallery from the dashboard without deleting any images.
 
 `FOOD_RETAIL` is a bounded vertical for bakeries, pâtisseries, butchers,
 delis, cheesemongers, grocers and similar local food shops. It reuses the shared
-site/catalog/integration/publish engine but deliberately does not inherit table
+site/catalog/integration engine but deliberately does not inherit table
 reservations or restaurant lead capture. Its primary conversion action is an
 existing preorder, click-and-collect, ordering or delivery link.
 
@@ -107,8 +107,9 @@ ordering links and factual product attributes from deterministic crawl output.
 Unsupported model claims remain empty or null.
 
 The vertical is registered for private studio imports and owner dashboards but
-is not publicly launched: its marketing hostnames are empty, and its domain and
-sender are null.
+is not publicly launched: its marketing hostnames are empty, its domain and
+sender are null, and its server-side publication and rollback capability is
+disabled. Private preview and owner review remain available.
 The implementation contract, test fixture, structured-data mapping and required
 domain/sender/production-config evidence are documented in
 [`docs/verticals/food-retail.md`](docs/verticals/food-retail.md).

@@ -134,6 +134,7 @@ export const foodRetailConfig = {
     item: "Product",
   },
   marketing: foodRetailMarketing,
+  publicationEnabled: false,
   attributesSchema: foodRetailAttributesSchema,
   attributeDefaults: {
     shopType: "local-food-shop",

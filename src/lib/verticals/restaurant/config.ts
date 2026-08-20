@@ -95,6 +95,7 @@ export const restaurantConfig = {
     item: "Dish",
   },
   marketing: restaurantMarketing,
+  publicationEnabled: true,
   attributesSchema: restaurantAttributesSchema,
   attributeDefaults: {
     cuisine: "",

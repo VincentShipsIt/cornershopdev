@@ -140,6 +140,15 @@ export function isVerticalClaimEnabled(id: VerticalId): boolean {
   return isVerticalPubliclyLaunched(id);
 }
 
+/**
+ * Publication is a separate capability from rendering, importing and claim.
+ * Keeping it explicit prevents a private vertical from inheriting the shared
+ * snapshot and rollback engine merely because its schema is registered.
+ */
+export function isVerticalPublicationEnabled(id: VerticalId): boolean {
+  return resolveVerticalConfig(id).publicationEnabled;
+}
+
 /** Every vertical intentionally exposed by the shared public niche route. */
 export function listPublicVerticals(): VerticalId[] {
   return listVerticalIds().filter(isVerticalPubliclyAccessible);

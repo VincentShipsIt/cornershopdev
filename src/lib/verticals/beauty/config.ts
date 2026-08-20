@@ -77,6 +77,7 @@ export const beautyConfig = {
     item: "Service",
   },
   marketing: beautyMarketing,
+  publicationEnabled: true,
   attributesSchema: beautyAttributesSchema,
   attributeDefaults: {
     serviceStyle: "modern-studio",

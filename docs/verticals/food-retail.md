@@ -13,8 +13,7 @@ flowchart LR
   C --> D[(Shared Site and Catalog tables)]
   D --> E[Private preview]
   D --> F[Food retail owner dashboard]
-  F --> G[Validated immutable publish snapshot]
-  G --> H[Customer domain or platform address]
+  F --> G[Private owner review]
 ```
 
 ## Vertical boundary
@@ -97,6 +96,7 @@ The code ships with all public launch selectors closed:
 - `marketing.hostnames = []`
 - `marketing.domain = null`
 - `marketing.email = null`
+- `publicationEnabled = false`
 
 Do not change those values or expose a priced public plan until the PR/release
 contains reviewable evidence for every item below:
@@ -115,3 +115,7 @@ contains reviewable evidence for every item below:
 
 Until those gates have evidence, FOOD_RETAIL remains usable for private imports,
 previews and owner review only; it is excluded from `listMarketingVerticals()`.
+The shared publish and rollback services reject it before billing or database
+mutation, the owner dashboard exposes no publication actions, and public reads
+ignore any legacy FOOD_RETAIL snapshot pointer until the capability is reviewed
+and enabled.

@@ -10,6 +10,7 @@ import { beautyConfig } from "@/lib/verticals/beauty/config";
 import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
 import {
   isVerticalClaimEnabled,
+  isVerticalPublicationEnabled,
   isVerticalPubliclyAccessible,
   isVerticalPubliclyLaunched,
   listMarketingVerticals,
@@ -286,6 +287,12 @@ describe("niche routing", () => {
     expect(isVerticalClaimEnabled(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalClaimEnabled(Vertical.BEAUTY)).toBe(false);
     expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(false);
+  });
+
+  it("keeps publication explicit while food retail remains private", () => {
+    expect(isVerticalPublicationEnabled(Vertical.RESTAURANT)).toBe(true);
+    expect(isVerticalPublicationEnabled(Vertical.BEAUTY)).toBe(true);
+    expect(isVerticalPublicationEnabled(Vertical.FOOD_RETAIL)).toBe(false);
   });
 
   it("registers the selected Restofrontapp mark and favicon assets", () => {

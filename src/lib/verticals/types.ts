@@ -229,6 +229,12 @@ export type VerticalConfig<
   vocabulary: CatalogVocabulary;
   /** The niche's own marketing site. See `VerticalMarketing`. */
   marketing: VerticalMarketing;
+  /**
+   * Whether owner-reviewed drafts may create or roll back public snapshots.
+   * This is explicit and server-enforced: a registered vertical can support
+   * private imports and previews without accidentally inheriting publication.
+   */
+  publicationEnabled: boolean;
   attributesSchema: z.ZodType<TAttributes>;
   attributeDefaults: TAttributes;
   /** Optional richer defaults used only for a brand-new non-AI import. */
