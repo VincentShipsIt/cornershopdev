@@ -4,6 +4,9 @@ import { isBlockedDirectBetterAuthRoute } from "@/lib/better-auth-route-policy";
 const accountActions = await Bun.file(
   new URL("../components/account-actions.tsx", import.meta.url),
 ).text();
+const logoutRoute = await Bun.file(
+  new URL("../app/api/auth/logout/route.ts", import.meta.url),
+).text();
 
 describe("Better Auth public route policy", () => {
   test("blocks the raw magic-link issuer", () => {
@@ -54,6 +57,10 @@ describe("Better Auth public route policy", () => {
     ).toBe(true);
     expect(accountActions).toContain('fetch("/api/auth/logout"');
     expect(accountActions).not.toContain("/api/auth/sign-out");
+    expect(logoutRoute).toContain("failOnSessionLookupError: true");
+    expect(logoutRoute).toContain("requireOwnerMembership: false");
+    expect(logoutRoute).toContain("revokeCurrentSessionAtomically");
+    expect(logoutRoute).not.toContain("auth.handler");
   });
 
   test("allows read-only Better Auth session endpoints", () => {

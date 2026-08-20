@@ -8,6 +8,7 @@ import {
   integrationUrlDigest,
 } from "@/lib/evidence-digests";
 import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
+import { DraftRevisionConflictError } from "@/lib/site-persistence";
 import { previewCacheTagFor } from "@/lib/site-surface";
 import {
   projectPublishedSiteVersion,
@@ -27,6 +28,7 @@ export type PublishSiteDraftInput = {
     email: string;
   };
   changeSummary: string;
+  expectedRevision: number;
   now?: Date;
 };
 
@@ -103,6 +105,9 @@ export async function publishSiteDraft(
             // Publishing must not resurrect a prospect or bypass an operator or
             // billing pause by changing PAUSED back to LIVE.
             throw new SitePublicationStateError();
+          }
+          if (site.draftRevision !== input.expectedRevision) {
+            throw new DraftRevisionConflictError(site.draftRevision);
           }
 
           // `projectSiteDraft` is the private-preview projection. Parsing it

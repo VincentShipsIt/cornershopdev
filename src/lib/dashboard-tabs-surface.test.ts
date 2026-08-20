@@ -3,6 +3,15 @@ import { describe, expect, it } from "bun:test";
 const dashboard = await Bun.file(
   new URL("../app/dashboard/dashboard.tsx", import.meta.url),
 ).text();
+const dashboardPage = await Bun.file(
+  new URL("../app/dashboard/page.tsx", import.meta.url),
+).text();
+const restaurantSaveRoute = await Bun.file(
+  new URL("../app/api/sites/[slug]/route.ts", import.meta.url),
+).text();
+const restaurantPublishRoute = await Bun.file(
+  new URL("../app/api/sites/[slug]/publish/route.ts", import.meta.url),
+).text();
 
 describe("dashboard tab and settings surface", () => {
   it("uses one Base UI tab list containing the settings tab", () => {
@@ -16,5 +25,20 @@ describe("dashboard tab and settings surface", () => {
       '<Label htmlFor="restaurant-name">Restaurant name</Label>',
     );
     expect(dashboard).toContain('id="restaurant-name"');
+  });
+
+  it("requires the persisted owner revision on the first and later saves", () => {
+    expect(dashboardPage).toContain(
+      "initialDraftRevision={ownerDraft?.revision ?? 0}",
+    );
+    expect(dashboard).toContain(
+      "useState(initialDraftRevision)",
+    );
+    expect(dashboard).toContain("expectedRevision: savedRevision");
+    expect(restaurantSaveRoute).toContain('code: "DRAFT_REVISION_REQUIRED"');
+    expect(dashboard).toContain("expectedRevision: revisionToPublish");
+    expect(restaurantPublishRoute).toContain(
+      'code: "DRAFT_REVISION_CONFLICT"',
+    );
   });
 });

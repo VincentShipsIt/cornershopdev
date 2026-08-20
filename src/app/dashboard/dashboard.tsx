@@ -91,6 +91,7 @@ type ClientPublicationHistoryItem = Omit<
  */
 export function Dashboard({
   initialDraft,
+  initialDraftRevision,
   email,
   checkoutComplete,
   demo,
@@ -104,6 +105,7 @@ export function Dashboard({
   platformUrl,
 }: {
   initialDraft: RestaurantDraft;
+  initialDraftRevision: number;
   email: string;
   checkoutComplete: boolean;
   demo: boolean;
@@ -119,7 +121,7 @@ export function Dashboard({
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [savedRevision, setSavedRevision] = useState<number | null>(null);
+  const [savedRevision, setSavedRevision] = useState(initialDraftRevision);
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -198,7 +200,7 @@ export function Dashboard({
     };
   }, [demo, draft.slug]);
 
-  async function save(): Promise<boolean> {
+  async function save(): Promise<number | null> {
     const validationIssues = validateRestaurantMenuDraft(draft);
     const integrationIssues = validateRestaurantIntegrations(draft);
     setMenuValidationIssues(validationIssues);
@@ -214,7 +216,7 @@ export function Dashboard({
           ? "One or more external links are invalid or incomplete"
           : "Fix the invalid menu fields before saving these links",
       );
-      return false;
+      return null;
     }
     setSaving(true);
     setSaved(false);
@@ -222,15 +224,14 @@ export function Dashboard({
     setMenuSaveError(null);
     setIntegrationSaveError(null);
     try {
+      let persistedRevision = savedRevision;
       if (!demo) {
         const response = await fetch(`/api/sites/${draft.slug}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...draft,
-            ...(savedRevision !== null
-              ? { expectedRevision: savedRevision }
-              : {}),
+            expectedRevision: savedRevision,
           }),
         });
         const result = (await response.json()) as {
@@ -241,7 +242,11 @@ export function Dashboard({
         if (!response.ok) {
           throw new Error(result.error ?? "Save failed");
         }
-        setSavedRevision(result.revision ?? null);
+        if (!Number.isInteger(result.revision) || result.revision === undefined) {
+          throw new Error("Save response did not include a draft revision");
+        }
+        setSavedRevision(result.revision);
+        persistedRevision = result.revision;
       }
       setSaved(true);
       setThemeDirty(false);
@@ -250,13 +255,13 @@ export function Dashboard({
       setMenuValidationIssues([]);
       setIntegrationValidationIssues([]);
       setPublishedVersion(null);
-      return true;
+      return persistedRevision;
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Save failed";
       setPublishError(message);
       setMenuSaveError(message);
       setIntegrationSaveError(message);
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -291,7 +296,8 @@ export function Dashboard({
     setPublishing(true);
     setPublishError(null);
     try {
-      if (!(await save())) return;
+      const revisionToPublish = await save();
+      if (revisionToPublish === null) return;
       if (demo) {
         setPublishedVersion(1);
         setMenuUndoStack([]);
@@ -302,7 +308,10 @@ export function Dashboard({
       const response = await fetch(`/api/sites/${draft.slug}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changeSummary }),
+        body: JSON.stringify({
+          changeSummary,
+          expectedRevision: revisionToPublish,
+        }),
       });
       const result = (await response.json()) as {
         error?: string;

@@ -44,6 +44,15 @@ export async function PUT(
       body.expectedRevision >= 0
         ? body.expectedRevision
         : undefined;
+    if (expectedRevision === undefined) {
+      return Response.json(
+        {
+          error: "A loaded draft revision is required before saving.",
+          code: "DRAFT_REVISION_REQUIRED",
+        },
+        { status: 400 },
+      );
+    }
     const draftBody = { ...body };
     delete draftBody.expectedRevision;
     const draft = restaurantDraftSchema.parse(draftBody);

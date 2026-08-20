@@ -12,7 +12,8 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   request,
   context,
 }) => {
-  const originalIntegrationDigest = inspectDatabase().integrationDigest;
+  const initialSite = inspectDatabase();
+  const originalIntegrationDigest = initialSite.integrationDigest;
 
   await page.goto(`/claim/${e2e.targetSlug}`);
   await page.getByPlaceholder("owner@restaurant.com").fill(e2e.ownerEmail);
@@ -101,6 +102,16 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   });
   expect(beforePublish.status()).toBe(404);
 
+  const staleEditor = await context.newPage();
+  await staleEditor.goto("/dashboard");
+  const staleSettingsTab = staleEditor.getByRole("tab", { name: "Settings" });
+  await staleSettingsTab.click();
+  await expect(staleSettingsTab).toHaveAttribute("aria-selected", "true");
+  const staleRestaurantName = staleEditor.getByLabel("Restaurant name", {
+    exact: true,
+  });
+  await expect(staleRestaurantName).toHaveValue(e2e.targetName);
+
   const settingsTab = page.getByRole("tab", { name: "Settings" });
   await settingsTab.click();
   await expect(settingsTab).toHaveAttribute("aria-selected", "true");
@@ -108,8 +119,42 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   const restaurantName = page.getByLabel("Restaurant name", { exact: true });
   await expect(restaurantName).toBeVisible();
   await restaurantName.fill(e2e.editedName);
+  const firstSaveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/sites/${e2e.targetSlug}`) &&
+      response.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  const firstSaveResponse = await firstSaveResponsePromise;
+  expect(firstSaveResponse.status()).toBe(200);
+  expect(firstSaveResponse.request().postDataJSON()).toMatchObject({
+    expectedRevision: initialSite.draftRevision,
+  });
+  const firstSave = (await firstSaveResponse.json()) as { revision: number };
   await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+
+  await staleRestaurantName.fill(`${e2e.editedName} stale`);
+  const staleSaveResponsePromise = staleEditor.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/sites/${e2e.targetSlug}`) &&
+      response.request().method() === "PUT",
+  );
+  await staleEditor.getByRole("button", { name: "Save", exact: true }).click();
+  const staleSaveResponse = await staleSaveResponsePromise;
+  expect(staleSaveResponse.request().postDataJSON()).toMatchObject({
+    expectedRevision: initialSite.draftRevision,
+  });
+  expect(staleSaveResponse.status()).toBe(409);
+  expect(await staleSaveResponse.json()).toMatchObject({
+    code: "DRAFT_REVISION_CONFLICT",
+    currentRevision: firstSave.revision,
+  });
+  await expect(
+    staleEditor.getByText(
+      "This draft was updated elsewhere. Reload before saving again.",
+    ).first(),
+  ).toBeVisible();
+  await staleEditor.close();
 
   const afterPrivateSave = await request.get("http://127.0.0.1:3100/", {
     headers: { Host: `${e2e.targetSlug}.restofront.com` },
@@ -122,7 +167,25 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
       dialog.type() === "prompt" ? "Publish browser-tested owner edit" : undefined,
     );
   });
+  const publishSaveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/sites/${e2e.targetSlug}`) &&
+      response.request().method() === "PUT",
+  );
+  const publishResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/sites/${e2e.targetSlug}/publish`) &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Publish", exact: true }).click();
+  const publishSaveResponse = await publishSaveResponsePromise;
+  expect(publishSaveResponse.status()).toBe(200);
+  const publishSave = (await publishSaveResponse.json()) as { revision: number };
+  const publishResponse = await publishResponsePromise;
+  expect(publishResponse.status()).toBe(200);
+  expect(publishResponse.request().postDataJSON()).toMatchObject({
+    expectedRevision: publishSave.revision,
+  });
   await expect(page.getByRole("button", { name: "Published v1" })).toBeVisible();
 
   const live = await request.get("http://127.0.0.1:3100/", {
@@ -134,7 +197,8 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
 
   const site = inspectDatabase();
   expect(site.integrationDigest).toBe(originalIntegrationDigest);
-  expect(site.status).toBe("LIVE");
+  expect(site.status).toBe("CLAIMED");
+  expect(site.publishedSiteVersionId).not.toBeNull();
   expect(site.publishedSiteVersionId).toBe(
     live.headers()["x-cornershop-site-version"],
   );
@@ -157,6 +221,7 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
 });
 
 function inspectDatabase(): {
+  draftRevision: number;
   status: string;
   publishedSiteVersionId: string | null;
   invitationAccepted: boolean;

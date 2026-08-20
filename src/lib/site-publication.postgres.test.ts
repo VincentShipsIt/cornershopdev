@@ -42,6 +42,15 @@ let restaurantThemeFixtures: typeof import("@/lib/site-themes/restaurant/fixture
 let selectOwnerRestaurantTheme: typeof import("@/lib/site-themes/restaurant/selection").selectOwnerRestaurantTheme;
 let Vertical: typeof import("@/generated/prisma/enums").Vertical;
 
+async function currentDraftRevision(): Promise<number> {
+  return (
+    await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: { draftRevision: true },
+    })
+  ).draftRevision;
+}
+
 describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () => {
   beforeAll(async () => {
     const database = await import("@/lib/db");
@@ -186,6 +195,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         vertical: Vertical.RESTAURANT,
         actor,
         changeSummary: "Attempt to bypass pause",
+        expectedRevision: await currentDraftRevision(),
       }),
     ).rejects.toThrow("Only claimed or live sites can be published");
     expect(
@@ -207,13 +217,17 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
     });
   });
 
-  test("publishes a validated immutable snapshot and audits the actor", async () => {
+  test("publishes a validated immutable snapshot and promotes a verified custom-domain site to LIVE", async () => {
+    expect(
+      await db.domain.count({ where: { siteId, verified: true } }),
+    ).toBe(1);
     const published = await publishSiteDraft({
       siteId,
       slug,
       vertical: Vertical.RESTAURANT,
       actor,
       changeSummary: "Initial customer launch",
+      expectedRevision: await currentDraftRevision(),
       now: new Date("2026-07-26T20:00:00.000Z"),
     });
 
@@ -328,6 +342,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       vertical: Vertical.RESTAURANT,
       actor,
       changeSummary: "Publish private copy and palette",
+      expectedRevision: await currentDraftRevision(),
     });
     expect(second.version).toBe(2);
     expect(second.theme).toEqual({ id: "nocturne", version: "legacy-v1" });
@@ -336,6 +351,65 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       name: changedDraft.name,
       palette: changedDraft.palette,
     });
+  });
+
+  test("rejects a publish when another save advances the reviewed revision", async () => {
+    const loadedRevision = await currentDraftRevision();
+    const reviewedDraft = {
+      ...sampleSiteDraft,
+      slug,
+      name: "Reviewed owner draft",
+    };
+    const reviewed = await updateSiteDraft(
+      slug,
+      reviewedDraft,
+      Vertical.RESTAURANT,
+      { actor, expectedRevision: loadedRevision },
+    );
+    const concurrentlySaved = {
+      ...reviewedDraft,
+      name: "Concurrent unreviewed owner draft",
+    };
+    const concurrent = await updateSiteDraft(
+      slug,
+      concurrentlySaved,
+      Vertical.RESTAURANT,
+      { actor, expectedRevision: reviewed.revision },
+    );
+    const beforePublish = await db.site.findUniqueOrThrow({
+      where: { id: siteId },
+      select: {
+        publishedSiteVersionId: true,
+        _count: { select: { siteVersions: true, auditEvents: true } },
+      },
+    });
+
+    await expect(
+      publishSiteDraft({
+        siteId,
+        slug,
+        vertical: Vertical.RESTAURANT,
+        actor,
+        changeSummary: "Publish the reviewed owner draft",
+        expectedRevision: reviewed.revision,
+      }),
+    ).rejects.toMatchObject({
+      name: "DraftRevisionConflictError",
+      currentRevision: concurrent.revision,
+    });
+
+    expect(
+      await db.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: {
+          publishedSiteVersionId: true,
+          _count: { select: { siteVersions: true, auditEvents: true } },
+        },
+      }),
+    ).toEqual(beforePublish);
+    expect((await findSiteView(slug))?.draft.name).toBe(
+      concurrentlySaved.name,
+    );
   });
 
   test("persists menu order, availability, currency and approved imagery", async () => {
@@ -513,6 +587,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         vertical: Vertical.RESTAURANT,
         actor,
         changeSummary: "Stale translation must not publish",
+        expectedRevision: await currentDraftRevision(),
       }),
     ).rejects.toThrow("Review every stale translation before publishing");
 
@@ -560,6 +635,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         vertical: Vertical.RESTAURANT,
         actor,
         changeSummary: "This publish must fail",
+        expectedRevision: await currentDraftRevision(),
       }),
     ).rejects.toThrow();
 
@@ -585,6 +661,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         vertical: Vertical.RESTAURANT,
         actor,
         changeSummary: "Concurrent publish A",
+        expectedRevision: await currentDraftRevision(),
       }),
       publishSiteDraft({
         siteId,
@@ -592,6 +669,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
         vertical: Vertical.RESTAURANT,
         actor,
         changeSummary: "Concurrent publish B",
+        expectedRevision: await currentDraftRevision(),
       }),
     ]);
     const versions = await db.siteVersion.findMany({
@@ -672,6 +750,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       vertical: Vertical.RESTAURANT,
       actor,
       changeSummary: "Publish owner-selected after-dark theme",
+      expectedRevision: await currentDraftRevision(),
     });
     expect(ownerPublished.theme).toEqual({
       id: "after-dark",
@@ -712,6 +791,7 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       vertical: Vertical.RESTAURANT,
       actor,
       changeSummary: "Publish a later owner theme",
+      expectedRevision: await currentDraftRevision(),
     });
 
     const rolledBack = await rollbackPublishedSiteVersion({

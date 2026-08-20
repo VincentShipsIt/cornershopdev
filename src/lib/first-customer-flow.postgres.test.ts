@@ -161,7 +161,7 @@ describe.skipIf(!enabled)(
       const { persistWorkspaceRotation } = await import(
         "@/lib/workspace-auth-plugin"
       );
-      const { recordSessionRevocation } = await import(
+      const { revokeCurrentSessionAtomically } = await import(
         "@/lib/auth-sessions"
       );
       const { recordResendAuthEvent } = await import(
@@ -401,7 +401,7 @@ describe.skipIf(!enabled)(
       const originalIntegrationDigest = integrationUrlDigest(
         sampleSiteDraft.integrations,
       );
-      await updateSiteDraft(slug, editedDraft, "RESTAURANT", {
+      const saved = await updateSiteDraft(slug, editedDraft, "RESTAURANT", {
         actor: { id: userId, email: ownerEmail },
       });
       expect((await findSiteView(slug))?.draft.name).toBe(
@@ -415,6 +415,7 @@ describe.skipIf(!enabled)(
         vertical: "RESTAURANT",
         actor: { id: userId, email: ownerEmail },
         changeSummary: "First-customer test-mode publication",
+        expectedRevision: saved.revision,
       });
       const live = await findPublishedSiteView(slug);
       expect(live?.draft.name).toBe("Private first-customer edit");
@@ -442,9 +443,9 @@ describe.skipIf(!enabled)(
         locale: null,
       });
 
-      await db.session.delete({ where: { id: siteSessionId } });
-      await recordSessionRevocation({
+      await revokeCurrentSessionAtomically({
         id: siteSessionId,
+        token: `site-token-${suffix}`,
         userId,
         purpose: "SITE",
         organizationId,

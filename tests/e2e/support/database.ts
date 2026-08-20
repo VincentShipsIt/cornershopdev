@@ -62,6 +62,9 @@ export async function seedFirstCustomerBrowserJourney() {
       attributes: sampleSiteDraft.attributes,
       vertical: "RESTAURANT",
       status: "PREVIEW_READY",
+      // Non-zero so the browser cannot pass by inventing a default first-save
+      // revision instead of hydrating the persisted owner DTO.
+      draftRevision: 7,
       integrations: {
         create: sampleSiteDraft.integrations.map((integration, position) => ({
           type: integration.type.toUpperCase() as
@@ -132,6 +135,7 @@ async function inspectFirstCustomerBrowserJourney() {
     db.site.findUniqueOrThrow({
       where: { id: e2e.targetId },
       select: {
+        draftRevision: true,
         publishedSiteVersionId: true,
         status: true,
         claimInvitations: { select: { acceptedAt: true } },
@@ -148,6 +152,7 @@ async function inspectFirstCustomerBrowserJourney() {
     }),
   ]);
   return {
+    draftRevision: site.draftRevision,
     status: site.status,
     publishedSiteVersionId: site.publishedSiteVersionId,
     invitationAccepted: site.claimInvitations.some(

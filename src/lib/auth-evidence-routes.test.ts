@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { CurrentSession } from "@/lib/auth-sessions";
 
-const { logoutResponseWithEvidence, verifiedMagicLinkResponse } = await import(
-  "@/lib/auth-evidence-responses"
-);
+const { logoutResponseAfterAtomicRevocation, verifiedMagicLinkResponse } =
+  await import("@/lib/auth-evidence-responses");
 
 const currentSession: CurrentSession = {
   id: "session_1",
+  token: "session_token_1",
   userId: "user_1",
   purpose: "SITE",
   organizationId: "organization_1",
@@ -52,10 +52,9 @@ describe("required authentication evidence at route boundaries", () => {
     });
   });
 
-  it("returns sign-out success only after revocation evidence is recorded", async () => {
+  it("clears the session cookie only after atomic revocation commits", async () => {
     const recorded: CurrentSession[] = [];
-    const response = await logoutResponseWithEvidence(
-      signedOutResponse(),
+    const response = await logoutResponseAfterAtomicRevocation(
       currentSession,
       async (session) => {
         recorded.push(session);
@@ -65,13 +64,14 @@ describe("required authentication evidence at route boundaries", () => {
     expect(recorded).toEqual([currentSession]);
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain(
-      "better-auth.session=",
+      "cornershopdev_session=",
     );
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(await response.json()).toEqual({ success: true });
   });
 
-  it("does not report successful sign-out or forward cookies when revocation evidence fails", async () => {
-    const response = await logoutResponseWithEvidence(
-      signedOutResponse(),
+  it("does not report success or clear the cookie when atomic revocation fails", async () => {
+    const response = await logoutResponseAfterAtomicRevocation(
       currentSession,
       async () => {
         throw new Error("audit unavailable");
@@ -81,7 +81,7 @@ describe("required authentication evidence at route boundaries", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(await response.json()).toEqual({
-      error: "Sign-out evidence could not be recorded.",
+      error: "Sign-out could not be completed.",
     });
   });
 });
@@ -94,15 +94,4 @@ function verifiedResponse() {
       "set-cookie": "better-auth.session=site-token; Path=/; HttpOnly",
     },
   });
-}
-
-function signedOutResponse() {
-  return Response.json(
-    { success: true },
-    {
-      headers: {
-        "set-cookie": "better-auth.session=; Path=/; Max-Age=0; HttpOnly",
-      },
-    },
-  );
 }
