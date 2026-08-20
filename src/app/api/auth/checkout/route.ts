@@ -9,6 +9,7 @@ import {
   verifyHashedToken,
 } from "@/lib/claim-security";
 import { getDb } from "@/lib/db";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 
 const querySchema = z.object({
   sessionId: z.string().startsWith("cs_").max(256),
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
           organization: {
             select: {
               memberships: {
+                where: ownerMembershipWhere(),
                 select: {
                   userId: true,
                   user: { select: { email: true } },

@@ -3,6 +3,10 @@ import { revalidateTag } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import {
+  evidenceDigest,
+  integrationUrlDigest,
+} from "@/lib/evidence-digests";
 import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
 import { previewCacheTagFor } from "@/lib/site-surface";
 import {
@@ -181,6 +185,20 @@ export async function publishSiteDraft(
                 themeId: loaded.theme.id,
                 themeVersion: loaded.theme.version,
                 live: verifiedDomainCount > 0,
+                draftRevision: site.draftRevision,
+                draftContentDigest: evidenceDigest(loaded.draft),
+                integrationUrlDigest: integrationUrlDigest(
+                  (
+                    loaded.draft as {
+                      integrations: Array<{
+                        type: string;
+                        url: string;
+                        enabled: boolean;
+                      }>;
+                    }
+                  ).integrations,
+                ),
+                previousSiteVersionId: site.publishedSiteVersionId,
               },
             },
           });

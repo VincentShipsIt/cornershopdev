@@ -5,6 +5,7 @@ import {
   type SessionPurpose,
 } from "@/lib/auth-session-binding";
 import { getDb } from "@/lib/db";
+import { ownedSiteSessionWhere } from "@/lib/owner-membership";
 
 export type CurrentSession = {
   id: string;
@@ -57,7 +58,11 @@ export async function resolveBetterAuthSession(
   if (!organizationId || !siteId) return null;
 
   const site = await getDb().site.findFirst({
-    where: { id: siteId, organizationId },
+    where: ownedSiteSessionWhere({
+      siteId,
+      organizationId,
+      userId: raw.userId,
+    }),
     select: { slug: true },
   });
   if (!site) return null;
@@ -70,80 +75,6 @@ export async function resolveBetterAuthSession(
     siteSlug: site.slug,
     expiresAt,
   };
-}
-
-export async function rotateSessionToWorkspace(input: {
-  sessionId: string;
-  userId: string;
-  siteId: string;
-}): Promise<CurrentSession> {
-  const now = new Date();
-  return getDb().$transaction(
-    async (tx) => {
-      const current = await tx.session.findFirst({
-        where: {
-          id: input.sessionId,
-          userId: input.userId,
-          expiresAt: { gt: now },
-        },
-        select: { id: true, expiresAt: true },
-      });
-      if (!current) throw new AuthSessionError("Your session has expired.");
-
-      const site = await tx.site.findFirst({
-        where: {
-          id: input.siteId,
-          organization: {
-            memberships: { some: { userId: input.userId } },
-          },
-        },
-        select: { id: true, slug: true, organizationId: true },
-      });
-      if (!site?.organizationId) {
-        throw new AuthSessionError("Workspace access is no longer available.");
-      }
-
-      const updated = await tx.session.updateMany({
-        where: {
-          id: current.id,
-          userId: input.userId,
-          expiresAt: { gt: now },
-        },
-        data: {
-          purpose: "SITE",
-          organizationId: site.organizationId,
-          siteId: site.id,
-        },
-      });
-      if (updated.count !== 1) {
-        throw new AuthSessionError("Your session changed. Sign in again.");
-      }
-      await tx.authEvent.create({
-        data: {
-          type: "auth.session.context_changed",
-          actor: `user:${input.userId}`,
-          subjectUserId: input.userId,
-          sessionId: current.id,
-          siteId: site.id,
-          metadata: {
-            provider: "better-auth",
-            purpose: "SITE",
-            organizationId: site.organizationId,
-          },
-        },
-      });
-      return {
-        id: current.id,
-        userId: input.userId,
-        purpose: "SITE",
-        organizationId: site.organizationId,
-        siteId: site.id,
-        siteSlug: site.slug,
-        expiresAt: current.expiresAt,
-      };
-    },
-    { isolationLevel: "Serializable" },
-  );
 }
 
 export async function recordSessionRevocation(
@@ -159,11 +90,4 @@ export async function recordSessionRevocation(
       metadata: { provider: "better-auth" },
     },
   });
-}
-
-export class AuthSessionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AuthSessionError";
-  }
 }

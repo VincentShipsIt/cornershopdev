@@ -1,3 +1,4 @@
+import { logoutResponseWithEvidence } from "@/lib/auth-evidence-responses";
 import { recordSessionRevocation } from "@/lib/auth-sessions";
 import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
@@ -18,13 +19,9 @@ export async function POST(request: Request) {
       body: "{}",
     }),
   );
-  const result = new Response(response.body, {
-    status: response.status,
-    headers: response.headers,
-  });
-  if (response.ok && current) {
-    await recordSessionRevocation(current).catch(() => undefined);
-  }
-  result.headers.set("Cache-Control", "no-store");
-  return result;
+  return logoutResponseWithEvidence(
+    response,
+    current,
+    recordSessionRevocation,
+  );
 }

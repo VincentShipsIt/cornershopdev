@@ -1,0 +1,54 @@
+import { createHash } from "node:crypto";
+import type Stripe from "stripe";
+import {
+  configuredBillingPlans,
+  RESTOFRONT_FOUNDING_PLAN_ID,
+  RESTOFRONT_FOUNDING_PRICE,
+  stripeLivemodeForSecret,
+  validateRestofrontFoundingPrice,
+} from "@/lib/billing-plans";
+
+type Environment = Record<string, string | undefined>;
+
+export type StripePriceReader = Pick<Stripe, "prices">;
+
+export async function preflightRestofrontBilling(input: {
+  stripe: StripePriceReader;
+  environment?: Environment;
+  requiredMode: "test" | "live";
+}) {
+  const environment = input.environment ?? process.env;
+  const expectedLivemode = stripeLivemodeForSecret(
+    environment.STRIPE_SECRET_KEY,
+  );
+  if (expectedLivemode !== (input.requiredMode === "live")) {
+    throw new Error("Stripe secret mode does not match the requested environment");
+  }
+  if (!environment.STRIPE_WEBHOOK_SECRET?.startsWith("whsec_")) {
+    throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
+  }
+
+  const plan = configuredBillingPlans(environment)[
+    RESTOFRONT_FOUNDING_PLAN_ID
+  ];
+  const price = await input.stripe.prices.retrieve(plan.priceId, {
+    expand: ["product"],
+  });
+  validateRestofrontFoundingPrice(price, {
+    expectedPriceId: plan.priceId,
+    expectedLivemode,
+  });
+
+  return {
+    check: "restofront-founding-billing",
+    ready: true as const,
+    mode: input.requiredMode,
+    plan: RESTOFRONT_FOUNDING_PLAN_ID,
+    amount: RESTOFRONT_FOUNDING_PRICE.unitAmount,
+    currency: RESTOFRONT_FOUNDING_PRICE.currency,
+    interval: RESTOFRONT_FOUNDING_PRICE.interval,
+    taxBehavior: RESTOFRONT_FOUNDING_PRICE.taxBehavior,
+    priceFingerprint: createHash("sha256").update(plan.priceId).digest("hex"),
+    checkedAt: new Date().toISOString(),
+  };
+}

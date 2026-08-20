@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { secureCookieRequired } from "@/lib/first-customer-test-mode";
 
 export const SESSION_COOKIE = "cornershopdev_session";
 export const PENDING_MAGIC_LINK_COOKIE = "cornershopdev_pending_magic_link";
@@ -23,7 +24,7 @@ export function hashAuthToken(token: string): string {
 export function pendingMagicLinkCookieOptions() {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookieRequired(),
     sameSite: "strict" as const,
     maxAge: MAGIC_LINK_TTL_MS / 1_000,
     path: "/",
@@ -40,7 +41,13 @@ export function maskAccountEmail(email: string): string {
 }
 
 export type MagicLinkRetrySnapshot = {
-  deliveryStatus: "PENDING" | "SENT" | "FAILED";
+  deliveryStatus:
+    | "PENDING"
+    | "SENT"
+    | "DELIVERED"
+    | "BOUNCED"
+    | "SUPPRESSED"
+    | "FAILED";
   retryCount: number;
   consumedAt: Date | null;
   revokedAt: Date | null;
@@ -56,11 +63,19 @@ export function canRetryMagicLink(
     link.consumedAt ||
     link.revokedAt ||
     link.deliveryStatus === "SENT" ||
+    link.deliveryStatus === "DELIVERED" ||
     link.retryCount >= MAGIC_LINK_MAX_RETRIES
   ) {
     return false;
   }
-  if (link.deliveryStatus === "FAILED") return true;
+  if (
+    link.deliveryStatus === "FAILED" ||
+    link.deliveryStatus === "BOUNCED" ||
+    link.deliveryStatus === "SUPPRESSED"
+  ) {
+    return true;
+  }
+  if (link.deliveryStatus !== "PENDING") return false;
   const lastActivityAt = link.lastAttemptAt ?? link.createdAt;
   return (
     now.getTime() - lastActivityAt.getTime() >=

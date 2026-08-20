@@ -10,6 +10,7 @@ export type PlatformService =
   | "rateLimit"
   | "storage"
   | "billing"
+  | "auth"
   | "alerting";
 export type PlatformServiceStatus =
   | "ready"
@@ -182,6 +183,30 @@ function validateAlerting(env: Environment): ServiceReadiness | null {
   }
 }
 
+function validateAuth(env: Environment): ServiceReadiness | null {
+  const operators = (env.SUPERADMIN_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean);
+  if (
+    !env.BETTER_AUTH_SECRET ||
+    env.BETTER_AUTH_SECRET.length < 32 ||
+    env.BETTER_AUTH_SECRET === env.CLAIM_TOKEN_SECRET ||
+    operators.length === 0 ||
+    operators.some((email) => !/^\S+@\S+\.\S+$/.test(email)) ||
+    !env.RESEND_API_KEY ||
+    !env.RESEND_WEBHOOK_SECRET?.startsWith("whsec_")
+  ) {
+    return {
+      service: "auth",
+      status: "misconfigured",
+      message:
+        "Set a distinct 32-character BETTER_AUTH_SECRET, SUPERADMIN_EMAILS, RESEND_API_KEY, and RESEND_WEBHOOK_SECRET.",
+    };
+  }
+  return null;
+}
+
 function configurationError(
   service: PlatformService,
   env: Environment,
@@ -191,6 +216,7 @@ function configurationError(
   if (service === "rateLimit") return validateRateLimit(env);
   if (service === "storage") return validateStorage(env);
   if (service === "billing") return validateBilling(env);
+  if (service === "auth") return validateAuth(env);
   return validateAlerting(env);
 }
 
@@ -212,6 +238,7 @@ function createDefaultProbes(env: Environment): ReadinessProbes {
     // Checkout creates a session. Readiness intentionally avoids calling the
     // Stripe API every five seconds.
     billing: async () => {},
+    auth: async () => {},
     alerting: async () => {
       const blocked = await getDb().operatorAlert.count({
         where: {
@@ -260,6 +287,7 @@ export async function checkPlatformReadiness(
       "rateLimit",
       "storage",
       "billing",
+      "auth",
       "alerting",
     ] satisfies PlatformService[]).map(
       async (service): Promise<ServiceReadiness> => {

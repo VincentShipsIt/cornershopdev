@@ -2,6 +2,7 @@ import "server-only";
 import { auth } from "@/lib/better-auth";
 import { getDb } from "@/lib/db";
 import type { MagicLinkRequestMetadata } from "@/lib/magic-link-delivery";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 import { canRetryMagicLink, hashAuthToken } from "@/lib/session";
 import { isConfiguredSuperadminEmail } from "@/lib/superadmin-config";
 
@@ -16,6 +17,7 @@ export async function requestMagicLink(
       email: true,
       platformRole: true,
       memberships: {
+        where: ownerMembershipWhere(),
         select: {
           organization: {
             select: {
@@ -68,6 +70,7 @@ export async function retryMagicLink(
           email: true,
           platformRole: true,
           memberships: {
+            where: ownerMembershipWhere(),
             select: {
               organization: {
                 select: {
@@ -115,7 +118,9 @@ export async function markMagicLinkConsumed(token: string): Promise<void> {
       where: { tokenHash },
       select: { id: true, userId: true },
     });
-    if (!link) return;
+    if (!link) {
+      throw new Error("Authentication delivery evidence is unavailable.");
+    }
     const consumed = await tx.authMagicLink.updateMany({
       where: {
         id: link.id,
@@ -125,16 +130,17 @@ export async function markMagicLinkConsumed(token: string): Promise<void> {
       },
       data: { consumedAt: now },
     });
-    if (consumed.count === 1) {
-      await tx.authEvent.create({
-        data: {
-          type: "auth.magic_link.consumed",
-          actor: "user:self",
-          subjectUserId: link.userId,
-          magicLinkId: link.id,
-        },
-      });
+    if (consumed.count !== 1) {
+      throw new Error("Authentication delivery evidence changed.");
     }
+    await tx.authEvent.create({
+      data: {
+        type: "auth.magic_link.consumed",
+        actor: "user:self",
+        subjectUserId: link.userId,
+        magicLinkId: link.id,
+      },
+    });
   });
 }
 

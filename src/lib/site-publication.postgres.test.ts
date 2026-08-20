@@ -265,6 +265,10 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
           version: 1,
           changeSummary: "Initial customer launch",
           actorEmail: actor.email,
+          draftRevision: 0,
+          draftContentDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          integrationUrlDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          previousSiteVersionId: null,
         }),
       },
     ]);
@@ -455,6 +459,9 @@ describe.skipIf(!enabled)("safe draft and publish PostgreSQL integration", () =>
       actorEmail: actor.email,
       integrationCount: 2,
       enabledIntegrationCount: 1,
+      draftContentDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      integrationUrlDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      publishedSiteVersionIdAtSave: before.publishedSiteVersionId,
     });
   });
 

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { verifiedMagicLinkResponse } from "@/lib/auth-evidence-responses";
 import { authRequestUrl } from "@/lib/auth-request-url";
 import { auth } from "@/lib/better-auth";
 import { markMagicLinkConsumed } from "@/lib/magic-links";
@@ -89,12 +90,9 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  await markMagicLinkConsumed(token).catch(() => undefined);
-  const response = new NextResponse(verification.body, {
-    status: verification.status,
-    headers: verification.headers,
-  });
-  response.cookies.delete(PENDING_MAGIC_LINK_COOKIE);
-  response.headers.set("Cache-Control", "private, no-store");
-  return response;
+  return verifiedMagicLinkResponse(
+    token,
+    verification,
+    markMagicLinkConsumed,
+  );
 }

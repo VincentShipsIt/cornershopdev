@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { checkoutSessionAction } from "@/lib/checkout-session-policy";
+import {
+  checkoutSessionAction,
+  isReusableFoundingCheckout,
+} from "@/lib/checkout-session-policy";
 
 describe("bound Checkout session lifecycle", () => {
   it("reuses an open session for the same plan", () => {
@@ -39,5 +42,36 @@ describe("bound Checkout session lifecycle", () => {
         "price_b",
       ),
     ).toBe("await_provisioning");
+  });
+});
+
+describe("founding Checkout configuration", () => {
+  const current = {
+    allowPromotionCodes: false,
+    automaticTaxEnabled: true,
+    billingAddressCollection: "required",
+    taxIdCollectionEnabled: true,
+  };
+
+  it("reuses only a session created under the exact launch offer", () => {
+    expect(isReusableFoundingCheckout(current)).toBe(true);
+    expect(
+      isReusableFoundingCheckout({
+        ...current,
+        allowPromotionCodes: true,
+      }),
+    ).toBe(false);
+    expect(
+      isReusableFoundingCheckout({
+        ...current,
+        automaticTaxEnabled: false,
+      }),
+    ).toBe(false);
+    expect(
+      isReusableFoundingCheckout({
+        ...current,
+        billingAddressCollection: null,
+      }),
+    ).toBe(false);
   });
 });

@@ -35,6 +35,15 @@ describe("Better Auth public route policy", () => {
     ).toBe(true);
   });
 
+  test("keeps workspace rotation behind its same-origin wrapper", () => {
+    expect(
+      isBlockedDirectBetterAuthRoute(
+        "POST",
+        "/api/auth/workspace/select",
+      ),
+    ).toBe(true);
+  });
+
   test("allows Better Auth session endpoints", () => {
     expect(
       isBlockedDirectBetterAuthRoute("GET", "/api/auth/get-session"),

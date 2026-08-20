@@ -6,7 +6,13 @@ export type AuthDeliveryRow = {
   id: string;
   account: string;
   destination: "ADMIN" | "WORKSPACE";
-  status: "PENDING" | "SENT" | "FAILED";
+  status:
+    | "PENDING"
+    | "SENT"
+    | "DELIVERED"
+    | "BOUNCED"
+    | "SUPPRESSED"
+    | "FAILED";
   failureCode: string | null;
   retryCount: number;
   retryable: boolean;

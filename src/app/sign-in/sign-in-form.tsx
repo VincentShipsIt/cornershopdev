@@ -11,14 +11,16 @@ import { cn } from "@/lib/utils";
 export function SignInForm({
   copy,
   inverse,
+  initialError,
 }: {
   copy: SignInCopy;
   inverse: boolean;
+  initialError: string | null;
 }) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,7 +66,7 @@ export function SignInForm({
       </h1>
       <p className="mt-4 text-sm leading-6 text-muted-foreground">
         {sent
-          ? `A secure sign-in link is on its way to ${email}.`
+          ? `If an account exists for ${email}, a secure sign-in link should arrive shortly.`
           : copy.description}
       </p>
       {!sent ? (

@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { alertPersistedStripeWebhookRejection } from "@/lib/billing-operator-alerts";
 import { getDb } from "@/lib/db";
 import { getStripe } from "@/lib/stripe";
 import { processStripeWebhookEvent } from "@/lib/stripe-webhook";
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
       getStripe(),
       getDb(),
     );
+    if (result === "rejected") {
+      await alertPersistedStripeWebhookRejection(event);
+    }
     return Response.json({ received: true, persisted: true, result });
   } catch (error) {
     console.error("[stripe-webhook] processing failed", {

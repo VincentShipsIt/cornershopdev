@@ -1,11 +1,18 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { domainToASCII } from "node:url";
+import type Stripe from "stripe";
+import {
+  CLAIM_INVITATION_MAX_RETRIES,
+  isClaimInvitationDeliveryRetryable,
+} from "@/lib/claim-delivery-policy";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { buildClaimInvitationEmail } from "@/lib/claim-invitation-email";
+import { alertClaimInvitationDeliveryFailure } from "@/lib/billing-operator-alerts";
 import { getDb } from "@/lib/db";
 import { publicSiteOrigin } from "@/lib/domain-routing";
 import { getResend } from "@/lib/resend";
 import { isClaimable } from "@/lib/site-claim";
+import { getStripe } from "@/lib/stripe";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import {
   lockOutreachDelivery,
@@ -18,24 +25,31 @@ import type { VerticalId } from "@/lib/verticals/types";
 
 export const CLAIM_INVITATION_TTL_MS = 48 * 60 * 60_000;
 export const MIN_CLAIM_CHECKOUT_TTL_MS = 31 * 60_000;
+export const CLAIM_APPROVAL_EVIDENCE_REF_MAX_LENGTH = 160;
 const retryableInvitationCodes = new Set(["P2002", "P2034"]);
+const approvalEvidenceRefPattern =
+  /^[A-Za-z0-9][A-Za-z0-9._:/#-]{7,159}$/;
 
 export type ClaimProofMethodValue =
   | "DOMAIN_EMAIL"
   | "OPERATOR_APPROVAL";
 
 export type ClaimFlowErrorCode =
+  | "checkout_completed"
   | "checkout_in_progress"
   | "invalid_invitation"
   | "invalid_ownership_proof"
   | "invitation_used"
-  | "not_claimable";
+  | "not_claimable"
+  | "delivery_not_retryable"
+  | "retry_exhausted";
 
 export class ClaimFlowError extends Error {
   constructor(
     public readonly code: ClaimFlowErrorCode,
     public readonly status: 403 | 409,
     message: string,
+    public readonly invitationId?: string,
   ) {
     super(message);
     this.name = "ClaimFlowError";
@@ -55,6 +69,24 @@ type ClaimSite = {
 
 export function hashClaimInvitationToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export function normalizeClaimApprovalEvidenceRef(
+  value: string | undefined,
+): string {
+  const normalized = value?.trim() ?? "";
+  if (
+    normalized.length > CLAIM_APPROVAL_EVIDENCE_REF_MAX_LENGTH ||
+    !approvalEvidenceRefPattern.test(normalized) ||
+    normalized.startsWith("outreach-dispatch:")
+  ) {
+    throw new ClaimFlowError(
+      "invalid_ownership_proof",
+      403,
+      "Record a non-sensitive CRM, ticket, or consent evidence reference before approving this owner.",
+    );
+  }
+  return normalized;
 }
 
 export function claimInvitationTokenForOutreach(
@@ -150,10 +182,20 @@ export async function issueClaimInvitation(input: {
     reviewedAt: string;
     stage: "preview_ready" | "follow_up_1";
   };
+  approvalEvidenceRef?: string;
+  retryCount?: number;
   now?: Date;
 }): Promise<IssuedClaimInvitation> {
   const email = normalizeAccountEmail(input.email);
   const now = input.now ?? new Date();
+  const approvalEvidenceRef =
+    input.proofMethod === "OPERATOR_APPROVAL"
+      ? input.outreachDispatch
+        ? `outreach-dispatch:${input.outreachDispatch.id}`
+        : normalizeClaimApprovalEvidenceRef(input.approvalEvidenceRef)
+      : null;
+  const approvedBy = approvalEvidenceRef ? input.actor : null;
+  const approvedAt = approvalEvidenceRef ? now : null;
   const expiresAt = new Date(now.getTime() + CLAIM_INVITATION_TTL_MS);
   const token = input.outreachKey
     ? claimInvitationTokenForOutreach(input.outreachKey)
@@ -269,6 +311,10 @@ export async function issueClaimInvitation(input: {
                 email: true,
                 tokenHash: true,
                 proofMethod: true,
+                approvalEvidenceRef: true,
+                approvedBy: true,
+                approvedAt: true,
+                retryCount: true,
                 expiresAt: true,
                 verifiedAt: true,
                 acceptedAt: true,
@@ -280,7 +326,11 @@ export async function issueClaimInvitation(input: {
               if (
                 existing.siteId !== site.id ||
                 existing.tokenHash !== tokenHash ||
-                existing.proofMethod !== input.proofMethod
+                existing.proofMethod !== input.proofMethod ||
+                existing.approvalEvidenceRef !== approvalEvidenceRef ||
+                existing.retryCount !== (input.retryCount ?? 0) ||
+                !existing.approvedBy ||
+                !existing.approvedAt
               ) {
                 throw new Error("Outreach invitation identity mismatch");
               }
@@ -389,6 +439,10 @@ export async function issueClaimInvitation(input: {
               tokenHash,
               outreachKey: input.outreachKey,
               proofMethod: input.proofMethod,
+              approvalEvidenceRef,
+              approvedBy,
+              approvedAt,
+              retryCount: input.retryCount ?? 0,
               expiresAt,
             },
             select: { id: true },
@@ -401,6 +455,7 @@ export async function issueClaimInvitation(input: {
                 invitationId: invitation.id,
                 replacesInvitationId: input.replacesInvitationId ?? null,
                 proofMethod: input.proofMethod,
+                approvalEvidenceRef,
                 expiresAt: expiresAt.toISOString(),
               },
               siteId: site.id,
@@ -442,15 +497,40 @@ export async function resendClaimInvitation(input: {
       site: { slug: input.siteSlug },
       acceptedAt: null,
     },
-    select: { id: true, email: true },
+    select: {
+      id: true,
+      email: true,
+      proofMethod: true,
+      approvalEvidenceRef: true,
+      retryCount: true,
+      deliveryStatus: true,
+    },
   });
   if (!invitation) throw invalidInvitation();
+  if (invitation.retryCount >= CLAIM_INVITATION_MAX_RETRIES) {
+    throw new ClaimFlowError(
+      "retry_exhausted",
+      409,
+      "This invitation reached its delivery retry limit. Verify the address before issuing a replacement approval.",
+      invitation.id,
+    );
+  }
+  if (!isClaimInvitationDeliveryRetryable(invitation)) {
+    throw new ClaimFlowError(
+      "delivery_not_retryable",
+      409,
+      "Only a failed, bounced, or suppressed invitation delivery can be retried.",
+      invitation.id,
+    );
+  }
 
   return issueClaimInvitation({
     siteSlug: input.siteSlug,
     email: invitation.email,
-    proofMethod: "OPERATOR_APPROVAL",
+    proofMethod: invitation.proofMethod,
     actor: input.actor,
+    approvalEvidenceRef: invitation.approvalEvidenceRef ?? undefined,
+    retryCount: invitation.retryCount + 1,
     auditType: "claim.invitation.resent",
     replacesInvitationId: invitation.id,
   });
@@ -461,24 +541,63 @@ export async function revokeClaimInvitation(input: {
   invitationId: string;
   actor: string;
   now?: Date;
+  checkoutSessions?: Pick<
+    Stripe["checkout"]["sessions"],
+    "retrieve" | "expire"
+  >;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
+  const pending = await getDb().claimInvitation.findFirst({
+    where: {
+      id: input.invitationId,
+      site: { slug: input.siteSlug },
+    },
+    select: {
+      acceptedAt: true,
+      revokedAt: true,
+      checkoutSessionId: true,
+    },
+  });
+  if (!pending) throw invalidInvitation();
+  if (pending.acceptedAt || pending.revokedAt) return false;
+  if (pending.checkoutSessionId) {
+    await expireCheckoutBeforeClaimRevocation(
+      pending.checkoutSessionId,
+      input.checkoutSessions ?? getStripe().checkout.sessions,
+    );
+  }
+
   return getDb().$transaction(async (tx) => {
     const invitation = await tx.claimInvitation.findFirst({
       where: {
         id: input.invitationId,
         site: { slug: input.siteSlug },
       },
-      select: { id: true, siteId: true, acceptedAt: true, revokedAt: true },
+      select: {
+        id: true,
+        siteId: true,
+        acceptedAt: true,
+        revokedAt: true,
+        checkoutSessionId: true,
+      },
     });
     if (!invitation) throw invalidInvitation();
     if (invitation.acceptedAt || invitation.revokedAt) return false;
+    if (
+      !claimRevocationCheckoutIsCurrent(
+        pending.checkoutSessionId,
+        invitation.checkoutSessionId,
+      )
+    ) {
+      return false;
+    }
 
     const revoked = await tx.claimInvitation.updateMany({
       where: {
         id: invitation.id,
         acceptedAt: null,
         revokedAt: null,
+        checkoutSessionId: pending.checkoutSessionId,
       },
       data: { revokedAt: now },
     });
@@ -493,6 +612,50 @@ export async function revokeClaimInvitation(input: {
     });
     return true;
   });
+}
+
+export function claimRevocationCheckoutIsCurrent(
+  expectedSessionId: string | null,
+  currentSessionId: string | null,
+): boolean {
+  return expectedSessionId === currentSessionId;
+}
+
+type ClaimCheckoutSessions = Pick<
+  Stripe["checkout"]["sessions"],
+  "retrieve" | "expire"
+>;
+
+/**
+ * A checkout URL may already be open in the claimant's browser. Revoke the
+ * database bearer only after Stripe confirms that URL can no longer collect a
+ * payment. A completed session belongs to webhook provisioning and must never
+ * be converted into a paid-but-unprovisionable revoked claim.
+ */
+export async function expireCheckoutBeforeClaimRevocation(
+  sessionId: string,
+  checkoutSessions: ClaimCheckoutSessions,
+): Promise<void> {
+  const session = await checkoutSessions.retrieve(sessionId);
+  if (session.status === "expired") return;
+  if (session.status === "complete") throw checkoutAlreadyCompleted();
+  if (session.status !== "open") {
+    throw new Error("Stripe Checkout status is unavailable for revocation");
+  }
+
+  try {
+    const expired = await checkoutSessions.expire(sessionId);
+    if (expired.status !== "expired") {
+      throw new Error("Stripe Checkout did not expire");
+    }
+  } catch (error) {
+    // Completion can win the race after the first read. Re-read before deciding
+    // whether the database invitation is safe to revoke.
+    const refreshed = await checkoutSessions.retrieve(sessionId);
+    if (refreshed.status === "expired") return;
+    if (refreshed.status === "complete") throw checkoutAlreadyCompleted();
+    throw error;
+  }
 }
 
 export type CheckoutClaimInvitation = {
@@ -529,6 +692,10 @@ export async function authorizeClaimInvitationForCheckout(input: {
         verifiedAt: true,
         acceptedAt: true,
         revokedAt: true,
+        proofMethod: true,
+        approvalEvidenceRef: true,
+        approvedBy: true,
+        approvedAt: true,
         checkoutSessionId: true,
         stripePriceId: true,
         checkoutAttempt: true,
@@ -546,11 +713,24 @@ export async function authorizeClaimInvitationForCheckout(input: {
       throw invalidInvitation();
     }
     if (!isClaimable(invitation.site)) throw notClaimable();
+    if (
+      invitation.proofMethod === "OPERATOR_APPROVAL" &&
+      (!invitation.approvalEvidenceRef ||
+        !invitation.approvedBy ||
+        !invitation.approvedAt)
+    ) {
+      throw new ClaimFlowError(
+        "invalid_ownership_proof",
+        403,
+        "This concierge approval is missing its ownership evidence record.",
+      );
+    }
     if (invitation.acceptedAt) {
       throw new ClaimFlowError(
         "invitation_used",
         409,
         "This invitation has already been accepted.",
+        invitation.id,
       );
     }
     if (invitation.revokedAt || invitation.expiresAt <= now) {
@@ -687,6 +867,10 @@ export async function bindClaimInvitationToCheckout(input: {
 export async function deliverClaimInvitation(
   invitation: IssuedClaimInvitation,
   appOrigin: string,
+  deliveryProvider: Pick<
+    ReturnType<typeof getResend>["emails"],
+    "send"
+  > = getResend().emails,
 ): Promise<void> {
   const claimUrl = new URL(`/claim/${encodeURIComponent(invitation.site.slug)}`, appOrigin);
   // The fragment is never sent in HTTP requests or Referer headers. The claim
@@ -705,21 +889,107 @@ export async function deliverClaimInvitation(
       vertical: invitation.site.vertical,
     }),
   });
-  const { error } = await getResend().emails.send(
-    {
-      from: message.from,
-      to: invitation.email,
-      replyTo: message.replyTo,
-      subject: message.subject,
-      html: message.html,
-    },
-    {
-      headers: {
-        "Idempotency-Key": `claim-invitation-${invitation.id}`,
+  let providerMessageId: string;
+  try {
+    const { data, error } = await deliveryProvider.send(
+      {
+        from: message.from,
+        to: invitation.email,
+        replyTo: message.replyTo,
+        subject: message.subject,
+        html: message.html,
+        tags: [
+          { name: "category", value: "claim_invitation" },
+          { name: "claim_invitation_id", value: invitation.id },
+        ],
       },
-    },
-  );
-  if (error) throw new Error(error.message);
+      {
+        headers: {
+          "Idempotency-Key": `claim-invitation-${invitation.id}`,
+        },
+      },
+    );
+    if (error) throw new Error(error.message);
+    if (!data?.id) throw new Error("Resend did not return a message identifier");
+    providerMessageId = data.id;
+  } catch (error) {
+    const failureCode = claimInvitationDeliveryFailureCode(error);
+    await recordClaimInvitationDelivery({
+      invitation,
+      status: "FAILED",
+      providerMessageId: null,
+      failureCode,
+    });
+    await alertClaimInvitationDeliveryFailure({
+      invitationId: invitation.id,
+      siteSlug: invitation.site.slug,
+      failureCode,
+    });
+    throw error;
+  }
+
+  await recordClaimInvitationDelivery({
+    invitation,
+    status: "SENT",
+    providerMessageId,
+    failureCode: null,
+  });
+}
+
+async function recordClaimInvitationDelivery(input: {
+  invitation: IssuedClaimInvitation;
+  status: "SENT" | "FAILED";
+  providerMessageId: string | null;
+  failureCode: string | null;
+}): Promise<void> {
+  const now = new Date();
+  await getDb().$transaction(async (tx) => {
+    const updated = await tx.claimInvitation.updateMany({
+      where: {
+        id: input.invitation.id,
+        deliveryStatus: "PENDING",
+      },
+      data: {
+        deliveryStatus: input.status,
+        deliveryAttempts: { increment: 1 },
+        providerMessageId: input.providerMessageId,
+        deliveryFailureCode: input.failureCode,
+        lastDeliveryAttemptAt: now,
+      },
+    });
+    if (updated.count !== 1) return;
+    await tx.auditEvent.create({
+      data: {
+        type:
+          input.status === "SENT"
+            ? "claim.invitation.provider_accepted"
+            : "claim.invitation.delivery_failed",
+        actor: "system:email",
+        metadata: {
+          invitationId: input.invitation.id,
+          failureCode: input.failureCode,
+        },
+        siteId: input.invitation.site.id,
+      },
+    });
+  });
+}
+
+function claimInvitationDeliveryFailureCode(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("rate") || message.includes("429")) {
+    return "provider_rate_limited";
+  }
+  if (message.includes("domain") || message.includes("sender")) {
+    return "sender_rejected";
+  }
+  if (message.includes("recipient") || message.includes("email")) {
+    return "recipient_rejected";
+  }
+  if (message.includes("message identifier")) {
+    return "provider_receipt_missing";
+  }
+  return "provider_error";
 }
 
 /**
@@ -788,6 +1058,14 @@ function invalidInvitation(): ClaimFlowError {
     "invalid_invitation",
     403,
     "This claim invitation is invalid or expired.",
+  );
+}
+
+function checkoutAlreadyCompleted(): ClaimFlowError {
+  return new ClaimFlowError(
+    "checkout_completed",
+    409,
+    "Payment is complete and the owner account is being finalized. This invitation can no longer be revoked.",
   );
 }
 

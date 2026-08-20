@@ -152,6 +152,21 @@ describe("Stripe webhook event idempotency", () => {
       });
       expect(state.invitation.acceptedAt).toBeInstanceOf(Date);
       expect(state.audits).toHaveLength(2);
+      expect(state.audits).toContainEqual({
+        data: expect.objectContaining({
+          type: "stripe.checkout.provisioned",
+          siteId: "site_1",
+          metadata: expect.objectContaining({
+            stripeEventId: "evt_checkout_1",
+            stripeEventType: "checkout.session.completed",
+            livemode: false,
+            claimInvitationId: "invite_1",
+            checkoutSessionId: "cs_test_1",
+            stripePriceId: "price_growth",
+            paymentStatus: "paid",
+          }),
+        }),
+      });
 
       // A transport retry and a second valid completion event are both safe.
       expect(
@@ -256,6 +271,90 @@ describe("Stripe webhook event idempotency", () => {
         }),
       ]);
       expect(state.audits).toHaveLength(1);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
+  it("refuses a completed Checkout that did not collect payment", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase();
+    const fixture = checkoutFixture(subscriptionFixture());
+    fixture.payment_status = "no_payment_required";
+    const stripe = {
+      checkout: { sessions: { retrieve: async () => fixture } },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_no_payment", 550),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.invitation.acceptedAt).toBeNull();
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          eventId: "evt_no_payment",
+          status: "REJECTED",
+          failureReason: "Checkout is not paid and complete",
+        }),
+      ]);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
+  it("refuses a discounted founding Checkout even when Stripe marks it paid", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase();
+    state.invitation.stripePriceId = "price_starter";
+    const subscription = subscriptionFixture();
+    subscription.items.data[0].price.id = "price_starter";
+    const fixture = checkoutFixture(subscription);
+    fixture.metadata = { ...fixture.metadata, plan: "starter" };
+    fixture.total_details = {
+      amount_discount: 1_000,
+      amount_shipping: 0,
+      amount_tax: 0,
+    };
+    const stripe = {
+      checkout: { sessions: { retrieve: async () => fixture } },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_discounted", 575),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          status: "REJECTED",
+          failureReason: "Checkout total does not match the founding offer",
+        }),
+      ]);
     } finally {
       console.error = original;
       restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);

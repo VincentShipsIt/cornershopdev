@@ -65,6 +65,19 @@ describe("magic-link retries", () => {
         now,
       ),
     ).toBe(false);
+    expect(
+      canRetryMagicLink(
+        {
+          deliveryStatus: "DELIVERED",
+          retryCount: 0,
+          consumedAt: null,
+          revokedAt: null,
+          createdAt: stale,
+          lastAttemptAt: stale,
+        },
+        now,
+      ),
+    ).toBe(false);
   });
 
   it("stops terminal and exhausted retry chains", () => {
@@ -81,6 +94,12 @@ describe("magic-link retries", () => {
     expect(
       canRetryMagicLink({ ...base, retryCount: MAGIC_LINK_MAX_RETRIES }, now),
     ).toBe(false);
+    expect(canRetryMagicLink({ ...base, deliveryStatus: "BOUNCED" }, now)).toBe(
+      true,
+    );
+    expect(
+      canRetryMagicLink({ ...base, deliveryStatus: "SUPPRESSED" }, now),
+    ).toBe(true);
   });
 });
 

@@ -7,11 +7,21 @@ export function resolveBetterAuthSecret(
   environment: AuthEnvironment = process.env,
 ): string {
   const secret =
-    environment.BETTER_AUTH_SECRET ?? environment.CLAIM_TOKEN_SECRET;
-  if (secret && secret.length >= 32) return secret;
+    environment.BETTER_AUTH_SECRET ??
+    (environment.NODE_ENV === "production"
+      ? undefined
+      : environment.CLAIM_TOKEN_SECRET);
+  if (
+    secret &&
+    secret.length >= 32 &&
+    (environment.NODE_ENV !== "production" ||
+      secret !== environment.CLAIM_TOKEN_SECRET)
+  ) {
+    return secret;
+  }
   if (environment.NODE_ENV === "production") {
     throw new Error(
-      "BETTER_AUTH_SECRET or CLAIM_TOKEN_SECRET must contain at least 32 characters",
+      "BETTER_AUTH_SECRET must be distinct and contain at least 32 characters",
     );
   }
   return "cornershopdev-better-auth-development-secret";
@@ -48,6 +58,13 @@ export function betterAuthTrustedOrigins(
   environment: AuthEnvironment = process.env,
 ): string[] {
   const origins = new Set<string>();
+  if (environment.NEXT_PUBLIC_APP_URL) {
+    try {
+      origins.add(new URL(environment.NEXT_PUBLIC_APP_URL).origin);
+    } catch {
+      // Platform readiness reports malformed deployment URLs.
+    }
+  }
   for (const host of betterAuthAllowedHosts(environment)) {
     if (host === "localhost" || host === "127.0.0.1") {
       origins.add(`http://${host}:3000`);

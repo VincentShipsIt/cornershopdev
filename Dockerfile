@@ -45,6 +45,18 @@ RUN bun build scripts/preflight-outreach.ts \
   --target=bun \
   --packages=external \
   --outfile=.operator-scripts/preflight-outreach.ts
+RUN bun build scripts/preflight-stripe-billing.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/preflight-stripe-billing.ts
+RUN bun build scripts/preflight-first-customer-migration.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/preflight-first-customer-migration.ts
+RUN bun build scripts/verify-first-customer-production.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/verify-first-customer-production.ts
 
 FROM oven/bun:1.3.14-alpine AS runner
 WORKDIR /app

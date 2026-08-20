@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { buildMagicLinkEmail } from "@/lib/magic-link-email";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 import { getResend } from "@/lib/resend";
 import {
   hashAuthToken,
@@ -38,6 +39,7 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
       email: true,
       platformRole: true,
       memberships: {
+        where: ownerMembershipWhere(),
         select: {
           organization: {
             select: {
@@ -108,20 +110,6 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
         throw new Error("This delivery was already retried.");
       }
 
-      if (replacedLinks.length > 0) {
-        await tx.authMagicLink.updateMany({
-          where: { id: { in: replacedLinks.map((link) => link.id) } },
-          data: { revokedAt: now },
-        });
-        await tx.verification.deleteMany({
-          where: {
-            identifier: {
-              in: replacedLinks.map((link) => link.tokenHash),
-            },
-          },
-        });
-      }
-
       const created = await tx.authMagicLink.create({
         data: {
           tokenHash,
@@ -149,7 +137,7 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
           },
         },
       });
-      return created;
+      return { ...created, replacedLinks };
     },
     { isolationLevel: "Serializable" },
   );
@@ -171,17 +159,29 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
         replyTo: emailMessage.replyTo,
         subject: emailMessage.subject,
         html: emailMessage.html,
+        tags: [
+          { name: "category", value: "auth_magic_link" },
+          { name: "auth_magic_link_id", value: link.id },
+        ],
       },
       { headers: { "Idempotency-Key": `magic-link-${link.id}` } },
     );
     if (error) throw new Error(error.message);
-    await recordDelivery(link.id, "SENT", data?.id ?? null, null);
+    if (!data?.id) throw new Error("Resend did not return a message identifier");
+    await recordDelivery(
+      link.id,
+      "SENT",
+      data.id,
+      null,
+      link.replacedLinks,
+    );
   } catch (error) {
     await recordDelivery(
       link.id,
       "FAILED",
       null,
       deliveryFailureCode(error),
+      [],
     );
   }
 }
@@ -191,26 +191,55 @@ async function recordDelivery(
   status: "SENT" | "FAILED",
   providerMessageId: string | null,
   failureCode: string | null,
+  replacedLinks: Array<{ id: string; tokenHash: string }>,
 ): Promise<void> {
   const now = new Date();
   await getDb().$transaction(async (tx) => {
     const updated = await tx.authMagicLink.updateMany({
-      where: { id, deliveryStatus: "PENDING" },
+      where: {
+        id,
+        deliveryStatus:
+          status === "SENT" ? { in: ["PENDING", "SENT"] } : "PENDING",
+        OR:
+          status === "SENT" && providerMessageId
+            ? [
+                { providerMessageId: null },
+                { providerMessageId },
+              ]
+            : undefined,
+      },
       data: {
         deliveryStatus: status,
         deliveryAttempts: { increment: 1 },
         providerMessageId,
         failureCode,
         lastAttemptAt: now,
-        deliveredAt: status === "SENT" ? now : null,
+        deliveredAt: null,
       },
     });
     if (updated.count === 1) {
+      if (status === "SENT" && replacedLinks.length > 0) {
+        await tx.authMagicLink.updateMany({
+          where: {
+            id: { in: replacedLinks.map((replaced) => replaced.id) },
+            consumedAt: null,
+            revokedAt: null,
+          },
+          data: { revokedAt: now },
+        });
+        await tx.verification.deleteMany({
+          where: {
+            identifier: {
+              in: replacedLinks.map((replaced) => replaced.tokenHash),
+            },
+          },
+        });
+      }
       await tx.authEvent.create({
         data: {
           type:
             status === "SENT"
-              ? "auth.magic_link.delivered"
+              ? "auth.magic_link.provider_accepted"
               : "auth.magic_link.delivery_failed",
           magicLinkId: id,
           metadata: { failureCode, provider: "better-auth" },
