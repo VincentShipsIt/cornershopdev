@@ -99,39 +99,42 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
   });
 
   test("rechecks channel evidence before outreach claim issuance", async () => {
-    await db.site.update({
-      where: { id: outreachSiteId },
-      data: {
-        attributes: {
-          leadEligibility: {
-            state: "ELIGIBLE",
-            evidence: {
-              contact_basis: "generic corporate",
-              public_source: `https://${outreachSlug}.example.test/contact`,
+    const review = await db.$transaction(async (transaction) => {
+      await transaction.site.update({
+        where: { id: outreachSiteId },
+        data: {
+          attributes: {
+            leadEligibility: {
+              state: "ELIGIBLE",
+              evidence: {
+                contact_basis: "generic corporate",
+                public_source: `https://${outreachSlug}.example.test/contact`,
+              },
+              updatedAt: new Date().toISOString(),
+              updatedBy: "operator:fixture",
             },
-            updatedAt: new Date().toISOString(),
-            updatedBy: "operator:fixture",
           },
         },
-      },
-    });
-    const review = await db.auditEvent.create({
-      data: {
-        siteId: outreachSiteId,
-        type: "site.review.completed",
-        actor: "operator:fixture",
-      },
-    });
-    await db.outreachDispatch.create({
-      data: {
-        id: outreachDispatchId,
-        idempotencyKey: `lead-outreach:${outreachSiteId}:preview_ready`,
-        siteId: outreachSiteId,
-        template: "preview_ready",
-        recipient: outreachEmail,
-        reviewedAt: review.createdAt,
-        requestedBy: "operator:fixture",
-      },
+      });
+      const currentReview = await transaction.auditEvent.create({
+        data: {
+          siteId: outreachSiteId,
+          type: "site.review.completed",
+          actor: "operator:fixture",
+        },
+      });
+      await transaction.outreachDispatch.create({
+        data: {
+          id: outreachDispatchId,
+          idempotencyKey: `lead-outreach:${outreachSiteId}:preview_ready`,
+          siteId: outreachSiteId,
+          template: "preview_ready",
+          recipient: outreachEmail,
+          reviewedAt: currentReview.createdAt,
+          requestedBy: "operator:fixture",
+        },
+      });
+      return currentReview;
     });
 
     const previousSecret = process.env.CLAIM_TOKEN_SECRET;
