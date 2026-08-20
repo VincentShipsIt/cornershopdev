@@ -78,3 +78,21 @@ export function resolveAuthRequestOrigin(
 export function authRequestUrl(path: string, request: AuthRequest): URL {
   return new URL(path, resolveAuthRequestOrigin(request));
 }
+
+/**
+ * Builds headers for a server-owned Better Auth mutation. Browser navigation
+ * metadata is intentionally not forwarded: Stripe returns can carry an
+ * external Origin even though the wrapper already authenticated the signed
+ * single-use credential.
+ */
+export function internalAuthMutationHeaders(request: AuthRequest): Headers {
+  const headers = new Headers({
+    "content-type": "application/json",
+    origin: resolveAuthRequestOrigin(request),
+  });
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+  const userAgent = request.headers.get("user-agent");
+  if (userAgent) headers.set("user-agent", userAgent);
+  return headers;
+}

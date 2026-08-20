@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { resolveAuthRequestOrigin } from "@/lib/auth-request-url";
+import {
+  internalAuthMutationHeaders,
+  resolveAuthRequestOrigin,
+} from "@/lib/auth-request-url";
 
 function request(headers: Record<string, string>, url = "http://0.0.0.0:3000") {
   return new Request(url, { headers });
@@ -66,5 +69,27 @@ describe("auth request origin", () => {
         },
       ),
     ).toBe("http://localhost:4444");
+  });
+
+  it("rebuilds internal mutation origins without forwarding external navigation metadata", () => {
+    const headers = internalAuthMutationHeaders(
+      request(
+        {
+          host: "127.0.0.1:3100",
+          origin: "https://checkout.stripe.com",
+          referer: "https://checkout.stripe.com/pay/test",
+          cookie: "cornershopdev.checkout_return=return-token",
+          "user-agent": "browser-test",
+        },
+        "http://127.0.0.1:3100/api/auth/checkout",
+      ),
+    );
+
+    expect(headers.get("origin")).toBe("http://127.0.0.1:3100");
+    expect(headers.get("cookie")).toBe(
+      "cornershopdev.checkout_return=return-token",
+    );
+    expect(headers.get("user-agent")).toBe("browser-test");
+    expect(headers.has("referer")).toBe(false);
   });
 });
