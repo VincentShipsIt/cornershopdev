@@ -145,16 +145,24 @@ describe.skipIf(!enabled)(
       const acceptedLegacyId = `legacy-accepted-${suffix}`;
       const validApprovalId = `operator-valid-${suffix}`;
 
-      await expect(
-        db.$executeRaw`
+      const rejectedOldBinaryInsert = await db.$executeRaw`
           INSERT INTO "ClaimInvitation" (
             "id", "email", "tokenHash", "proofMethod", "expiresAt", "siteId"
           ) VALUES (
             ${missingEvidenceId}, ${ownerEmail}, ${`token-${missingEvidenceId}`},
             'OPERATOR_APPROVAL', ${new Date(Date.now() + 60_000)}, ${siteId}
           )
-        `,
-      ).rejects.toThrow();
+        `.then(
+          () => null,
+          (error: unknown) => error,
+        );
+      expect(rejectedOldBinaryInsert).toMatchObject({ code: "P2010" });
+      expect(
+        String(
+          (rejectedOldBinaryInsert as { meta?: { message?: unknown } }).meta
+            ?.message,
+        ),
+      ).toContain("ClaimInvitation_operator_approval_evidence_check");
 
       await db.$executeRaw`
         INSERT INTO "ClaimInvitation" (
