@@ -48,7 +48,9 @@ describe("production container runtime", () => {
     expect(workflow).toContain(
       "bash deploy/aws/test-container-runtime.sh cornershopdev:runtime-contract",
     );
-    expect(runtimeContract).toContain('[[ "$pid_one" == "node server.js " ]]');
+    expect(runtimeContract).toContain("readlink /proc/1/exe");
+    expect(runtimeContract).toContain("command -v node");
+    expect(runtimeContract).toContain("Expected PID 1 executable");
     expect(runtimeContract).toContain('assert_status "/" "200"');
     expect(runtimeContract).toContain(
       'assert_status "/niche/restaurant" "200"',

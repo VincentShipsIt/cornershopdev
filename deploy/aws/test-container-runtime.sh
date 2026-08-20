@@ -55,10 +55,21 @@ fi
 
 node_version="$(docker exec "$container" node --version)"
 bun_version="$(docker exec "$container" bun --version)"
-pid_one="$(docker exec "$container" sh -c 'tr "\000" " " </proc/1/cmdline')"
-[[ "$node_version" == "v24.19.0" ]]
-[[ "$bun_version" == "1.3.14" ]]
-[[ "$pid_one" == "node server.js " ]]
+node_executable="$(docker exec "$container" sh -c 'readlink /proc/1/exe')"
+expected_node_executable="$(docker exec "$container" sh -c 'command -v node')"
+if [[ "$node_version" != "v24.19.0" ]]; then
+  printf 'Expected Node v24.19.0, got %q\n' "$node_version" >&2
+  exit 1
+fi
+if [[ "$bun_version" != "1.3.14" ]]; then
+  printf 'Expected Bun 1.3.14, got %q\n' "$bun_version" >&2
+  exit 1
+fi
+if [[ "$node_executable" != "$expected_node_executable" ]]; then
+  printf 'Expected PID 1 executable %q, got %q\n' \
+    "$expected_node_executable" "$node_executable" >&2
+  exit 1
+fi
 
 assert_status() {
   local path="$1"
