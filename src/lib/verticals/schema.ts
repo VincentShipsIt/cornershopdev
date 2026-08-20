@@ -25,8 +25,50 @@ export const imageProvenanceSchema = z.enum([
  * Either an absolute URL or a repo-relative path — the sample fixtures ship
  * local images, everything imported is absolute.
  */
+const absoluteSiteImageUrlSchema = z.url().superRefine((value, context) => {
+  if (/["\\\u0000-\u001f\u007f]/.test(value)) {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs cannot contain CSS-breaking characters",
+    });
+    return;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    // z.url() owns the invalid-absolute issue; the union may still accept the
+    // repository-relative branch.
+    return;
+  }
+  if (url.protocol !== "https:") {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs must use HTTPS",
+    });
+  }
+  if (url.username || url.password) {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs cannot contain credentials",
+    });
+  }
+  if (url.port && url.port !== "443") {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs cannot use a custom port",
+    });
+  }
+  if (isPrivateIntegrationHostname(url.hostname)) {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs must use a public hostname",
+    });
+  }
+});
+
 export const siteImageUrlSchema = z.union([
-  z.url(),
+  absoluteSiteImageUrlSchema,
   z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
 ]);
 

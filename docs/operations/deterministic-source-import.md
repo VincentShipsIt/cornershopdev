@@ -35,7 +35,8 @@ separate boundaries:
   external forms.
 - Assets: at most twenty-four HTTPS source URLs with official-source provenance.
   Credentials, custom ports, local/private literals, mixed-content URLs, and
-  data URLs are rejected. Any later server-side image read goes through the
+  data or CSS-breaking URLs are rejected at reconstruction and persisted-schema
+  boundaries. Any later server-side image read goes through the
   importer's DNS/redirect SSRF boundary again. This includes remote hero reads
   used by server-rendered Open Graph images; failures fall back to a branded
   card without an unrestricted retry.
