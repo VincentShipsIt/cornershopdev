@@ -11,6 +11,14 @@ const monitorScript = await Bun.file(
   new URL("../../scripts/monitor-public-site.ts", import.meta.url),
 ).text();
 
+function parameterList(name: "required_parameters" | "optional_parameters") {
+  const entries = deployScript.match(
+    new RegExp(`${name}=\\(([\\s\\S]*?)\\n\\)`),
+  )?.[1];
+  expect(entries).toBeDefined();
+  return new Set(entries?.trim().split(/\s+/) ?? []);
+}
+
 describe("operator alert service deployment", () => {
   it("keeps alert draining out of the public health service", () => {
     expect(deployScript).toContain(
@@ -38,5 +46,58 @@ describe("operator alert service deployment", () => {
 
     expect(saturatedBatchDeliveryMs).toBe(25_000);
     expect(saturatedBatchDeliveryMs).toBeLessThan(serviceTimeoutMs);
+  });
+});
+
+describe("production deployment contract", () => {
+  it("preserves required release and endpoint-specific configuration", () => {
+    const required = parameterList("required_parameters");
+    const optional = parameterList("optional_parameters");
+
+    for (const name of [
+      "FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY",
+      "RESEND_INBOUND_WEBHOOK_SECRET",
+      "RESEND_WEBHOOK_SECRET",
+      "SUPERADMIN_EMAILS",
+    ]) {
+      expect(required).toContain(name);
+      expect(optional).not.toContain(name);
+    }
+  });
+
+  it("propagates every documented photo model, cost, concurrency, and policy control", () => {
+    const optional = parameterList("optional_parameters");
+
+    for (const name of [
+      "OPENROUTER_IMAGE_MODEL",
+      "PHOTO_DISCOVERY_MAX_IMAGES",
+      "PHOTO_ENHANCEMENT_BATCH_MAX_IMAGES",
+      "PHOTO_ENHANCEMENT_CONCURRENCY",
+      "PHOTO_ENHANCEMENT_ESTIMATED_COST_MICROS",
+      "PHOTO_ENHANCEMENT_MODEL",
+      "PHOTO_ENHANCEMENT_PER_IMAGE_CEILING_MICROS",
+      "PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS",
+      "PHOTO_INGEST_CONCURRENCY",
+    ]) {
+      expect(optional).toContain(name);
+    }
+  });
+
+  it("cleans every immutable bundle, monitor, and alert temporary file", () => {
+    const cleanupTrap = deployScript.match(/trap 'rm -f ([^']+)' EXIT/g)?.at(-1);
+
+    for (const variable of [
+      "$temporary_environment",
+      "$artifact_file",
+      "$bootstrap_file",
+      "$caddy_fragment_file",
+      "$host_launcher_file",
+      "$temporary_monitor_service",
+      "$temporary_monitor_timer",
+      "$temporary_alert_service",
+      "$temporary_alert_timer",
+    ]) {
+      expect(cleanupTrap).toContain(variable);
+    }
   });
 });

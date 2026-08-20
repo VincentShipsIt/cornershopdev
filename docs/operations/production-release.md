@@ -24,6 +24,8 @@ customer-accepted release.
 | Schema | The running image reports 15 migrations and “up to date”; main contains 18. | Up to date only for the old image, not for main. |
 | Outreach | The running image has no `operator:preflight-outreach` command. Metadata-only SSM checks find neither `RESEND_WEBHOOK_SECRET` nor `RESEND_INBOUND_WEBHOOK_SECRET`; the configured sender is `Vincent from Restofront`, not the required `Vincent from Restofrontapp`. | Not configured or deployed. |
 | Authentication secret | SSM lacks `BETTER_AUTH_SECRET`; the old image uses the claim-secret rollout fallback. | Explicit production auth configuration not ready. |
+| First-customer evidence | SSM has `SUPERADMIN_EMAILS`, but lacks `FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY`. | Evidence verification configuration not ready. |
+| Photo policy | SSM lacks `OPENROUTER_IMAGE_MODEL`, `PHOTO_ENHANCEMENT_MODEL`, and all documented `PHOTO_*` cost/concurrency controls. | The next image would silently use code defaults unless the reviewed policy is pinned. |
 | Platform wildcard DNS | Random labels under `*.restofront.com` and `*.cornershop.dev` return no A records; neither hosted zone contains a wildcard. | Not ready. |
 | Caddy on-demand TLS | Caddy validates successfully and its loaded JSON uses `http://api-cornershop-dev:3000/api/domains/authorize` as the on-demand permission endpoint. | Caddy policy ready; wildcard DNS and new application authorization are not. |
 | Customer acceptance | No settled first payment, owner edit/publish, owner-authorized custom domain, second qualified lead, or +30-day decision record is attached to #20/#47. | Not proven. |
@@ -82,14 +84,53 @@ aws ssm put-parameter \
   --value "$CORNERSHOP_RESEND_INBOUND_WEBHOOK_SECRET" \
   --overwrite
 unset CORNERSHOP_RESEND_INBOUND_WEBHOOK_SECRET
+
+read -r -s CORNERSHOP_FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY
+aws ssm put-parameter \
+  --region us-east-1 \
+  --name /shipshit/production/cornershopdev/FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY \
+  --type SecureString \
+  --value "$CORNERSHOP_FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY" \
+  --overwrite
+unset CORNERSHOP_FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY
 ```
 
 `BETTER_AUTH_SECRET` must contain at least 32 random characters. Each Resend
 value must be the current signing secret for its mapped production endpoint,
 and the two values must differ. Reusing one endpoint's value or generating an
 unrelated value makes the corresponding signature verification fail.
+`FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY` is the base64-encoded Ed25519 SPKI public
+key held by the independent evidence custodian. Its private counterpart must
+never enter SSM, CI, the container, or this repository.
 
-### 3. Correct the production sender identity
+### 3. Pin the reviewed photo model and policy
+
+These non-secret values are absent from production SSM. Add them before the
+candidate is built so production uses the reviewed economical model and bounded
+fan-out/cost policy instead of silently inheriting code defaults:
+
+```bash
+while IFS='=' read -r key value; do
+  aws ssm put-parameter \
+    --region us-east-1 \
+    --name "/shipshit/production/cornershopdev/$key" \
+    --type String \
+    --value "$value" \
+    --overwrite
+done <<'PHOTO_POLICY'
+OPENROUTER_IMAGE_MODEL=google/gemini-3.1-flash-image
+PHOTO_ENHANCEMENT_MODEL=google/gemini-3.1-flash-image
+PHOTO_DISCOVERY_MAX_IMAGES=8
+PHOTO_INGEST_CONCURRENCY=4
+PHOTO_ENHANCEMENT_CONCURRENCY=2
+PHOTO_ENHANCEMENT_BATCH_MAX_IMAGES=6
+PHOTO_ENHANCEMENT_ESTIMATED_COST_MICROS=25000
+PHOTO_ENHANCEMENT_PER_IMAGE_CEILING_MICROS=50000
+PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS=500000
+PHOTO_POLICY
+```
+
+### 4. Correct the production sender identity
 
 ```bash
 aws ssm put-parameter \

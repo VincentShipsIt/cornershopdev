@@ -13,10 +13,11 @@ Production runs `feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, not current main
 The current production SSM set is missing the explicit delivery signing secret
 `RESEND_WEBHOOK_SECRET`, the explicit inbound signing secret
 `RESEND_INBOUND_WEBHOOK_SECRET`, and `BETTER_AUTH_SECRET`; the Restofront sender
-display name also differs from the merged outreach contract. Neither
-`*.restofront.com` nor `*.cornershop.dev` exists in Route 53. Caddy itself
-validates and its loaded on-demand TLS ask endpoint correctly targets
-`api-cornershop-dev`.
+display name also differs from the merged outreach contract. Production has
+`SUPERADMIN_EMAILS` but lacks `FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY`; it also lacks
+the explicit photo model and `PHOTO_*` policy pins. Neither `*.restofront.com`
+nor `*.cornershop.dev` exists in Route 53. Caddy itself validates and its loaded
+on-demand TLS ask endpoint correctly targets `api-cornershop-dev`.
 
 The reviewed fix makes production stable-release-only, runs migration,
 outreach, wildcard DNS, and post-cutover TLS gates in the exact candidate, and
