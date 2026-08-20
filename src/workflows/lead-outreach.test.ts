@@ -25,7 +25,7 @@ describe("isLeadEligibleForOutreach", () => {
   it("is eligible for a fresh prospect with a contact email", () => {
     expect(
       isLeadEligibleForOutreach(
-        { status: "PROSPECT", email: "owner@example.com" },
+        { status: "PROSPECT", leadContactEmail: "owner@example.com" },
         false,
       ),
     ).toBe(true);
@@ -34,7 +34,7 @@ describe("isLeadEligibleForOutreach", () => {
   it("is eligible for a lead already sent a preview", () => {
     expect(
       isLeadEligibleForOutreach(
-        { status: "PREVIEW_READY", email: "owner@example.com" },
+        { status: "PREVIEW_READY", leadContactEmail: "owner@example.com" },
         false,
       ),
     ).toBe(true);
@@ -43,7 +43,7 @@ describe("isLeadEligibleForOutreach", () => {
   it("is not eligible once the site is claimed", () => {
     expect(
       isLeadEligibleForOutreach(
-        { status: "CLAIMED", email: "owner@example.com" },
+        { status: "CLAIMED", leadContactEmail: "owner@example.com" },
         false,
       ),
     ).toBe(false);
@@ -52,7 +52,7 @@ describe("isLeadEligibleForOutreach", () => {
   it("is not eligible once the site is live", () => {
     expect(
       isLeadEligibleForOutreach(
-        { status: "LIVE", email: "owner@example.com" },
+        { status: "LIVE", leadContactEmail: "owner@example.com" },
         false,
       ),
     ).toBe(false);
@@ -60,7 +60,10 @@ describe("isLeadEligibleForOutreach", () => {
 
   it("is not eligible without a contact email on file", () => {
     expect(
-      isLeadEligibleForOutreach({ status: "PROSPECT", email: null }, false),
+      isLeadEligibleForOutreach(
+        { status: "PROSPECT", leadContactEmail: null },
+        false,
+      ),
     ).toBe(false);
   });
 
@@ -71,14 +74,17 @@ describe("isLeadEligibleForOutreach", () => {
   it("is not eligible while outreach is paused, even for an otherwise-eligible lead", () => {
     expect(
       isLeadEligibleForOutreach(
-        { status: "PROSPECT", email: "owner@example.com" },
+        { status: "PROSPECT", leadContactEmail: "owner@example.com" },
         true,
       ),
     ).toBe(false);
   });
 
   it("allows follow-up only after a sent or delivered initial message", () => {
-    const site = { status: "PREVIEW_READY", email: "owner@example.com" };
+    const site = {
+      status: "PREVIEW_READY",
+      leadContactEmail: "owner@example.com",
+    };
     expect(isLeadEligibleForOutreach(site, false, "SENT")).toBe(true);
     expect(isLeadEligibleForOutreach(site, false, "DELIVERED")).toBe(true);
     expect(isLeadEligibleForOutreach(site, false, "QUEUED")).toBe(false);
@@ -86,13 +92,19 @@ describe("isLeadEligibleForOutreach", () => {
   });
 
   it("suppresses follow-up after a bounce or complaint", () => {
-    const site = { status: "PREVIEW_READY", email: "owner@example.com" };
+    const site = {
+      status: "PREVIEW_READY",
+      leadContactEmail: "owner@example.com",
+    };
     expect(isLeadEligibleForOutreach(site, false, "BOUNCED")).toBe(false);
     expect(isLeadEligibleForOutreach(site, false, "COMPLAINED")).toBe(false);
   });
 
   it("suppresses further campaign sends after an inbound reply", () => {
-    const site = { status: "PREVIEW_READY", email: "owner@example.com" };
+    const site = {
+      status: "PREVIEW_READY",
+      leadContactEmail: "owner@example.com",
+    };
     expect(isLeadEligibleForOutreach(site, false, "DELIVERED", true)).toBe(
       false,
     );
@@ -103,7 +115,7 @@ describe("reviewed Restofront delivery eligibility", () => {
   const reviewedAt = "2026-08-19T08:01:00.000Z";
   const site = {
     status: "PREVIEW_READY",
-    email: "owner@example.com",
+    leadContactEmail: "owner@example.com",
     vertical: "RESTAURANT",
     updatedAt: new Date("2026-08-19T08:00:00.000Z"),
     auditEvents: [
@@ -122,7 +134,7 @@ describe("reviewed Restofront delivery eligibility", () => {
     ).toBe(true);
     expect(
       isReviewedRestofrontLead(
-        { ...site, email: "changed@example.com" },
+        { ...site, leadContactEmail: "changed@example.com" },
         false,
         "owner@example.com",
         reviewedAt,

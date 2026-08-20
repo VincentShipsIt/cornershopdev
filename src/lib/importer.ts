@@ -2,13 +2,24 @@ import { BlockList, isIP } from "node:net";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
+import {
+  reconstructSource,
+  type AccessiblePalette,
+  type ExtractedBrandAsset,
+  type ExtractedCatalogSection,
+  type ExtractedNavigationLink,
+  type ReconstructionEvidence,
+} from "@/lib/source-reconstruction";
 import type {
   LinkClassificationHint,
   ProviderDefinition,
   VerticalConfig,
 } from "@/lib/verticals/types";
 
-type ImporterVerticalConfig = Pick<VerticalConfig, "providers" | "crawl">;
+type ImporterVerticalConfig = Pick<
+  VerticalConfig,
+  "providers" | "crawl" | "presentation"
+>;
 
 const MAX_HTML_BYTES = 1_500_000;
 const MAX_IMAGE_BYTES = 12_000_000;
@@ -35,7 +46,16 @@ export type ExtractedSite = {
   description: string;
   address: string;
   phone: string;
+  email?: string;
+  businessHours?: Array<{ days: string; hours: string }>;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
   heroImageUrl: string | null;
+  palette?: AccessiblePalette | null;
+  navigation?: ExtractedNavigationLink[];
+  catalogSections?: ExtractedCatalogSection[];
+  brandAssets?: ExtractedBrandAsset[];
+  evidence?: ReconstructionEvidence[];
   pageText: string;
   links: ExtractedLink[];
 };
@@ -395,46 +415,6 @@ function decodeHtml(value: string): string {
     .trim();
 }
 
-function metaContent(html: string, key: string): string {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const patterns = [
-    new RegExp(
-      `<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`,
-      "i",
-    ),
-    new RegExp(
-      `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`,
-      "i",
-    ),
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return decodeHtml(match[1]);
-  }
-  return "";
-}
-
-function extractTitle(html: string): string {
-  return (
-    metaContent(html, "og:site_name") ||
-    metaContent(html, "og:title") ||
-    decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "")
-      .split(/[|–—]/)[0]
-      .trim()
-  );
-}
-
-function extractDocumentLocale(html: string): string | null {
-  const locale =
-    html.match(/<html[^>]+lang=["']([^"']+)["']/i)?.[1] ??
-    metaContent(html, "content-language");
-  const normalized = locale?.trim().replace("_", "-");
-  return normalized && /^[a-z]{2}(?:-[A-Z]{2})?$/i.test(normalized)
-    ? normalized.split("-")[0].toLowerCase()
-    : null;
-}
-
 function stripMarkup(html: string): string {
   return decodeHtml(
     html
@@ -558,14 +538,6 @@ function extractInternalContentUrls(
   return urls;
 }
 
-function extractContact(pageText: string): { address: string; phone: string } {
-  const phone =
-    pageText.match(
-      /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?){2,4}\d{2,4}/,
-    )?.[0] ?? "";
-  return { address: "", phone };
-}
-
 export async function inspectSource(
   rawSource: string,
   vertical: ImporterVerticalConfig,
@@ -584,7 +556,16 @@ export async function inspectSource(
       description: "",
       address: "",
       phone: "",
+      email: "",
+      businessHours: [],
+      logoUrl: null,
+      faviconUrl: null,
       heroImageUrl: null,
+      palette: null,
+      navigation: [],
+      catalogSections: [],
+      brandAssets: [],
+      evidence: [],
       pageText: source,
       links: [],
     };
@@ -618,8 +599,6 @@ export async function inspectSource(
   ]
     .join("\n\n")
     .slice(0, MAX_SOURCE_TEXT_CHARS);
-  const contact = extractContact(pageText);
-  const hero = metaContent(html, "og:image");
   const links = [html, ...discoveredPages.map((page) => page.html)]
     .flatMap((pageHtml) =>
       extractLinks(
@@ -642,17 +621,21 @@ export async function inspectSource(
           ) === index),
     );
 
+  const reconstructed = reconstructSource({
+    homepage: { html, url: finalUrl },
+    pages: discoveredPages.map((page) => ({ html: page.html, url: page.url })),
+    fallbackName: finalUrl.hostname.replace(/^www\./, ""),
+    links,
+    fallbackPalette: {
+      ...vertical.presentation.fallbackPalette,
+      accentForeground: "#ffffff",
+    },
+  });
+
   return {
     source,
     sourceUrl: finalUrl.toString(),
-    sourceLocale: extractDocumentLocale(html),
-    name: extractTitle(html) || finalUrl.hostname.replace(/^www\./, ""),
-    description:
-      metaContent(html, "og:description") ||
-      metaContent(html, "description"),
-    address: contact.address,
-    phone: contact.phone,
-    heroImageUrl: hero ? new URL(hero, finalUrl).toString() : null,
+    ...reconstructed,
     pageText,
     links,
   };

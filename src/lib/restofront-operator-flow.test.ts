@@ -104,7 +104,8 @@ const site = {
   name: "Chez Léa",
   vertical: "RESTAURANT" as const,
   sourceUrl: "https://chez-lea.test/",
-  email: "Legacy.Owner@Chez-Lea.TEST" as string | null,
+  email: "bonjour@chez-lea.test" as string | null,
+  leadContactEmail: "Legacy.Owner@Chez-Lea.TEST" as string | null,
   status: "PROSPECT" as
     | "PROSPECT"
     | "PREVIEW_READY"
@@ -159,7 +160,10 @@ const fakeModels = {
     },
     updateMany: async (input: {
       where: { id: string; status?: { in: string[] } };
-      data: { status?: typeof site.status; email?: string };
+      data: {
+        status?: typeof site.status;
+        leadContactEmail?: string;
+      };
     }) => {
       if (
         input.where.id !== site.id ||
@@ -169,7 +173,9 @@ const fakeModels = {
         return { count: 0 };
       }
       if (input.data.status) site.status = input.data.status;
-      if (input.data.email) site.email = input.data.email;
+      if (input.data.leadContactEmail) {
+        site.leadContactEmail = input.data.leadContactEmail;
+      }
       site.updatedAt = tick();
       return { count: 1 };
     },
@@ -566,7 +572,8 @@ const { listOutreachMessages, sendLeadEmail } = await import("@/lib/outreach");
 describe("mocked Restofront operator delivery flow", () => {
   beforeEach(() => {
     clock = new Date("2026-08-19T08:00:00.000Z").getTime();
-    site.email = "Legacy.Owner@Chez-Lea.TEST";
+    site.email = "bonjour@chez-lea.test";
+    site.leadContactEmail = "Legacy.Owner@Chez-Lea.TEST";
     site.status = "PROSPECT";
     site.updatedAt = new Date(clock);
     dispatch = null;
@@ -602,14 +609,16 @@ describe("mocked Restofront operator delivery flow", () => {
     );
     expect(intakeResponse.status).toBe(200);
     expect(site.status).toBe("PREVIEW_READY");
-    expect(site.email).toBe("owner@chez-lea.test");
+    expect(site.email).toBe("bonjour@chez-lea.test");
+    expect(site.leadContactEmail).toBe("owner@chez-lea.test");
     expect(providerSend).not.toHaveBeenCalled();
 
     // A separate read sees the same private preview identity and contact.
     expect(await fakeModels.site.findUnique({ where: { slug: site.slug } })).toMatchObject({
       slug: "chez-lea",
       status: "PREVIEW_READY",
-      email: "owner@chez-lea.test",
+      email: "bonjour@chez-lea.test",
+      leadContactEmail: "owner@chez-lea.test",
     });
 
     const reviewResponse = await completeReview(
@@ -659,7 +668,7 @@ describe("mocked Restofront operator delivery flow", () => {
 
     const issued = await issueClaimInvitation({
       siteSlug: site.slug,
-      email: site.email!,
+      email: site.leadContactEmail!,
       proofMethod: "OPERATOR_APPROVAL",
       actor: "operator:operator_1",
       outreachKey: `lead-outreach:${site.id}:preview_ready`,
@@ -673,7 +682,7 @@ describe("mocked Restofront operator delivery flow", () => {
     });
     const replayedInvitation = await issueClaimInvitation({
       siteSlug: site.slug,
-      email: site.email!,
+      email: site.leadContactEmail!,
       proofMethod: "OPERATOR_APPROVAL",
       actor: "operator:operator_1",
       outreachKey: `lead-outreach:${site.id}:preview_ready`,
@@ -695,7 +704,7 @@ describe("mocked Restofront operator delivery flow", () => {
       siteId: site.id,
       template: "preview_ready",
       claimUrl: `https://cornershop.dev/claim/${site.slug}#claim_token=${issued.token}`,
-      to: site.email!,
+      to: site.leadContactEmail!,
       actor: "operator:operator_1",
       expectedReviewedAt: reviewPayload.createdAt,
       claimInvitationId: issued.id,
@@ -742,7 +751,12 @@ describe("mocked Restofront operator delivery flow", () => {
     );
     expect(mailboxResponse.status).toBe(200);
     expect(await mailboxResponse.json()).toMatchObject({
-      messages: [{ status: "DELIVERED" }],
+      messages: [
+        {
+          status: "DELIVERED",
+          toAddress: "owner@chez-lea.test",
+        },
+      ],
     });
     expect((await listOutreachMessages(site.id))[0]).toMatchObject({
       status: "DELIVERED",
@@ -758,7 +772,7 @@ describe("mocked Restofront operator delivery flow", () => {
     await expect(
       issueClaimInvitation({
         siteSlug: site.slug,
-        email: site.email!,
+        email: site.leadContactEmail!,
         proofMethod: "OPERATOR_APPROVAL",
         actor: "operator:operator_1",
         outreachKey: `lead-outreach:${site.id}:follow_up_1`,

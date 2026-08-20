@@ -9,6 +9,7 @@ import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
+  restaurantAvailabilityLabel,
   reconcileAcceptedSourceMonitoringDraft,
   reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
@@ -44,6 +45,14 @@ function multilingualDraft() {
 }
 
 describe("restaurant menu CRUD", () => {
+  it.each([
+    [null, "Availability unknown"],
+    [true, "Available"],
+    [false, "Unavailable"],
+  ] as const)("labels availability %s as %s", (available, label) => {
+    expect(restaurantAvailabilityLabel(available)).toBe(label);
+  });
+
   it("keeps translated structure aligned while adding, deleting and reordering", () => {
     let draft = multilingualDraft();
     draft = applyRestaurantMenuMutation(draft, { type: "add-section" });

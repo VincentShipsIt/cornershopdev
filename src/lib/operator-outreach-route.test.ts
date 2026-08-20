@@ -171,7 +171,8 @@ mock.module("@/lib/db", () => ({
     site: {
       findUnique: async () => ({
         id: "site_1",
-        email: "owner@example.test",
+        email: "bonjour@example.test",
+        leadContactEmail: "owner@example.test",
         status: "PREVIEW_READY",
         vertical,
         updatedAt: new Date("2026-08-19T08:00:00.000Z"),

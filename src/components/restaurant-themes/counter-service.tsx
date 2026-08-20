@@ -1,10 +1,13 @@
 import { formatPrice } from "@/lib/site-draft";
+import { SiteBrand, SourceNavigation } from "@/components/site-brand";
 import {
   fontPairClass,
   itemBadges,
+  sourceBrandPalette,
   themeStyle,
   ThemeAnalytics,
   ThemeBusinessHours,
+  ThemeContact,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -41,19 +44,18 @@ export function CounterServiceTheme({
         "relative overflow-hidden font-sans",
         embedded ? "min-h-[760px] rounded-[1.5rem]" : "min-h-screen",
       )}
-      style={themeStyle(tokens)}
+      style={themeStyle(tokens, sourceBrandPalette(draft))}
     >
       <ThemeAnalytics draft={draft} enabled={analyticsEnabled} />
       <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-current px-5 py-4 md:px-8">
-        <a
+        <SiteBrand
+          draft={draft}
           href="#menu"
           className={cn(
             "text-2xl font-black tracking-[-0.05em] md:text-3xl",
             fontPairClass(tokens),
           )}
-        >
-          {draft.name}
-        </a>
+        />
         <div className="flex items-center gap-2">
           <ThemeLocaleNavigation
             locale={locale}
@@ -75,6 +77,7 @@ export function CounterServiceTheme({
           ) : null}
         </div>
       </header>
+      <SourceNavigation draft={draft} />
 
       <section className="grid border-b-2 border-current lg:grid-cols-[0.95fr_1.05fr]">
         <div className="flex flex-col justify-between gap-10 px-6 py-10 md:px-10 md:py-14">
@@ -161,32 +164,34 @@ export function CounterServiceTheme({
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {section.items.filter((item) => item.available).map((item) => (
-                    <article
-                      key={item.name}
-                      className="grid min-h-44 grid-cols-[1fr_auto] gap-5 rounded-[1.4rem] border-2 border-current bg-[var(--theme-surface)] p-5"
-                    >
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-lg font-black">{item.name}</h4>
-                          {itemBadges(item.attributes).map((label) => (
-                            <span
-                              key={label}
-                              className="rounded-full bg-[var(--theme-fg)] px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em] text-[var(--theme-bg)]"
-                            >
-                              {label}
-                            </span>
-                          ))}
+                  {section.items
+                    .filter((item) => item.available !== false)
+                    .map((item) => (
+                      <article
+                        key={item.name}
+                        className="grid min-h-44 grid-cols-[1fr_auto] gap-5 rounded-[1.4rem] border-2 border-current bg-[var(--theme-surface)] p-5"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-lg font-black">{item.name}</h4>
+                            {itemBadges(item.attributes).map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full bg-[var(--theme-fg)] px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em] text-[var(--theme-bg)]"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="mt-3 text-sm leading-6 opacity-70">
+                            {item.description}
+                          </p>
                         </div>
-                        <p className="mt-3 text-sm leading-6 opacity-70">
-                          {item.description}
-                        </p>
-                      </div>
-                      <span className="font-mono text-sm font-bold">
-                        {formatPrice(item.price, item.currency, locale)}
-                      </span>
-                    </article>
-                  ))}
+                        <span className="font-mono text-sm font-bold">
+                          {formatPrice(item.price, item.currency, locale)}
+                        </span>
+                      </article>
+                    ))}
                 </div>
               </section>
             ))}
@@ -203,7 +208,7 @@ export function CounterServiceTheme({
         <div className="mx-auto grid max-w-7xl gap-4 text-sm sm:grid-cols-3 sm:items-start">
           <span className="font-black">{draft.name}</span>
           <ThemeBusinessHours draft={draft} />
-          <span className="sm:text-right">{draft.address}</span>
+          <ThemeContact draft={draft} className="sm:text-right" />
         </div>
       </footer>
 

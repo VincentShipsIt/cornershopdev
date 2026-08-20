@@ -1,11 +1,14 @@
 import { CalendarDays, Clock3 } from "lucide-react";
 import { formatPrice } from "@/lib/site-draft";
+import { SiteBrand, SourceNavigation } from "@/components/site-brand";
 import {
   fontPairClass,
   itemBadges,
+  sourceBrandPalette,
   themeStyle,
   ThemeAnalytics,
   ThemeBusinessHours,
+  ThemeContact,
   ThemeExternalAction,
   ThemeHeroImage,
   ThemeLocaleNavigation,
@@ -45,7 +48,7 @@ export function AfterDarkTheme({
         "relative overflow-hidden font-sans",
         embedded ? "min-h-[760px] rounded-[1.5rem]" : "min-h-screen",
       )}
-      style={themeStyle(tokens)}
+      style={themeStyle(tokens, sourceBrandPalette(draft))}
     >
       <ThemeAnalytics draft={draft} enabled={analyticsEnabled} />
       <section className="relative min-h-[82svh] overflow-hidden border-b border-white/15">
@@ -56,15 +59,14 @@ export function AfterDarkTheme({
           overlayClassName="bg-[linear-gradient(90deg,rgba(7,6,6,0.92),rgba(7,6,6,0.34)_62%,rgba(7,6,6,0.58))]"
         />
         <header className="relative z-10 flex items-center justify-between gap-5 border-b border-white/15 px-5 py-5 text-[#f5efe4] md:px-9">
-          <a
+          <SiteBrand
+            draft={draft}
             href="#menu"
             className={cn(
               "text-lg font-bold tracking-[0.08em]",
               fontPairClass(tokens),
             )}
-          >
-            {draft.name}
-          </a>
+          />
           <div className="flex items-center gap-4">
             <ThemeLocaleNavigation
               locale={locale}
@@ -90,6 +92,10 @@ export function AfterDarkTheme({
             ) : null}
           </div>
         </header>
+        <SourceNavigation
+          draft={draft}
+          className="relative z-10 border-white/15 text-[#f5efe4]"
+        />
         <div className="relative z-10 flex min-h-[calc(82svh-86px)] flex-col justify-end px-6 pb-12 pt-24 text-[#f5efe4] md:px-10 md:pb-16">
           <div className="grid gap-10 lg:grid-cols-[1fr_0.55fr] lg:items-end">
             <div>
@@ -175,32 +181,34 @@ export function AfterDarkTheme({
                   </p>
                 </div>
                 <div className="divide-y divide-current/15">
-                  {section.items.filter((item) => item.available).map((item) => (
-                    <div
-                      key={item.name}
-                      className="grid grid-cols-[1fr_auto] gap-5 py-5"
-                    >
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-semibold">{item.name}</h4>
-                          {itemBadges(item.attributes).map((label) => (
-                            <span
-                              key={label}
-                              className="rounded-full border border-current/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.11em] opacity-65"
-                            >
-                              {label}
-                            </span>
-                          ))}
+                  {section.items
+                    .filter((item) => item.available !== false)
+                    .map((item) => (
+                      <div
+                        key={item.name}
+                        className="grid grid-cols-[1fr_auto] gap-5 py-5"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold">{item.name}</h4>
+                            {itemBadges(item.attributes).map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full border border-current/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.11em] opacity-65"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-sm leading-6 opacity-62">
+                            {item.description}
+                          </p>
                         </div>
-                        <p className="mt-2 text-sm leading-6 opacity-62">
-                          {item.description}
-                        </p>
+                        <span className="font-mono text-sm">
+                          {formatPrice(item.price, item.currency, locale)}
+                        </span>
                       </div>
-                      <span className="font-mono text-sm">
-                        {formatPrice(item.price, item.currency, locale)}
-                      </span>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </section>
             ))}
@@ -231,7 +239,7 @@ export function AfterDarkTheme({
       <footer className="grid gap-3 border-t border-current/15 px-6 py-8 text-xs opacity-55 sm:grid-cols-3 md:px-10">
         <span>{draft.name}</span>
         <ThemeBusinessHours draft={draft} />
-        <span className="sm:text-right">{draft.address}</span>
+        <ThemeContact draft={draft} className="sm:text-right" />
       </footer>
     </article>
   );

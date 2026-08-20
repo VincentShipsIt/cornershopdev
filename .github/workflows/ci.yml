@@ -44,6 +44,10 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bunx --bun prisma migrate deploy
+      - name: Predecessor contact/privacy migration regression
+        env:
+          SITE_CONTACT_MIGRATION_POSTGRES_TEST: "1"
+        run: bun test src/lib/site-contact-migration.postgres.test.tsx
       - run: bun run workflow:migrate
       - run: bun run test
       # Own process: bun mock.module("@/lib/db") is process-global, so the

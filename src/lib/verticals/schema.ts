@@ -25,8 +25,50 @@ export const imageProvenanceSchema = z.enum([
  * Either an absolute URL or a repo-relative path — the sample fixtures ship
  * local images, everything imported is absolute.
  */
+const absoluteSiteImageUrlSchema = z.url().superRefine((value, context) => {
+  if (/["\\\u0000-\u001f\u007f]/.test(value)) {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs cannot contain CSS-breaking characters",
+    });
+    return;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    // z.url() owns the invalid-absolute issue; the union may still accept the
+    // repository-relative branch.
+    return;
+  }
+  if (url.protocol !== "https:") {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs must use HTTPS",
+    });
+  }
+  if (url.username || url.password) {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs cannot contain credentials",
+    });
+  }
+  if (url.port && url.port !== "443") {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs cannot use a custom port",
+    });
+  }
+  if (isPrivateIntegrationHostname(url.hostname)) {
+    context.addIssue({
+      code: "custom",
+      message: "Site image URLs must use a public hostname",
+    });
+  }
+});
+
 export const siteImageUrlSchema = z.union([
-  z.url(),
+  absoluteSiteImageUrlSchema,
   z.string().regex(/^\/[a-zA-Z0-9/_\-.]+$/),
 ]);
 
@@ -50,7 +92,7 @@ export const catalogItemSchema = z.object({
   description: z.string().max(320).default(""),
   price: z.number().nonnegative().nullable().default(null),
   currency: supportedCurrencySchema.default("EUR"),
-  available: z.boolean().default(true),
+  available: z.boolean().nullable().default(null),
   imageUrl: siteImageUrlSchema.nullable().default(null),
   originalImageUrl: siteImageUrlSchema.nullable().optional(),
   imageProvenance: imageProvenanceSchema.nullable().optional(),
@@ -64,7 +106,13 @@ export const catalogSectionSchema = z.object({
 });
 
 export const safeExternalHttpsUrlSchema = z.url().superRefine((value, context) => {
-  const url = new URL(value);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    // z.url() owns the malformed-absolute issue.
+    return;
+  }
   if (url.protocol !== "https:") {
     context.addIssue({
       code: "custom",
@@ -107,12 +155,17 @@ export const integrationSchema = z.object({
 });
 
 function isPrivateIntegrationHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const normalized = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   const ipv6 = normalized.includes(":");
   if (
     normalized === "localhost" ||
     normalized.endsWith(".localhost") ||
     normalized.endsWith(".local") ||
+    normalized.endsWith(".internal") ||
+    normalized === "metadata.google.internal" ||
     ipv6
   ) {
     return true;
@@ -149,6 +202,73 @@ export const businessHoursSchema = z
   .max(14)
   .default([]);
 
+/**
+ * The bounded, same-origin meaning of a reconstructed source link. Its
+ * authenticated absolute destination is stored separately, so this field can
+ * never be reinterpreted as an external authority by a renderer.
+ */
+export const sourceNavigationIntentSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2_048)
+  .superRefine((value, context) => {
+    if (/[\\\u0000-\u001f\u007f]/.test(value)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Navigation links cannot contain backslashes or control characters",
+      });
+      return;
+    }
+    if (!/^(?:\/(?!\/)|\?|#)/.test(value)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Source navigation intent must be an internal path, query, or fragment",
+      });
+    }
+  });
+
+export const sourceDataSchema = z
+  .object({
+    navigation: z
+      .array(
+        z.object({
+          label: z.string().trim().min(1).max(60),
+          url: sourceNavigationIntentSchema,
+          destinationUrl: safeExternalHttpsUrlSchema.nullable().default(null),
+        }),
+      )
+      .max(12)
+      .default([]),
+    brandAssets: z
+      .array(
+        z.object({
+          type: z.enum(["logo", "favicon", "hero", "content"]),
+          url: siteImageUrlSchema,
+          sourceUrl: z.url(),
+          provenance: z.literal("official"),
+          evidence: z.enum(["json-ld", "meta", "html", "link", "css"]),
+        }),
+      )
+      .max(24)
+      .default([]),
+    evidence: z
+      .array(
+        z.object({
+          field: z.string().trim().min(1).max(80),
+          value: z.string().max(500),
+          sourceUrl: z.url(),
+          method: z.enum(["json-ld", "meta", "html", "link", "css"]),
+          excerpt: z.string().max(280),
+        }),
+      )
+      .max(80)
+      .default([]),
+  })
+  .default({ navigation: [], brandAssets: [], evidence: [] });
+
 export const translatedCatalogItemSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(320).default(""),
@@ -182,7 +302,10 @@ export const baseSiteDraftCoreShape = {
   description: z.string().min(20).max(500),
   address: z.string().max(220),
   phone: z.string().max(40),
+  email: z.string().email().or(z.literal("")).default(""),
   sourceUrl: z.url().nullable(),
+  logoUrl: siteImageUrlSchema.nullable().default(null),
+  faviconUrl: siteImageUrlSchema.nullable().default(null),
   heroImageUrl: siteImageUrlSchema.nullable(),
   heroOriginalImageUrl: siteImageUrlSchema.nullable().optional(),
   heroImageProvenance: imageProvenanceSchema.nullable().optional(),
@@ -190,7 +313,9 @@ export const baseSiteDraftCoreShape = {
     background: z.string(),
     foreground: z.string(),
     accent: z.string(),
+    accentForeground: z.string().default("#ffffff"),
   }),
+  sourceData: sourceDataSchema,
   autoEnhanceImages: z.boolean().default(true),
   defaultLocale: localeSchema.default("en"),
   businessHours: businessHoursSchema,
@@ -204,7 +329,7 @@ export const baseSiteDraftSchema = z
     translations: z.array(baseSiteTranslationSchema).max(8).default([]),
     catalogSections: z.array(catalogSectionSchema).min(1).max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 type TranslationParityDraft = {
   defaultLocale: string;
@@ -281,6 +406,62 @@ export function assertTranslationParity(
       });
     }
   });
+}
+
+type SourceNavigationDraft = {
+  sourceUrl: string | null;
+  sourceData: {
+    navigation: Array<{
+      url: string;
+      destinationUrl: string | null;
+    }>;
+  };
+};
+
+export function assertSourceNavigationDestinations(
+  draft: SourceNavigationDraft,
+  context: z.RefinementCtx,
+): void {
+  let source: URL | null = null;
+  try {
+    source = draft.sourceUrl ? new URL(draft.sourceUrl) : null;
+  } catch {
+    source = null;
+  }
+
+  draft.sourceData.navigation.forEach((navigation, index) => {
+    if (!navigation.destinationUrl) return;
+    let destination: URL;
+    try {
+      destination = new URL(navigation.destinationUrl);
+    } catch {
+      // The nested URL schema owns the malformed-absolute issue.
+      return;
+    }
+    const expectedDestination = source
+      ? new URL(navigation.url, source).toString()
+      : null;
+    if (
+      !source ||
+      destination.origin !== source.origin ||
+      destination.toString() !== expectedDestination
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceData", "navigation", index, "destinationUrl"],
+        message:
+          "Source navigation destinations must match the authenticated source origin and intent",
+      });
+    }
+  });
+}
+
+export function assertSiteDraftInvariants(
+  draft: TranslationParityDraft & SourceNavigationDraft,
+  context: z.RefinementCtx,
+): void {
+  assertTranslationParity(draft, context);
+  assertSourceNavigationDestinations(draft, context);
 }
 
 export type SiteLocale = z.infer<typeof localeSchema>;

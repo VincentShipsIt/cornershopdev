@@ -1,7 +1,9 @@
 import {
   ArrowUpRight,
   CalendarDays,
+  Mail,
   MapPin,
+  Phone,
   ShoppingBag,
 } from "lucide-react";
 import Image from "next/image";
@@ -11,6 +13,7 @@ import { BookingRequestForm } from "@/components/booking-request-form";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { RestaurantStructuredData } from "@/components/restaurant-themes/shared";
 import { SiteAnalytics } from "@/components/site-analytics";
+import { SiteBrand, SourceNavigation } from "@/components/site-brand";
 import { Vertical } from "@/generated/prisma/enums";
 import { resolveBookingEmbed } from "@/lib/booking-embed";
 import {
@@ -110,7 +113,7 @@ export function SiteRenderer({
     .flatMap((section) => section.items)
     .filter(
       (item): item is typeof item & { imageUrl: string } =>
-        item.available && Boolean(item.imageUrl),
+        item.available !== false && Boolean(item.imageUrl),
     )
     .slice(0, 4);
   const immersiveHero = template.heroLayout === "immersive";
@@ -143,6 +146,7 @@ export function SiteRenderer({
           "--site-bg": draft.palette.background,
           "--site-fg": draft.palette.foreground,
           "--site-accent": draft.palette.accent,
+          "--site-accent-fg": draft.palette.accentForeground ?? "#ffffff",
           background: "var(--site-bg)",
           color: "var(--site-fg)",
         } as React.CSSProperties
@@ -160,14 +164,14 @@ export function SiteRenderer({
             : "relative border-b border-current/10",
         )}
       >
-        <span
+        <SiteBrand
+          draft={draft}
+          href="#content"
           className={cn(
             "min-w-0 break-words text-lg leading-tight sm:flex-1 sm:text-xl md:text-2xl",
             template.brandClassName,
           )}
-        >
-          {draft.name}
-        </span>
+        />
         <div className="contents sm:flex sm:shrink-0 sm:items-center sm:gap-2">
           {localeBasePath && availableLocales.length > 1 ? (
             <nav
@@ -231,7 +235,7 @@ export function SiteRenderer({
               target="_blank"
               rel="noreferrer"
               className={cn(
-                "col-span-2 row-start-2 inline-flex min-h-11 items-center justify-center px-4 py-2 text-center text-xs font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 sm:col-auto sm:row-auto sm:min-h-0 sm:whitespace-nowrap",
+                "col-span-2 row-start-2 inline-flex min-h-11 items-center justify-center px-4 py-2 text-center text-xs font-bold text-[var(--site-accent-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 sm:col-auto sm:row-auto sm:min-h-0 sm:whitespace-nowrap",
                 template.id === "bold" ? "rounded-none" : "rounded-full",
               )}
               style={{ background: "var(--site-accent)" }}
@@ -241,9 +245,11 @@ export function SiteRenderer({
           ) : null}
         </div>
       </header>
+      <SourceNavigation draft={draft} />
 
       {template.heroLayout === "split" ? (
         <section
+          id="content"
           className={cn(
             "grid overflow-hidden lg:grid-cols-[0.9fr_1.1fr]",
             embedded ? "min-h-[520px]" : "min-h-[78svh]",
@@ -277,7 +283,7 @@ export function SiteRenderer({
           />
         </section>
       ) : template.heroLayout === "card" ? (
-        <section className="p-4 pt-1 md:p-8 md:pt-2">
+        <section id="content" className="p-4 pt-1 md:p-8 md:pt-2">
           <div
             className={cn(
               "relative flex items-end overflow-hidden rounded-[2rem]",
@@ -295,6 +301,7 @@ export function SiteRenderer({
         </section>
       ) : (
         <section
+          id="content"
           className={cn(
             "relative flex items-end overflow-hidden",
             embedded ? "min-h-[520px]" : "min-h-[82svh]",
@@ -380,10 +387,24 @@ export function SiteRenderer({
             {copy.catalogHeading}
           </h2>
           <div className="mt-8 flex flex-col gap-3 text-sm opacity-75">
-            <span className="flex items-start gap-2">
-              <MapPin className="mt-0.5 size-4 shrink-0" />
-              {draft.address}
-            </span>
+            {draft.address ? (
+              <span className="flex items-start gap-2">
+                <MapPin className="mt-0.5 size-4 shrink-0" />
+                {draft.address}
+              </span>
+            ) : null}
+            {draft.phone ? (
+              <a href={`tel:${draft.phone}`} className="flex items-center gap-2 font-semibold opacity-100">
+                <Phone className="size-4" />
+                {draft.phone}
+              </a>
+            ) : null}
+            {draft.email ? (
+              <a href={`mailto:${draft.email}`} className="flex items-center gap-2 font-semibold opacity-100">
+                <Mail className="size-4" />
+                {draft.email}
+              </a>
+            ) : null}
             {booking ? (
               <a
                 href={localizeIntegrationUrl(booking.url, locale)}
@@ -439,38 +460,41 @@ export function SiteRenderer({
                 ) : null}
               </div>
               <div className="space-y-6">
-                {section.items.filter((item) => item.available).map((item) => (
-                  <div
-                    key={item.name}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="min-w-0 break-words font-medium">
-                          {item.name}
-                        </h4>
-                        {/* The vertical turns its own item attributes into plain
-                            strings, so the renderer never learns what they mean. */}
-                        {(
-                          config.presentation.itemBadges?.(item.attributes) ?? []
-                        ).map((label: string) => (
-                          <span
-                            key={label}
-                            className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
-                          >
-                            {label}
-                          </span>
-                        ))}
+                {section.items
+                  .filter((item) => item.available !== false)
+                  .map((item) => (
+                    <div
+                      key={item.name}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 sm:gap-5"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="min-w-0 break-words font-medium">
+                            {item.name}
+                          </h4>
+                          {/* The vertical turns its own item attributes into plain
+                              strings, so the renderer never learns what they mean. */}
+                          {(
+                            config.presentation.itemBadges?.(item.attributes) ??
+                            []
+                          ).map((label: string) => (
+                            <span
+                              key={label}
+                              className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] opacity-75"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-1 max-w-xl text-sm leading-6 opacity-75">
+                          {item.description}
+                        </p>
                       </div>
-                      <p className="mt-1 max-w-xl text-sm leading-6 opacity-75">
-                        {item.description}
-                      </p>
+                      <span className="whitespace-nowrap font-mono text-sm">
+                        {formatPrice(item.price, item.currency, locale)}
+                      </span>
                     </div>
-                    <span className="whitespace-nowrap font-mono text-sm">
-                      {formatPrice(item.price, item.currency, locale)}
-                    </span>
-                  </div>
-                ))}
+                  ))}
               </div>
             </section>
           ))}
@@ -529,9 +553,7 @@ export function SiteRenderer({
       ) : null}
 
       <footer className="grid gap-5 border-t border-current/15 px-6 py-8 text-sm opacity-75 sm:grid-cols-3 sm:items-start md:px-10">
-        <span>
-          {draft.name} · {draft.address}
-        </span>
+        <span>{[draft.name, draft.address].filter(Boolean).join(" · ")}</span>
         {draft.businessHours.length > 0 ? (
           <dl className="grid gap-1">
             {draft.businessHours.map((row) => (

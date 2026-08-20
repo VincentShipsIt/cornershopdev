@@ -10,6 +10,13 @@ import { supportedCurrencySchema } from "@/lib/verticals/schema";
 
 export const SUPPORTED_MENU_CURRENCIES = supportedCurrencySchema.options;
 
+export function restaurantAvailabilityLabel(
+  available: boolean | null,
+): string {
+  if (available === null) return "Availability unknown";
+  return available ? "Available" : "Unavailable";
+}
+
 export type RestaurantMenuMutation =
   | { type: "add-section" }
   | { type: "update-section"; sectionIndex: number; name?: string; description?: string }

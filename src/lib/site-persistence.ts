@@ -34,7 +34,11 @@ export type PersistableSiteDraft = {
   description: string;
   address: string;
   phone: string;
+  /** Sourced public business mailbox. Operator recipients never enter drafts. */
+  email?: string;
   sourceUrl: string | null;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
   heroImageUrl: string | null;
   heroOriginalImageUrl?: string | null;
   heroImageProvenance?: "official" | "owner" | "permissioned-ugc" | null;
@@ -42,6 +46,28 @@ export type PersistableSiteDraft = {
     background: string;
     foreground: string;
     accent: string;
+    accentForeground?: string;
+  };
+  sourceData?: {
+    navigation: Array<{
+      label: string;
+      url: string;
+      destinationUrl: string | null;
+    }>;
+    brandAssets: Array<{
+      type: "logo" | "favicon" | "hero" | "content";
+      url: string;
+      sourceUrl: string;
+      provenance: "official";
+      evidence: "json-ld" | "meta" | "html" | "link" | "css";
+    }>;
+    evidence: Array<{
+      field: string;
+      value: string;
+      sourceUrl: string;
+      method: "json-ld" | "meta" | "html" | "link" | "css";
+      excerpt: string;
+    }>;
   };
   attributes: Record<string, unknown>;
   autoEnhanceImages: boolean;
@@ -56,7 +82,7 @@ export type PersistableSiteDraft = {
       description: string;
       price: number | null;
       currency: string;
-      available: boolean;
+      available: boolean | null;
       attributes: Record<string, unknown>;
       imageUrl: string | null;
       originalImageUrl?: string | null;
@@ -312,7 +338,9 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 where: { id: existing.id },
                 data: {
                   ...siteScalarData(draft, input.vertical, sourceKey),
-                  ...(input.contactEmail ? { email: input.contactEmail } : {}),
+                  ...(input.contactEmail
+                    ? { leadContactEmail: input.contactEmail }
+                    : {}),
                   ...siteRelationReplaceData(draft, input.vertical),
                 },
                 select: { id: true, slug: true },
@@ -321,7 +349,9 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 data: {
                   slug,
                   ...siteScalarData(draft, input.vertical, sourceKey),
-                  ...(input.contactEmail ? { email: input.contactEmail } : {}),
+                  ...(input.contactEmail
+                    ? { leadContactEmail: input.contactEmail }
+                    : {}),
                   integrations: { create: integrationCreateData(draft) },
                   catalogSections: {
                     create: catalogSectionCreateData(draft, input.vertical),
@@ -587,7 +617,7 @@ export async function updateSiteDraft(
           const updated = await tx.site.update({
             where: { id: current.id },
             data: {
-              ...editableSiteScalarData(parsed, vertical),
+              ...siteDraftScalarData(parsed, vertical),
               ...siteRelationReplaceData(parsed, vertical),
               draftRevision: { increment: 1 },
             },
@@ -659,7 +689,7 @@ function siteScalarData(
   sourceKey: string | null,
 ) {
   return {
-    ...editableSiteScalarData(draft, vertical),
+    ...siteDraftScalarData(draft, vertical),
     // Identity and lifecycle columns: only the import path owns these. An owner
     // editing copy must never move a site between verticals, re-point its import
     // identity, or resurrect it into PREVIEW_READY after it has been claimed.
@@ -671,7 +701,7 @@ function siteScalarData(
 }
 
 /** The subset of `Site` columns an owner edit is allowed to overwrite. */
-function editableSiteScalarData(
+export function siteDraftScalarData(
   draft: PersistableSiteDraft,
   vertical: VerticalId,
 ) {
@@ -685,6 +715,10 @@ function editableSiteScalarData(
     description: draft.description,
     address: draft.address,
     phone: draft.phone,
+    email: draft.email || null,
+    logoUrl: draft.logoUrl,
+    faviconUrl: draft.faviconUrl,
+    sourceData: (draft.sourceData ?? {}) as Prisma.InputJsonValue,
     heroImageUrl: draft.heroImageUrl,
     heroOriginalImageUrl: draft.heroOriginalImageUrl,
     heroImageProvenance: toDatabaseImageProvenance(draft.heroImageProvenance),
