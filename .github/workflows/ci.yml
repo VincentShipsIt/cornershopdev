@@ -50,6 +50,10 @@ jobs:
         env:
           SITE_PUBLICATION_POSTGRES_TEST: "1"
         run: bun test src/lib/site-publication.postgres.test.ts
+      - name: Postgres photo library suite
+        env:
+          PHOTO_LIBRARY_POSTGRES_TEST: "1"
+        run: bun test src/lib/photo-library.postgres.test.ts
       - run: bun run lint
       - run: bun run design:lint
       - run: bun run build
