@@ -348,13 +348,13 @@ export function PhotoLibraryPanel({
         </Button>
       </div>
 
-      {error ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p> : null}
+      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       {!library ? (
         <p className="text-sm text-muted-foreground">Loading photo provenance…</p>
       ) : library.photos.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No source photos were found. Add an owner-approved original above.</p>
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No source photos were found. Add an owner-approved original above.</p>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid gap-5 lg:grid-cols-2">
           {library.photos.map((photo) => (
             <PhotoReviewCard
               key={photo.id}
@@ -404,7 +404,7 @@ function PhotoReviewCard({
           {photo.selectedUsage ? <Badge variant="secondary">Selected {photo.selectedUsage.toLowerCase()}</Badge> : null}
           {photo.candidateUsages.map((usage) => <Badge key={usage} variant="outline">{usage.toLowerCase()} candidate</Badge>)}
         </div>
-        <p className="break-all text-[11px] leading-4 text-muted-foreground">
+        <p className="break-words text-[11px] leading-4 text-muted-foreground">
           {photo.sourcePageUrl ? `Found on ${photo.sourcePageUrl}` : "Provided directly by the owner"}
         </p>
         {photo.enhancementCostMicros !== null ? <p className="text-[11px] text-muted-foreground">Enhancement cost: {formatCost(photo.enhancementCostMicros)} · {photo.enhancementModel}</p> : null}
@@ -458,7 +458,7 @@ function PhotoReviewCard({
           ) : null}
           {photo.activeVariant === "ENHANCED" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void onAction(photo.id, "restore_original")}><RotateCcw />Restore original</Button> : null}
           {photo.selectedUsage ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void onAction(photo.id, "unselect")}>Unselect</Button> : null}
-          {busy ? <LoaderCircle className="m-2 size-4 animate-spin" /> : null}
+          {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
         </div>
       </CardContent>
     </Card>
@@ -469,7 +469,7 @@ function PhotoPreview({ label, url }: { label: string; url: string }) {
   return (
     <div className="relative aspect-[4/3]">
       <div role="img" aria-label={label} className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${url}")` }} />
-      <Badge className="absolute left-2 top-2 bg-black/65 text-white">{label}</Badge>
+      <Badge className="absolute left-3 top-3 bg-black/60 text-white">{label}</Badge>
     </div>
   );
 }
