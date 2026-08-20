@@ -984,10 +984,19 @@ function catalogItem(
   evidence: ReconstructionEvidence[],
   brandAssets: ExtractedBrandAsset[],
 ): ExtractedCatalogItem | null {
+  const offeredItem = isRecord(entity.itemOffered)
+    ? entity.itemOffered
+    : null;
+  if (
+    jsonTypes(entity).includes("offer") &&
+    (!offeredItem || !isCatalogItemEntity(offeredItem))
+  ) {
+    return null;
+  }
   const nested = isRecord(entity.item)
     ? entity.item
-    : isRecord(entity.itemOffered)
-      ? entity.itemOffered
+    : offeredItem
+      ? offeredItem
       : entity;
   if (
     isCatalogSectionEntity(nested) ||
@@ -1043,7 +1052,7 @@ function isCatalogSectionEntity(entity: JsonRecord): boolean {
 
 function isCatalogItemEntity(entity: JsonRecord): boolean {
   return jsonTypes(entity).some((type) =>
-    ["menuitem", "product", "service", "offer"].includes(type),
+    ["menuitem", "product", "service"].includes(type),
   );
 }
 

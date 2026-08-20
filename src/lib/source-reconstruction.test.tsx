@@ -523,6 +523,79 @@ describe("deterministic source reconstruction", () => {
     ).not.toContain("All offerings");
   });
 
+  it("rejects bare promotional Offers but accepts Offer wrappers with typed items", () => {
+    const sourceUrl = new URL("https://offers.example/");
+    const reconstructed = reconstructSource({
+      homepage: {
+        html: `<script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "OfferCatalog",
+            "name": "Typed offers",
+            "itemListElement": [
+              {
+                "@type": "Offer",
+                "name": "Summer sale"
+              },
+              {
+                "@type": "Offer",
+                "price": "20",
+                "priceCurrency": "EUR",
+                "itemOffered": {
+                  "@type": "Product",
+                  "name": "Source-backed care kit"
+                }
+              },
+              {
+                "@type": "Offer",
+                "price": "60",
+                "priceCurrency": "EUR",
+                "itemOffered": {
+                  "@type": "Service",
+                  "name": "Source-backed consultation"
+                }
+              }
+            ]
+          }
+        </script>`,
+        url: sourceUrl,
+      },
+      fallbackName: sourceUrl.hostname,
+      links: [],
+      fallbackPalette,
+    });
+
+    expect(reconstructed.catalogSections).toEqual([
+      {
+        name: "Typed offers",
+        description: "",
+        items: [
+          {
+            name: "Source-backed care kit",
+            description: "",
+            price: 20,
+            currency: "EUR",
+            availability: null,
+            imageUrl: null,
+          },
+          {
+            name: "Source-backed consultation",
+            description: "",
+            price: 60,
+            currency: "EUR",
+            availability: null,
+            imageUrl: null,
+          },
+        ],
+      },
+    ]);
+    expect(
+      reconstructed.evidence.some(
+        (entry) => entry.field === "catalog.item" && entry.value === "Summer sale",
+      ),
+    ).toBe(false);
+  });
+
   it("repairs text and accent contrast while retaining normalized source colours", () => {
     const palette = repairPalette(
       { background: "#fff8e8", foreground: "#fffdf8", accent: "#f4d03f" },
