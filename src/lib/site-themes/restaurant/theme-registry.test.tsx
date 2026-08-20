@@ -466,6 +466,8 @@ describe("restaurant theme renderers", () => {
 
     expect(html).toContain("data-site-photo-gallery");
     expect(html).toContain('data-image-provenance="owner"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('decoding="async"');
     expect(html).toContain("https://assets.example/approved-gallery.webp");
     expect(html).not.toContain("https://assets.example/authentic-original.jpg");
   });

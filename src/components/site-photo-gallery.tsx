@@ -35,12 +35,20 @@ export function SitePhotoGallery({
           {draft.galleryImages.map((image, index) => (
             <div
               key={`${image.originalUrl}-${index}`}
-              role="img"
-              aria-label={`${draft.name} gallery photo ${index + 1}`}
-              data-image-provenance={image.provenance}
-              className="aspect-[4/3] rounded-[1.25rem] bg-black/5 bg-cover bg-center"
-              style={{ backgroundImage: `url("${image.url}")` }}
-            />
+              className="relative aspect-[4/3] overflow-hidden rounded-[1.25rem] bg-black/5"
+            >
+              {/* Customer-owned immutable URLs deliberately bypass Next's
+                  restricted optimizer; the fixed container prevents CLS. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={image.url}
+                alt={`${draft.name} gallery photo ${index + 1}`}
+                loading="lazy"
+                decoding="async"
+                data-image-provenance={image.provenance}
+                className="absolute inset-0 size-full object-cover"
+              />
+            </div>
           ))}
         </div>
       </div>
