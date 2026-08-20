@@ -71,6 +71,10 @@ export function SiteRenderer({
   const integrations = draft.integrations.filter((integration) =>
     allowedIntegrationTypes.has(integration.type),
   );
+  const integrationSafeDraft =
+    integrations.length === draft.integrations.length
+      ? draft
+      : { ...draft, integrations };
 
   if (vertical === Vertical.RESTAURANT) {
     const selection = parseRestaurantThemeSelection(
@@ -79,7 +83,7 @@ export function SiteRenderer({
     if (selection) {
       return (
         <RestaurantThemeRenderer
-          draft={draft}
+          draft={integrationSafeDraft}
           selection={selection}
           locale={locale}
           localeBasePath={localeBasePath}

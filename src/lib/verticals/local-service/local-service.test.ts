@@ -58,6 +58,34 @@ describe("local-service vertical", () => {
     });
   });
 
+  it("localizes quote, from, hourly and emergency item badges in French", () => {
+    const badges = localServiceConfig.presentation.itemBadges;
+    expect(
+      badges?.(
+        { pricingModel: "quote", priceUnit: "", emergencyEligible: false },
+        "fr",
+      ),
+    ).toEqual(["Devis requis"]);
+    expect(
+      badges?.(
+        { pricingModel: "from", priceUnit: "", emergencyEligible: false },
+        "fr",
+      ),
+    ).toEqual(["À partir de"]);
+    expect(
+      badges?.(
+        { pricingModel: "hourly", priceUnit: "", emergencyEligible: false },
+        "fr",
+      ),
+    ).toEqual(["Tarif horaire"]);
+    expect(
+      badges?.(
+        { pricingModel: "not-stated", priceUnit: "", emergencyEligible: true },
+        "fr",
+      ),
+    ).toEqual(["Intervention d’urgence"]);
+  });
+
   it("classifies external quote and WhatsApp providers without embeds", () => {
     expect(
       localServiceConfig.providers.find(({ name }) => name === "WhatsApp"),

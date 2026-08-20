@@ -16,7 +16,11 @@ import { foodRetailIntegrationSchema } from "@/lib/verticals/food-retail/schema"
 import { localServiceConfig } from "@/lib/verticals/local-service/config";
 import { localServiceIntegrationSchema } from "@/lib/verticals/local-service/schema";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
-import { restaurantIntegrationSchema } from "@/lib/verticals/restaurant/schema";
+import {
+  restaurantIntegrationSchema,
+  sampleSiteDraft,
+} from "@/lib/verticals/restaurant/schema";
+import { selectOwnerRestaurantTheme } from "@/lib/site-themes/restaurant/selection";
 
 const originalKey = process.env.OPENROUTER_API_KEY;
 const integration = {
@@ -128,4 +132,38 @@ describe("vertical integration contracts", () => {
       expect(html).not.toContain(integration.url);
     },
   );
+
+  it("keeps unsupported links out of the themed Restaurant renderer", () => {
+    const selection = selectOwnerRestaurantTheme(
+      {
+        serviceModel: "full-service",
+        primaryIntent: "reserve",
+        menuExperience: "editorial",
+        brandTraits: ["classic"],
+        pricePosition: "midmarket",
+        locationCount: 1,
+        photographyQuality: "limited",
+      },
+      "terroir-editorial",
+    );
+    const adversarial: SiteDraftView = {
+      ...sampleSiteDraft,
+      attributes: {
+        ...sampleSiteDraft.attributes,
+        themeSelection: selection,
+      },
+      integrations: [
+        ...sampleSiteDraft.integrations,
+        { ...integration, type: "contact" },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      <SiteRenderer draft={adversarial} vertical={restaurantConfig.id} />,
+    );
+
+    expect(html).toContain('data-site-theme="terroir-editorial"');
+    expect(html).not.toContain(integration.label);
+    expect(html).not.toContain(integration.url);
+  });
 });

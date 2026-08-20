@@ -290,6 +290,82 @@ describe("local-service surfaces", () => {
     expect(html).not.toContain("Scheduled work");
   });
 
+  it("renders French pricing and emergency badges after owner edits", () => {
+    const baseItem = sampleLocalServiceSiteDraft.catalogSections[0]!.items[0]!;
+    const draft = localServiceConfig.draftSchema.parse({
+      ...sampleLocalServiceSiteDraft,
+      defaultLocale: "fr",
+      catalogSections: [
+        {
+          name: "Services",
+          description: "Services modifiés par la propriétaire.",
+          items: [
+            {
+              ...baseItem,
+              name: "Service sur devis",
+              attributes: {
+                pricingModel: "quote",
+                priceUnit: "",
+                emergencyEligible: false,
+              },
+            },
+            {
+              ...baseItem,
+              name: "Service à partir de",
+              attributes: {
+                pricingModel: "from",
+                priceUnit: "",
+                emergencyEligible: false,
+              },
+            },
+            {
+              ...baseItem,
+              name: "Service horaire",
+              attributes: {
+                pricingModel: "hourly",
+                priceUnit: "",
+                emergencyEligible: false,
+              },
+            },
+            {
+              ...baseItem,
+              name: "Service d’urgence",
+              attributes: {
+                pricingModel: "not-stated",
+                priceUnit: "",
+                emergencyEligible: true,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <SiteRenderer
+        draft={draft}
+        vertical={Vertical.LOCAL_SERVICE}
+        locale="fr"
+      />,
+    );
+
+    for (const label of [
+      "Devis requis",
+      "À partir de",
+      "Tarif horaire",
+      "Intervention d’urgence",
+    ]) {
+      expect(html).toContain(label);
+    }
+    for (const englishLabel of [
+      "Quote required",
+      "From",
+      "Hourly",
+      "Emergency callout",
+    ]) {
+      expect(html).not.toContain(englishLabel);
+    }
+  });
+
   it.each([
     ["Plumber", "plumber"],
     ["Electrician", "electrician"],

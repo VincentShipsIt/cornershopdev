@@ -206,14 +206,26 @@ export const localServiceConfig = {
     },
     buildEyebrow: (attributes, site) =>
       `${tradeLabels[attributes.tradeType]} · ${site.address ?? "Local"}`,
-    itemBadges: (attributes) => {
+    itemBadges: (attributes, locale) => {
+      const language = localServiceLanguage(locale);
       const badges: string[] = [];
-      if (attributes.pricingModel === "quote") badges.push("Quote required");
-      if (attributes.pricingModel === "from") badges.push("From");
+      if (attributes.pricingModel === "quote") {
+        badges.push(language === "fr" ? "Devis requis" : "Quote required");
+      }
+      if (attributes.pricingModel === "from") {
+        badges.push(language === "fr" ? "À partir de" : "From");
+      }
       if (attributes.pricingModel === "hourly") {
-        badges.push(attributes.priceUnit || "Hourly");
+        badges.push(
+          attributes.priceUnit ||
+            (language === "fr" ? "Tarif horaire" : "Hourly"),
+        );
       } else if (attributes.priceUnit) badges.push(attributes.priceUnit);
-      if (attributes.emergencyEligible) badges.push("Emergency callout");
+      if (attributes.emergencyEligible) {
+        badges.push(
+          language === "fr" ? "Intervention d’urgence" : "Emergency callout",
+        );
+      }
       return badges;
     },
     businessDetails: (attributes, locale) => {

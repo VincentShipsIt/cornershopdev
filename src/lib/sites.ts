@@ -103,6 +103,18 @@ export type PublishedSiteVersionRecord = {
 export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
   const config = resolveVerticalConfig(site.vertical);
   const attributes = config.attributesSchema.parse(site.attributes);
+  const compatibleIntegrationState = compatibleVerticalIntegrationState(
+    config,
+    site.integrations.map((integration) => ({
+      type: integration.type.toLowerCase(),
+      label: integration.label,
+      provider: integration.provider,
+      url: integration.url,
+      enabled: integration.enabled,
+      venueId: integration.venueId,
+    })),
+    site.translations,
+  );
   const draft = config.draftSchema.parse({
     slug: site.slug,
     name: site.name,
@@ -134,7 +146,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
     autoEnhanceImages: site.autoEnhanceImages,
     defaultLocale: site.defaultLocale,
     businessHours: site.businessHours,
-    translations: site.translations,
+    translations: compatibleIntegrationState.translations,
     catalogSections: site.catalogSections.map((section) => ({
       name: section.name,
       description: section.description ?? "",
@@ -150,14 +162,7 @@ export function projectSiteDraft(site: PersistedSiteDraftRecord): LoadedSite {
         imageProvenance: fromDatabaseImageProvenance(item.imageProvenance),
       })),
     })),
-    integrations: site.integrations.map((integration) => ({
-      type: integration.type.toLowerCase(),
-      label: integration.label,
-      provider: integration.provider,
-      url: integration.url,
-      enabled: integration.enabled,
-      venueId: integration.venueId,
-    })),
+    integrations: compatibleIntegrationState.integrations,
   });
 
   return {
@@ -314,11 +319,16 @@ export function projectPublishedSiteVersion(
   if (!version.publishedAt) return null;
   const config = resolveVerticalConfig(version.vertical);
   const content = compatiblePublishedContent(version.content);
+  const compatibleIntegrationState = compatibleVerticalIntegrationState(
+    config,
+    version.integrations,
+    version.translations,
+  );
   const draft = config.draftSchema.parse({
     ...content,
     palette: version.palette,
-    translations: version.translations,
-    integrations: version.integrations,
+    translations: compatibleIntegrationState.translations,
+    integrations: compatibleIntegrationState.integrations,
   }) as SiteDraftView;
   const theme = publishedTheme(
     version.vertical,
@@ -492,6 +502,49 @@ function jsonRecord(value: unknown): Record<string, unknown> {
 function compatiblePersistedImageUrl(value: unknown): string | null {
   const parsed = siteImageUrlSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Draft schemas intentionally reject integration kinds a vertical does not own,
+ * but older Site rows and immutable snapshots may predate that narrowing. Keep
+ * those rows readable by projecting only the vertical's current allowlist and
+ * removing the labels at the same indices from every aligned translation.
+ */
+function compatibleVerticalIntegrationState(
+  config: ErasedVerticalConfig,
+  value: unknown,
+  translationsValue: unknown,
+): { integrations: unknown; translations: unknown } {
+  if (!Array.isArray(value)) {
+    return { integrations: value, translations: translationsValue };
+  }
+
+  const retainedIndices = value.flatMap((entry, index) => {
+    const type = jsonRecord(entry).type;
+    return typeof type === "string" &&
+      config.integrationTypes.some((allowedType) => allowedType === type)
+      ? [index]
+      : [];
+  });
+  if (retainedIndices.length === value.length) {
+    return { integrations: value, translations: translationsValue };
+  }
+
+  const integrations = retainedIndices.map((index) => value[index]);
+  const translations = Array.isArray(translationsValue)
+    ? translationsValue.map((entry) => {
+        const translation = jsonRecord(entry);
+        const labels = translation.integrationLabels;
+        if (!Array.isArray(labels) || labels.length !== value.length) {
+          return entry;
+        }
+        return {
+          ...translation,
+          integrationLabels: retainedIndices.map((index) => labels[index]),
+        };
+      })
+    : translationsValue;
+  return { integrations, translations };
 }
 
 function compatibleSourceData(

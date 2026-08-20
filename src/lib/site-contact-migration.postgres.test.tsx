@@ -6,8 +6,10 @@ import { Client } from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SiteRenderer } from "@/components/site-renderer";
 import { Vertical } from "@/generated/prisma/enums";
+import { deterministicDraft } from "@/lib/ai/site-generation";
 import { siteDraftScalarData } from "@/lib/site-persistence";
 import type { PublishedSiteVersionRecord } from "@/lib/sites";
+import { beautyConfig } from "@/lib/verticals/beauty/config";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import { sampleSiteDraft } from "@/lib/verticals/restaurant/schema";
 
@@ -99,12 +101,14 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
             evidence: [],
           },
         };
+        const predecessorBeauty = predecessorBeautySnapshot();
 
         await upgrade.query(
-          `INSERT INTO "Site" ("id", "slug", "name", "email", "status", "updatedAt")
+          `INSERT INTO "Site" ("id", "slug", "name", "email", "status", "vertical", "updatedAt")
            VALUES
-             ('site-business', 'migration-business', 'Migration Business', $1, 'LIVE', NOW()),
-             ('site-prospect', 'migration-prospect', 'Migration Prospect', $2, 'PROSPECT', NOW())`,
+             ('site-business', 'migration-business', 'Migration Business', $1, 'LIVE', 'RESTAURANT', NOW()),
+             ('site-prospect', 'migration-prospect', 'Migration Prospect', $2, 'PROSPECT', 'RESTAURANT', NOW()),
+             ('site-beauty', 'predecessor-beauty', 'Predecessor Beauty Studio', NULL, 'LIVE', 'BEAUTY', NOW())`,
           [privateRecipient, legacyProspectRecipient],
         );
         await upgrade.query(
@@ -122,6 +126,23 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
             JSON.stringify(legacySnapshot),
             JSON.stringify(sampleSiteDraft.translations),
             JSON.stringify(sampleSiteDraft.integrations),
+          ],
+        );
+        await upgrade.query(
+          `INSERT INTO "SiteVersion" (
+             "id", "version", "vertical", "theme", "themeVersion", "palette",
+             "content", "translations", "integrations", "publishedAt", "siteId"
+           ) VALUES (
+             'version-beauty', 1, 'BEAUTY', $1::jsonb, $2, $3::jsonb,
+             $4::jsonb, $5::jsonb, $6::jsonb, NOW(), 'site-beauty'
+           )`,
+          [
+            JSON.stringify(predecessorBeauty.scalar.draftTheme),
+            predecessorBeauty.scalar.draftThemeVersion,
+            JSON.stringify(predecessorBeauty.draft.palette),
+            JSON.stringify(predecessorBeauty.draft),
+            JSON.stringify(predecessorBeauty.translations),
+            JSON.stringify(predecessorBeauty.integrations),
           ],
         );
 
@@ -161,6 +182,11 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
             slug: "migration-prospect",
             email: null,
             leadContactEmail: legacyProspectRecipient,
+          },
+          {
+            slug: "predecessor-beauty",
+            email: null,
+            leadContactEmail: null,
           },
         ]);
 
@@ -204,6 +230,33 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
             url: "/menu",
             destinationUrl: "https://business.example/menu",
           },
+        ]);
+
+        const beautyVersionResult = await upgrade.query<{
+          vertical: Vertical;
+          theme: PublishedSiteVersionRecord["theme"];
+          themeVersion: string;
+          palette: PublishedSiteVersionRecord["palette"];
+          content: PublishedSiteVersionRecord["content"];
+          translations: PublishedSiteVersionRecord["translations"];
+          integrations: PublishedSiteVersionRecord["integrations"];
+          publishedAt: Date;
+        }>(
+          `SELECT "vertical", "theme", "themeVersion", "palette", "content",
+                  "translations", "integrations", "publishedAt"
+           FROM "SiteVersion"
+           WHERE "id" = 'version-beauty'`,
+        );
+        const loadedBeauty = projectPublishedSiteVersion(
+          beautyVersionResult.rows[0] as PublishedSiteVersionRecord,
+        );
+        expect(loadedBeauty?.draft.integrations.map(({ type }) => type)).toEqual(
+          ["booking", "social"],
+        );
+        expect(loadedBeauty?.draft.translations).toEqual([
+          expect.objectContaining({
+            integrationLabels: ["Réserver", "Instagram"],
+          }),
         ]);
 
         const retainedSecurityTables = await upgrade.query<{ name: string }>(
@@ -263,6 +316,66 @@ describe.skipIf(!enabled)("site-contact predecessor upgrade", () => {
     120_000,
   );
 });
+
+function predecessorBeautySnapshot() {
+  const draft = deterministicDraft(
+    {
+      source: "Predecessor beauty",
+      sourceUrl: "https://predecessor-beauty.example/",
+      sourceLocale: "en",
+      name: "Predecessor Beauty Studio",
+      description:
+        "A predecessor beauty snapshot with legacy commerce links.",
+      address: "",
+      phone: "",
+      email: "",
+      heroImageUrl: null,
+      pageText: "Predecessor Beauty Studio",
+      links: [],
+    },
+    beautyConfig,
+  );
+  return {
+    draft,
+    scalar: siteDraftScalarData(draft, beautyConfig.id),
+    integrations: [
+      legacyIntegration("booking", "Book", "https://booking.example/beauty"),
+      legacyIntegration("ordering", "Order", "https://ordering.example/beauty"),
+      legacyIntegration("delivery", "Delivery", "https://delivery.example/beauty"),
+      legacyIntegration(
+        "social",
+        "Instagram",
+        "https://www.instagram.com/predecessor_beauty/",
+      ),
+    ],
+    translations: [
+      {
+        locale: "fr",
+        eyebrow: "Aperçu beauté précédent",
+        description:
+          "Un ancien aperçu beauté avec des liens commerciaux enregistrés.",
+        attributes: {},
+        catalogSections: [
+          { name: "Services", description: "", items: [] },
+        ],
+        integrationLabels: [
+          "Réserver",
+          "Commander",
+          "Livraison",
+          "Instagram",
+        ],
+      },
+    ],
+  };
+}
+
+function legacyIntegration(
+  type: "booking" | "ordering" | "delivery" | "social",
+  label: string,
+  url: string,
+) {
+  return { type, label, provider: null, url, enabled: true, venueId: null };
+}
 
 async function applyMigration(
   client: Client,
