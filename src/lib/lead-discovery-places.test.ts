@@ -55,7 +55,7 @@ describe("place discovery", () => {
 
   it("falls back to Nominatim when no Google key is configured", async () => {
     const fetchImpl = async (input: RequestInfo | URL) => {
-      expect(String(input)).toContain("nominatim.openstreetmap.org");
+      expect(String(input)).toContain("nominatim.internal.example");
       return Response.json([
         {
           name: "Trattoria Due",
@@ -75,6 +75,7 @@ describe("place discovery", () => {
     const result = await discoverLocalPlaces({
       city: "Valletta",
       limit: 5,
+      nominatimBaseUrl: "https://nominatim.internal.example/search",
       fetchImpl,
     });
 
@@ -85,6 +86,53 @@ describe("place discovery", () => {
       websiteUrl: "https://due.example",
       city: "Valletta",
     });
+  });
+
+  it("fails closed without an approved configured discovery provider", async () => {
+    const fetchImpl = async () => {
+      throw new Error("no provider request should be attempted");
+    };
+
+    await expect(
+      discoverLocalPlaces({ city: "Valletta", limit: 5, fetchImpl }),
+    ).rejects.toThrow("requires GOOGLE_PLACES_API_KEY");
+  });
+
+  it("hard-blocks the public OSMF Nominatim endpoint", async () => {
+    const fetchImpl = async () => {
+      throw new Error("public Nominatim must not be called");
+    };
+
+    await expect(
+      discoverLocalPlaces({
+        city: "Valletta",
+        limit: 5,
+        nominatimBaseUrl: "https://nominatim.openstreetmap.org/search",
+        fetchImpl,
+      }),
+    ).rejects.toThrow("requires GOOGLE_PLACES_API_KEY");
+  });
+
+  it("does not retry an approved fallback after that provider fails", async () => {
+    let fallbackCalls = 0;
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      if (String(input).includes("places.googleapis.com")) {
+        return new Response(null, { status: 503 });
+      }
+      fallbackCalls += 1;
+      return new Response(null, { status: 503 });
+    };
+
+    await expect(
+      discoverLocalPlaces({
+        city: "Valletta",
+        limit: 5,
+        googlePlacesApiKey: "test-key",
+        nominatimBaseUrl: "https://nominatim.internal.example/search",
+        fetchImpl,
+      }),
+    ).rejects.toThrow("Nominatim returned HTTP 503");
+    expect(fallbackCalls).toBe(1);
   });
 
   it("uses the beauty adapter instead of restaurant search heuristics", async () => {
@@ -128,6 +176,47 @@ describe("place discovery", () => {
     expect(result.places).toHaveLength(1);
   });
 
+  it("does not let the first beauty subtype starve later subtype results", async () => {
+    const subtypeByQuery = new Map([
+      ["beauty salons in Valletta", "beauty_salon"],
+      ["hair salons in Valletta", "hair_salon"],
+      ["barber shops in Valletta", "barber"],
+      ["nail salons in Valletta", "nail_salon"],
+      ["spas in Valletta", "spa"],
+    ]);
+    const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const query = String(body.textQuery);
+      const subtype = subtypeByQuery.get(query);
+      expect(subtype).toBeDefined();
+      const resultCount = subtype === "beauty_salon" ? 5 : 1;
+      return Response.json({
+        places: Array.from({ length: resultCount }, (_, index) => ({
+          id: `${subtype}-${index + 1}`,
+          displayName: { text: `${subtype} ${index + 1}` },
+          formattedAddress: "12 Republic Street, Valletta, Malta",
+          types: [subtype, "point_of_interest"],
+        })),
+      });
+    };
+
+    const result = await discoverLocalPlaces({
+      vertical: "BEAUTY",
+      city: "Valletta",
+      limit: 5,
+      googlePlacesApiKey: "test-key",
+      fetchImpl,
+    });
+
+    expect(result.places.map((place) => place.categories[0])).toEqual([
+      "beauty_salon",
+      "hair_salon",
+      "barber",
+      "nail_salon",
+      "spa",
+    ]);
+  });
+
   it("queries every declared beauty subtype through Nominatim and deduplicates", async () => {
     const queries: string[] = [];
     const fetchImpl = async (input: RequestInfo | URL) => {
@@ -160,6 +249,7 @@ describe("place discovery", () => {
       vertical: "BEAUTY",
       city: "Valletta",
       limit: 10,
+      nominatimBaseUrl: "https://nominatim.internal.example/search",
       fetchImpl,
     });
 

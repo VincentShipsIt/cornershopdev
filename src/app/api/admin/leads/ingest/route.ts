@@ -31,6 +31,15 @@ const requestSchema = z.object({
   reasons: z.array(z.string().trim().min(1).max(200)).max(20),
   discoveredAt: z.iso.datetime().optional(),
   sourceProvider: z.enum(["google_places", "nominatim"]).optional(),
+  queries: z
+    .array(
+      z.object({
+        provider: z.enum(["google_places", "nominatim"]),
+        query: z.string().trim().min(1).max(200),
+      }),
+    )
+    .min(1)
+    .max(20),
   audit: localSeoAuditResultSchema.optional(),
   eligibility: leadEligibilityStateSchema.default("UNKNOWN"),
   eligibilityEvidence: leadEligibilityEvidenceSchema.default({}),

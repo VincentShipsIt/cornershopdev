@@ -9,6 +9,13 @@ import type { PlaceDiscoveryResult } from "@/lib/lead-discovery-places";
 const beautyDiscovery: PlaceDiscoveryResult = {
   provider: "google_places",
   fallbackReason: null,
+  executedQueries: [
+    { provider: "google_places", query: "beauty salons in Valletta" },
+    { provider: "google_places", query: "hair salons in Valletta" },
+    { provider: "google_places", query: "barber shops in Valletta" },
+    { provider: "google_places", query: "nail salons in Valletta" },
+    { provider: "google_places", query: "spas in Valletta" },
+  ],
   places: [
     {
       name: "Studio Iris",
@@ -68,7 +75,9 @@ describe("lead discovery command", () => {
       preflight: "dry-run",
       vertical: "BEAUTY",
       adapterId: "beauty-local-v1",
-      query: "beauty businesses in Valletta",
+      query:
+        "beauty salons in Valletta | hair salons in Valletta | barber shops in Valletta | nail salons in Valletta | spas in Valletta",
+      queries: beautyDiscovery.executedQueries,
       candidateCount: 1,
     });
     expect(result.candidates[0]).toMatchObject({
@@ -120,6 +129,7 @@ describe("lead discovery command", () => {
     expect(requests[0]).toMatchObject({
       vertical: "BEAUTY",
       categories: ["beauty_salon"],
+      queries: beautyDiscovery.executedQueries,
       eligibility: "UNKNOWN",
       eligibilityEvidence: {
         discovery_adapter: "beauty-local-v1",
@@ -169,6 +179,7 @@ describe("lead discovery command", () => {
         async (): Promise<PlaceDiscoveryResult> => ({
           provider: "google_places",
           fallbackReason: null,
+          executedQueries: [{ provider: "google_places", query }],
           places: [
             {
               ...beautyDiscovery.places[0]!,

@@ -14,12 +14,14 @@ import {
   persistSiteImport,
   recordImportFailure,
   type PersistableSiteDraft,
+  type PersistedLeadIngest,
 } from "@/lib/site-persistence";
 import { crawlSiteSource, generateDraftForVertical } from "@/lib/site-pipeline";
 import type { VerticalId } from "@/lib/verticals/types";
 import {
   createLeadEligibilityRecord,
   mergeLeadEligibilityAttributes,
+  mergeOperatorLeadAttributes,
 } from "@/lib/operator-lead-attributes";
 
 /**
@@ -44,6 +46,7 @@ export async function createOrReopenOperatorLead(input: {
   vertical: VerticalId;
   actor: string;
   contactEmail?: string;
+  leadIngest?: PersistedLeadIngest;
 }): Promise<{
   siteSlug: string;
   importJobId: string | null;
@@ -55,7 +58,13 @@ export async function createOrReopenOperatorLead(input: {
   const db = getDb();
   const existing = await db.site.findUnique({
     where: { sourceKey },
-    select: { id: true, slug: true, status: true, vertical: true },
+    select: {
+      id: true,
+      slug: true,
+      status: true,
+      vertical: true,
+      attributes: true,
+    },
   });
 
   if (existing) {
@@ -80,6 +89,19 @@ export async function createOrReopenOperatorLead(input: {
         },
         data: {
           status: "PREVIEW_READY",
+          ...(input.leadIngest
+            ? {
+                name: input.leadIngest.name,
+                phone: input.leadIngest.phone?.trim() || undefined,
+                address: input.leadIngest.address?.trim() || undefined,
+                attributes: mergeOperatorLeadAttributes(
+                  existing.attributes,
+                  input.leadIngest.discovery,
+                  input.leadIngest.audit,
+                  input.leadIngest.eligibility,
+                ) as Prisma.InputJsonValue,
+              }
+            : {}),
           ...(input.contactEmail
             ? { leadContactEmail: input.contactEmail }
             : {}),
@@ -103,6 +125,24 @@ export async function createOrReopenOperatorLead(input: {
           siteId: existing.id,
         },
       });
+      if (input.leadIngest) {
+        await tx.auditEvent.create({
+          data: {
+            type: "site.lead.ingest.updated",
+            actor: input.actor,
+            metadata: {
+              sourceKey,
+              city: input.leadIngest.discovery.city,
+              score: input.leadIngest.discovery.score,
+              placeId: input.leadIngest.discovery.placeId,
+              adapterId: input.leadIngest.discovery.adapterId,
+              eligibility: input.leadIngest.eligibility.state,
+              previousStatus: existing.status,
+            },
+            siteId: existing.id,
+          },
+        });
+      }
     });
     return {
       siteSlug: existing.slug,
@@ -126,6 +166,7 @@ export async function createOrReopenOperatorLead(input: {
       importJobId,
       actor: input.actor,
       contactEmail: input.contactEmail,
+      leadIngest: input.leadIngest,
     });
     return {
       siteSlug: persisted.draft.slug,

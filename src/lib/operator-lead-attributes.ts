@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Vertical } from "@/generated/prisma/enums";
 import type { LeadDiscoveryProvider } from "@/lib/lead-discovery";
+import type { ExecutedPlaceQuery } from "@/lib/lead-discovery-places";
 import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import {
@@ -38,6 +39,15 @@ export const leadDiscoveryRecordSchema = z.object({
   vertical: z.enum(Vertical),
   adapterId: z.string().trim().min(1).max(80),
   query: z.string().trim().min(1).max(200),
+  queries: z
+    .array(
+      z.object({
+        provider: z.enum(["google_places", "nominatim"]),
+        query: z.string().trim().min(1).max(200),
+      }),
+    )
+    .max(20)
+    .default([]),
   city: z.string().trim().min(1).max(80),
   placeId: z.string().trim().max(200).nullable(),
   sourceProvider: z.enum(["google_places", "nominatim"]),
@@ -81,6 +91,7 @@ export type OperatorLocalSeoAuditView = {
 export function createLeadDiscoveryRecord(input: {
   vertical?: VerticalId;
   query?: string;
+  queries?: ExecutedPlaceQuery[];
   city: string;
   placeId: string | null;
   sourceProvider: LeadDiscoveryProvider;
@@ -95,10 +106,22 @@ export function createLeadDiscoveryRecord(input: {
 }): LeadDiscoveryRecord {
   const vertical = input.vertical ?? Vertical.RESTAURANT;
   const adapter = resolveLeadDiscoveryAdapter(vertical);
+  const fallbackQuery =
+    input.sourceProvider === "google_places"
+      ? adapter.placeSearch.googleQuery(input.city)
+      : adapter.placeSearch.nominatimQuery(input.city);
+  const queries =
+    input.queries ?? [
+      {
+        provider: input.sourceProvider,
+        query: input.query ?? fallbackQuery,
+      },
+    ];
   return leadDiscoveryRecordSchema.parse({
     vertical,
     adapterId: adapter.adapterId,
-    query: input.query ?? adapter.placeSearch.nominatimQuery(input.city),
+    query: input.query ?? queries[0]?.query ?? fallbackQuery,
+    queries,
     city: input.city,
     placeId: input.placeId,
     sourceProvider: input.sourceProvider,

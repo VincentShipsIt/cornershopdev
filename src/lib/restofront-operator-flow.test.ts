@@ -669,6 +669,9 @@ describe("mocked Restofront operator delivery flow", () => {
         city: "Valletta",
         score: 20,
         reasons: ["Cross-vertical regression"],
+        queries: [
+          { provider: "google_places", query: "beauty salons in Valletta" },
+        ],
         generatePreview: true,
       }),
     ).rejects.toThrow("another vertical");

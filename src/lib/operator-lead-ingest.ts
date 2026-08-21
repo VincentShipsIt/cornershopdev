@@ -19,10 +19,10 @@ import {
 } from "@/lib/operator-leads";
 import { OPERATOR_LEAD_INGEST_ACTOR } from "@/lib/operator-lead-ingest-auth";
 import type { LeadDiscoveryProvider } from "@/lib/lead-discovery";
+import type { ExecutedPlaceQuery } from "@/lib/lead-discovery-places";
 import type { LocalSeoAuditResult } from "@/lib/local-seo-audit";
 import { slugify } from "@/lib/site-draft";
 import type { VerticalId } from "@/lib/verticals/types";
-import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 
 export type IngestOperatorProspectInput = {
@@ -41,6 +41,7 @@ export type IngestOperatorProspectInput = {
   reasons: string[];
   discoveredAt?: string;
   sourceProvider?: LeadDiscoveryProvider;
+  queries: ExecutedPlaceQuery[];
   audit?: LocalSeoAuditResult | null;
   eligibility?: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE";
   eligibilityEvidence?: Record<string, string>;
@@ -49,7 +50,7 @@ export type IngestOperatorProspectInput = {
 
 export type IngestOperatorProspectResult = {
   siteSlug: string;
-  importJobId: null;
+  importJobId: string | null;
   created: boolean;
   reopened: boolean;
   previewGenerated: boolean;
@@ -65,13 +66,9 @@ export async function ingestOperatorProspectLead(
     ? storedImportSource(source)
     : null;
   const vertical = input.vertical;
-  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const discovery = createLeadDiscoveryRecord({
     vertical,
-    query:
-      input.sourceProvider === "google_places"
-        ? adapter.placeSearch.googleQuery(input.city)
-        : adapter.placeSearch.nominatimQuery(input.city),
+    queries: input.queries,
     city: input.city,
     placeId: input.placeId ?? null,
     sourceProvider: input.sourceProvider ?? "nominatim",
@@ -91,14 +88,25 @@ export async function ingestOperatorProspectLead(
     updatedAt: input.discoveredAt,
   });
   const db = getDb();
-  const preview =
-    input.generatePreview !== false && sourceUrl
-      ? await createOrReopenOperatorLead({
-          source: sourceUrl,
-          vertical,
-          actor: OPERATOR_LEAD_INGEST_ACTOR,
-        })
-      : null;
+  if (input.generatePreview !== false && sourceUrl) {
+    const preview = await createOrReopenOperatorLead({
+      source: sourceUrl,
+      vertical,
+      actor: OPERATOR_LEAD_INGEST_ACTOR,
+      leadIngest: {
+        name: input.name,
+        phone: input.phone ?? null,
+        address: input.address ?? null,
+        discovery,
+        audit: input.audit ?? null,
+        eligibility,
+      },
+    });
+    return {
+      ...preview,
+      previewGenerated: true,
+    };
+  }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -167,9 +175,9 @@ export async function ingestOperatorProspectLead(
           return {
             siteSlug: existing.slug,
             importJobId: null,
-            created: preview?.created ?? false,
-            reopened: preview?.reopened ?? true,
-            previewGenerated: Boolean(preview),
+            created: false,
+            reopened: true,
+            previewGenerated: false,
             urls: buildImportUrls(existing.slug),
           };
         }

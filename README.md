@@ -350,6 +350,8 @@ instructions are in
 
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
+- `GOOGLE_PLACES_API_KEY` or an approved non-public
+  `LEAD_DISCOVERY_NOMINATIM_BASE_URL` (the public OSMF endpoint is blocked)
 - `WORKFLOW_ENABLED=true`
 - the complete `WORKFLOW_POSTGRES_*` contract listed above
 
@@ -357,7 +359,8 @@ Before release, run the read-only outreach preflight inside the reviewed
 container. It checks the committed outreach and private-contact migrations, registered Restofront sender and
 reply-to plus every other launched niche identity, Workflow/database
 configuration, verified Resend sending/receiving domains, and enabled delivery
-and inbound webhooks. It prints only check names, booleans, public endpoints,
+and inbound webhooks. It also fails closed unless a commercial or self-hosted
+lead-enumeration provider is configured. It prints only check names, booleans, public endpoints,
 niche names, and timestamps; it never prints secret values and never sends an
 email.
 

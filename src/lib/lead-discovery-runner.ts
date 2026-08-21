@@ -33,6 +33,7 @@ type RunnerDependencies = {
     city: string;
     limit: number;
     googlePlacesApiKey?: string | null;
+    nominatimBaseUrl?: string | null;
   }) => Promise<PlaceDiscoveryResult>;
   fetchHomepage?: typeof fetchHomepageSignals;
   fetchImpl?: DiscoveryFetch;
@@ -52,6 +53,7 @@ export async function runLeadDiscovery(
     city: options.city,
     limit: options.limit,
     googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY,
+    nominatimBaseUrl: env.LEAD_DISCOVERY_NOMINATIM_BASE_URL,
   });
 
   const candidates = [];
@@ -114,10 +116,8 @@ export async function runLeadDiscovery(
     mode: options.execute ? "execute" : "dry-run",
     vertical: options.vertical,
     adapterId: adapter.adapterId,
-    query:
-      discovery.provider === "google_places"
-        ? adapter.placeSearch.googleQuery(options.city)
-        : adapter.placeSearch.nominatimQuery(options.city),
+    query: discovery.executedQueries.map(({ query }) => query).join(" | "),
+    queries: discovery.executedQueries,
     city: options.city,
     limit: options.limit,
     apiUrl: options.apiUrl,
@@ -172,6 +172,7 @@ export async function runLeadDiscovery(
           score: candidate.score,
           reasons: candidate.reasons,
           sourceProvider: candidate.provider,
+          queries: discovery.executedQueries,
           audit: candidate.audit,
           eligibility: "UNKNOWN",
           eligibilityEvidence: {

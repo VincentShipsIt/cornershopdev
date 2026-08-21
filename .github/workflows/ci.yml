@@ -69,6 +69,10 @@ jobs:
         env:
           OUTREACH_INBOUND_RACE_POSTGRES_TEST: "1"
         run: bun test src/lib/outreach-inbound-race.postgres.test.ts
+      - name: Postgres operator lead ingest atomicity suite
+        env:
+          OPERATOR_LEAD_INGEST_POSTGRES_TEST: "1"
+        run: bun test src/lib/operator-lead-ingest.postgres.test.ts
       - name: Postgres authentication retry concurrency suite
         env:
           AUTH_MAGIC_LINK_RETRY_POSTGRES_TEST: "1"

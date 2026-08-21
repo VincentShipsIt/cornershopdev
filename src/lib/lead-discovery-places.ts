@@ -29,11 +29,16 @@ export type PlaceDiscoveryResult = {
   places: DiscoveredPlace[];
   provider: LeadDiscoveryProvider;
   fallbackReason: string | null;
+  executedQueries: ExecutedPlaceQuery[];
+};
+
+export type ExecutedPlaceQuery = {
+  provider: LeadDiscoveryProvider;
+  query: string;
 };
 
 const GOOGLE_TEXT_SEARCH_URL =
   "https://places.googleapis.com/v1/places:searchText";
-const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const GENERIC_PLACE_TYPES = new Set([
   "point_of_interest",
   "establishment",
@@ -47,6 +52,7 @@ export async function discoverLocalPlaces(input: {
   city: string;
   limit: number;
   googlePlacesApiKey?: string | null;
+  nominatimBaseUrl?: string | null;
   fetchImpl?: DiscoveryFetch;
 }): Promise<PlaceDiscoveryResult> {
   const vertical = input.vertical ?? Vertical.RESTAURANT;
@@ -54,55 +60,74 @@ export async function discoverLocalPlaces(input: {
   const city = input.city.trim();
   const limit = Math.min(100, Math.max(1, input.limit));
   const apiKey = input.googlePlacesApiKey?.trim() || null;
+  const nominatimBaseUrl = approvedNominatimBaseUrl(input.nominatimBaseUrl);
+  const executedQueries: ExecutedPlaceQuery[] = [];
 
   if (apiKey) {
+    let googlePlaces: DiscoveredPlace[] = [];
+    let googleFailure: unknown = null;
     try {
-      const places = await searchGooglePlaces({
+      googlePlaces = await searchGooglePlaces({
         vertical,
         city,
         limit,
         apiKey,
         fetchImpl,
+        onQuery: (query) =>
+          executedQueries.push({ provider: "google_places", query }),
       });
-      if (places.length > 0) {
-        return { places, provider: "google_places", fallbackReason: null };
-      }
-      return {
-        places: await searchNominatimPlaces({
-          vertical,
-          city,
-          limit,
-          fetchImpl,
-        }),
-        provider: "nominatim",
-        fallbackReason: `Google Places returned no ${resolveVerticalConfig(vertical).marketing.audience}`,
-      };
     } catch (error) {
+      googleFailure = error;
+    }
+    if (googlePlaces.length > 0) {
       return {
-        places: await searchNominatimPlaces({
-          vertical,
-          city,
-          limit,
-          fetchImpl,
-        }),
-        provider: "nominatim",
-        fallbackReason:
-          error instanceof Error
-            ? error.message
-            : "Google Places request failed",
+        places: googlePlaces,
+        provider: "google_places",
+        fallbackReason: null,
+        executedQueries,
       };
     }
+    if (!nominatimBaseUrl) {
+      if (googleFailure) throw googleFailure;
+      throw new Error(
+        `Google Places returned no ${resolveVerticalConfig(vertical).marketing.audience} and no approved non-public fallback is configured`,
+      );
+    }
+    return {
+      places: await searchNominatimPlaces({
+        vertical,
+        city,
+        limit,
+        baseUrl: nominatimBaseUrl,
+        fetchImpl,
+        onQuery: (query) =>
+          executedQueries.push({ provider: "nominatim", query }),
+      }),
+      provider: "nominatim",
+      fallbackReason: googleFailure
+        ? googleFailure instanceof Error
+          ? googleFailure.message
+          : "Google Places request failed"
+        : `Google Places returned no ${resolveVerticalConfig(vertical).marketing.audience}`,
+      executedQueries,
+    };
   }
+
+  if (!nominatimBaseUrl) throw discoveryProviderRequired();
 
   return {
     places: await searchNominatimPlaces({
       vertical,
       city,
       limit,
+      baseUrl: nominatimBaseUrl,
       fetchImpl,
+      onQuery: (query) =>
+        executedQueries.push({ provider: "nominatim", query }),
     }),
     provider: "nominatim",
     fallbackReason: null,
+    executedQueries,
   };
 }
 
@@ -112,6 +137,7 @@ export async function searchGooglePlaces(input: {
   limit: number;
   apiKey: string;
   fetchImpl: DiscoveryFetch;
+  onQuery?: (query: string) => void;
 }): Promise<DiscoveredPlace[]> {
   const adapter = resolveLeadDiscoveryAdapter(input.vertical);
   const queries = adapter.placeSearch.googleQueries?.(input.city) ?? [
@@ -120,9 +146,11 @@ export async function searchGooglePlaces(input: {
       includedType: adapter.placeSearch.googleIncludedType,
     },
   ];
-  const places = new Map<string, DiscoveredPlace>();
+  const batches: DiscoveredPlace[][] = [];
 
   for (const query of queries) {
+    input.onQuery?.(query.query);
+    const queryPlaces = new Map<string, DiscoveredPlace>();
     let pageToken: string | null = null;
     do {
       const body: Record<string, unknown> = {
@@ -166,21 +194,24 @@ export async function searchGooglePlaces(input: {
       const rows = Array.isArray(payload?.places) ? payload.places : [];
       for (const row of rows) {
         const place = parseGooglePlace(row, input.city);
-        if (place) mergeDiscoveredPlace(places, place);
+        if (place) mergeDiscoveredPlace(queryPlaces, place);
       }
 
       pageToken = rows.length > 0 ? asString(payload?.nextPageToken) : null;
-    } while (pageToken && places.size < input.limit);
+    } while (pageToken && queryPlaces.size < input.limit);
+    batches.push([...queryPlaces.values()]);
   }
 
-  return [...places.values()].slice(0, input.limit);
+  return selectFairPlaces(batches, input.limit);
 }
 
 export async function searchNominatimPlaces(input: {
   vertical: VerticalId;
   city: string;
   limit: number;
+  baseUrl: URL;
   fetchImpl: DiscoveryFetch;
+  onQuery?: (query: string) => void;
 }): Promise<DiscoveredPlace[]> {
   const adapter = resolveLeadDiscoveryAdapter(input.vertical);
   const queries = adapter.placeSearch.nominatimQueries?.(input.city) ?? [
@@ -189,9 +220,10 @@ export async function searchNominatimPlaces(input: {
       fallbackCategory: adapter.placeSearch.fallbackCategory,
     },
   ];
-  const places = new Map<string, DiscoveredPlace>();
+  const batches: DiscoveredPlace[][] = [];
   for (const query of queries) {
-    const url = new URL(NOMINATIM_SEARCH_URL);
+    input.onQuery?.(query.query);
+    const url = new URL(input.baseUrl);
     url.searchParams.set("q", query.query);
     url.searchParams.set("format", "jsonv2");
     url.searchParams.set("addressdetails", "1");
@@ -210,17 +242,77 @@ export async function searchNominatimPlaces(input: {
     }
 
     const rows = await response.json();
-    if (!Array.isArray(rows)) continue;
+    if (!Array.isArray(rows)) {
+      batches.push([]);
+      continue;
+    }
+    const queryPlaces = new Map<string, DiscoveredPlace>();
     for (const row of rows) {
       const place = parseNominatimPlace(
         row,
         input.city,
         query.fallbackCategory,
       );
-      if (place) mergeDiscoveredPlace(places, place);
+      if (place) mergeDiscoveredPlace(queryPlaces, place);
     }
+    batches.push([...queryPlaces.values()]);
   }
-  return [...places.values()].slice(0, input.limit);
+  return selectFairPlaces(batches, input.limit);
+}
+
+function selectFairPlaces(
+  batches: DiscoveredPlace[][],
+  limit: number,
+): DiscoveredPlace[] {
+  const canonical = new Map<string, DiscoveredPlace>();
+  for (const batch of batches) {
+    for (const place of batch) mergeDiscoveredPlace(canonical, place);
+  }
+
+  const selectedIds = new Set<string>();
+  const selected: DiscoveredPlace[] = [];
+  for (let index = 0; selected.length < limit; index += 1) {
+    let foundCandidate = false;
+    for (const batch of batches) {
+      const place = batch[index];
+      if (!place) continue;
+      foundCandidate = true;
+      if (selectedIds.has(place.placeId)) continue;
+      selectedIds.add(place.placeId);
+      selected.push(canonical.get(place.placeId) ?? place);
+      if (selected.length === limit) break;
+    }
+    if (!foundCandidate) break;
+  }
+  return selected;
+}
+
+export function approvedNominatimBaseUrl(
+  rawUrl: string | null | undefined,
+): URL | null {
+  if (!rawUrl?.trim()) return null;
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      hostname === "nominatim.openstreetmap.org" ||
+      hostname.endsWith(".nominatim.openstreetmap.org")
+    ) {
+      return null;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function discoveryProviderRequired(): Error {
+  return new Error(
+    "Lead discovery requires GOOGLE_PLACES_API_KEY or an approved non-public LEAD_DISCOVERY_NOMINATIM_BASE_URL",
+  );
 }
 
 function mergeDiscoveredPlace(

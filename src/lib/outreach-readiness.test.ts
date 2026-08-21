@@ -15,6 +15,7 @@ const configuredEnvironment = {
   RESEND_WEBHOOK_SECRET: "whsec_private_value",
   CLAIM_TOKEN_SECRET: "a-private-value-that-is-at-least-32-characters",
   OUTREACH_LEGAL_CONTROLLER: "Corner Shop Labs Ltd",
+  GOOGLE_PLACES_API_KEY: "test-google-places-key",
   NEXT_PUBLIC_APP_URL: "https://cornershop.dev",
   WORKFLOW_ENABLED: "true",
   WORKFLOW_TARGET_WORLD: "@workflow/world-postgres",
@@ -41,6 +42,7 @@ describe("outreach environment readiness", () => {
         resendWebhookSecret: true,
         claimTokenSecret: true,
         legalController: true,
+        leadDiscoveryProvider: true,
         workflow: true,
         appOrigin: true,
         sender: true,
@@ -80,6 +82,7 @@ describe("outreach environment readiness", () => {
       configuredEnvironment.RESEND_WEBHOOK_SECRET,
       configuredEnvironment.CLAIM_TOKEN_SECRET,
       configuredEnvironment.OUTREACH_LEGAL_CONTROLLER,
+      configuredEnvironment.GOOGLE_PLACES_API_KEY,
       configuredEnvironment.WORKFLOW_POSTGRES_URL,
     ]) {
       expect(serialized).not.toContain(value);
@@ -141,6 +144,35 @@ describe("outreach environment readiness", () => {
       expect(readiness.checks.legalController).toBe(false);
       expect(readiness.missingOrInvalid).toContain("OUTREACH_LEGAL_CONTROLLER");
     }
+  });
+
+  it("requires an approved lead-enumeration provider and blocks public OSMF Nominatim", () => {
+    for (const providerEnvironment of [
+      {},
+      {
+        LEAD_DISCOVERY_NOMINATIM_BASE_URL:
+          "https://nominatim.openstreetmap.org/search",
+      },
+    ]) {
+      const readiness = evaluateOutreachEnvironment({
+        ...configuredEnvironment,
+        GOOGLE_PLACES_API_KEY: undefined,
+        ...providerEnvironment,
+      });
+      expect(readiness.ready).toBe(false);
+      expect(readiness.checks.leadDiscoveryProvider).toBe(false);
+      expect(readiness.missingOrInvalid).toContain(
+        "GOOGLE_PLACES_API_KEY|LEAD_DISCOVERY_NOMINATIM_BASE_URL",
+      );
+    }
+
+    const selfHosted = evaluateOutreachEnvironment({
+      ...configuredEnvironment,
+      GOOGLE_PLACES_API_KEY: undefined,
+      LEAD_DISCOVERY_NOMINATIM_BASE_URL:
+        "https://nominatim.internal.example/search",
+    });
+    expect(selfHosted.checks.leadDiscoveryProvider).toBe(true);
   });
 });
 

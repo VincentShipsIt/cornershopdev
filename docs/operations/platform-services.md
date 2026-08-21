@@ -86,7 +86,10 @@ bun run leads:discover -- --vertical beauty --city Valletta
 `--execute` requires `OPERATOR_LEAD_INGEST_TOKEN`. Web-backed candidates run
 through the vertical's real import/generation pipeline and persist a private
 preview; place-only candidates remain prospects until an operator supplies a
-source. Execute never sends outreach. It records the adapter/query/categories,
+source. Redirected sources, preview content, discovery/audit metadata, and
+eligibility are committed to one canonical site in one serializable
+transaction. Execute never sends outreach. It records the adapter, every
+provider/query pair actually executed, and listing categories,
 an operator-owned `UNKNOWN | ELIGIBLE | INELIGIBLE` field and evidence fields.
 These are operational evidence, not legal conclusions. Electronic outreach is
 fail-closed unless `channel_basis` is `VERIFIED_WRITTEN_CONSENT` or
@@ -111,6 +114,13 @@ redirect-revalidated public fetch boundary as imports. Provider-controlled
 private IPv4/IPv6 literals, private DNS answers, rebinding, and redirects fail
 closed. One normalized source belongs to exactly one vertical; manual and
 automated ingest reject cross-vertical reuse before changing a lead.
+
+Systematic discovery also fails closed unless `GOOGLE_PLACES_API_KEY` or an
+explicit commercial/self-hosted Nominatim-compatible
+`LEAD_DISCOVERY_NOMINATIM_BASE_URL` is configured. The public OSMF
+`nominatim.openstreetmap.org` endpoint is hard-blocked and is never an implicit
+fallback. Store whichever approved provider setting is used under the matching
+`/shipshit/production/cornershopdev/` SSM path.
 
 Store `RESEND_WEBHOOK_SECRET` as a SecureString at
 `/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register
@@ -147,7 +157,7 @@ migrations, required tables/columns/indexes (including the private
 `leadContactEmail` boundary), application database, and Workflow database;
 lists Resend delivery/inbound webhook metadata and domain
 capabilities; and validates every launched niche's configured sender and
-reply-to identity. It performs no database writes, configuration changes, or
+reply-to identity plus the approved lead-enumeration provider. It performs no database writes, configuration changes, or
 email sends. Output contains only check names, booleans, public endpoints,
 niche names, and timestamps—never database URLs, API keys, signing secrets,
 mailbox contents, or provider error bodies. A failed check is a release blocker;

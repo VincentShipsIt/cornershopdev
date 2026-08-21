@@ -14,6 +14,12 @@ import {
 } from "@/lib/import-identity";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+import {
+  mergeOperatorLeadAttributes,
+  type LeadDiscoveryRecord,
+  type LeadEligibilityRecord,
+} from "@/lib/operator-lead-attributes";
+import type { LocalSeoAuditResult } from "@/lib/local-seo-audit";
 
 const retryablePrismaCodes = new Set(["P2002", "P2034"]);
 const mutableImportStatuses = new Set(["PROSPECT", "PREVIEW_READY"]);
@@ -100,6 +106,15 @@ export type PersistedSiteImport<TDraft extends PersistableSiteDraft> = {
   importJobId: string;
   urls: ImportUrls;
   created: boolean;
+};
+
+export type PersistedLeadIngest = {
+  name: string;
+  phone: string | null;
+  address: string | null;
+  discovery: LeadDiscoveryRecord;
+  audit: LocalSeoAuditResult | null;
+  eligibility: LeadEligibilityRecord;
 };
 
 export type OwnerDraftSaveOptions = {
@@ -252,10 +267,31 @@ export async function persistSiteImport<
   importJobId: string;
   actor?: string;
   contactEmail?: string;
+  leadIngest?: PersistedLeadIngest;
 }): Promise<PersistedSiteImport<TDraft>> {
   const db = requireImportDatabase();
   const config = resolveVerticalConfig(input.vertical);
-  const draft = config.draftSchema.parse(input.draft) as TDraft;
+  let draft = config.draftSchema.parse(input.draft) as TDraft;
+  if (input.leadIngest) {
+    const validatedLeadDraft = config.draftSchema.parse({
+      ...draft,
+      name: input.leadIngest.name,
+      phone: input.leadIngest.phone?.trim() || draft.phone,
+      address: input.leadIngest.address?.trim() || draft.address,
+    }) as TDraft;
+    draft = {
+      ...validatedLeadDraft,
+      // Operational lead evidence deliberately sits beside the vertical's
+      // content attributes. Add it after content-schema validation because
+      // Zod strips keys that no storefront renderer owns.
+      attributes: mergeOperatorLeadAttributes(
+        validatedLeadDraft.attributes,
+        input.leadIngest.discovery,
+        input.leadIngest.audit,
+        input.leadIngest.eligibility,
+      ),
+    } as TDraft;
+  }
   const sourceKey = normalizeImportSource(draft.sourceUrl ?? input.source);
   const verticalSlug = input.vertical.toLowerCase();
 
@@ -378,6 +414,26 @@ export async function persistSiteImport<
               siteId: site.id,
             },
           });
+          if (input.leadIngest) {
+            await tx.auditEvent.create({
+              data: {
+                type: existing
+                  ? "site.lead.ingest.updated"
+                  : "site.lead.ingested",
+                actor: input.actor ?? "system:lead-discovery",
+                metadata: {
+                  sourceKey,
+                  city: input.leadIngest.discovery.city,
+                  score: input.leadIngest.discovery.score,
+                  placeId: input.leadIngest.discovery.placeId,
+                  adapterId: input.leadIngest.discovery.adapterId,
+                  eligibility: input.leadIngest.eligibility.state,
+                  previousStatus: existing?.status ?? null,
+                },
+                siteId: site.id,
+              },
+            });
+          }
           await tx.importJob.update({
             where: { id: input.importJobId },
             data: {

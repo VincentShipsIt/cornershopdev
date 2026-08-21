@@ -3,6 +3,7 @@ import { listOutreachVerticals } from "@/lib/lead-generation/registry";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import { configuredOutreachController } from "@/lib/electronic-outreach-eligibility";
+import { approvedNominatimBaseUrl } from "@/lib/lead-discovery-places";
 
 export const OUTREACH_MIGRATIONS = [
   "20260819120000_outreach_inbound_mailbox",
@@ -33,6 +34,7 @@ export type OutreachEnvironmentReadiness = {
     resendWebhookSecret: boolean;
     claimTokenSecret: boolean;
     legalController: boolean;
+    leadDiscoveryProvider: boolean;
     workflow: boolean;
     appOrigin: boolean;
     sender: boolean;
@@ -90,6 +92,9 @@ export function evaluateOutreachEnvironment(
       env.CLAIM_TOKEN_SECRET && env.CLAIM_TOKEN_SECRET.length >= 32,
     ),
     legalController: Boolean(configuredOutreachController(env)),
+    leadDiscoveryProvider:
+      Boolean(env.GOOGLE_PLACES_API_KEY?.trim()) ||
+      Boolean(approvedNominatimBaseUrl(env.LEAD_DISCOVERY_NOMINATIM_BASE_URL)),
     workflow:
       env.WORKFLOW_ENABLED === "true" &&
       env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres" &&
@@ -114,6 +119,8 @@ export function evaluateOutreachEnvironment(
     resendWebhookSecret: "RESEND_WEBHOOK_SECRET",
     claimTokenSecret: "CLAIM_TOKEN_SECRET",
     legalController: "OUTREACH_LEGAL_CONTROLLER",
+    leadDiscoveryProvider:
+      "GOOGLE_PLACES_API_KEY|LEAD_DISCOVERY_NOMINATIM_BASE_URL",
     workflow: "WORKFLOW_*",
     appOrigin: "NEXT_PUBLIC_APP_URL",
     sender: "VERTICAL_MARKETING_EMAIL_FROM",

@@ -28,6 +28,10 @@ describe("operator lead attributes", () => {
       city: "Lyon",
       placeId: "ChIJ123",
       sourceProvider: "google_places",
+      queries: [
+        { provider: "google_places", query: "restaurants in Lyon" },
+        { provider: "google_places", query: "bistros in Lyon" },
+      ],
       score: 42,
       reasons: ["No menu link found on the homepage"],
       discoveredAt: "2026-08-19T10:00:00.000Z",
@@ -59,6 +63,10 @@ describe("operator lead attributes", () => {
 
     expect(merged.cuisine).toBe("Lyonnais");
     expect(parseLeadDiscovery(merged)?.score).toBe(42);
+    expect(parseLeadDiscovery(merged)?.queries).toEqual([
+      { provider: "google_places", query: "restaurants in Lyon" },
+      { provider: "google_places", query: "bistros in Lyon" },
+    ]);
     expect(merged.localSeoAudit).toMatchObject({ score: audit.score });
     expect(parseLeadEligibility(merged)).toMatchObject({
       state: "UNKNOWN",
