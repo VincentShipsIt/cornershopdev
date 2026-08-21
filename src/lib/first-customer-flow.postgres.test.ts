@@ -515,6 +515,9 @@ describe.skipIf(!enabled)(
         ...sampleSiteDraft,
         slug,
         name: "Private first-customer edit",
+        heroImageUrl: firstCustomerHeroUrl,
+        heroOriginalImageUrl: firstCustomerHeroUrl,
+        heroImageProvenance: "owner" as const,
       };
       const originalIntegrationDigest = integrationUrlDigest(
         sampleSiteDraft.integrations,
