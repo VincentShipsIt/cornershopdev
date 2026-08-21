@@ -161,7 +161,28 @@ function matchesStatus(
 }
 
 const fakeModels = {
-  $queryRaw: async () => [],
+  $queryRaw: async (
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<unknown[]> => {
+    const sql = strings.join("?");
+    // Locked lead read used by createOrReopenOperatorLead.
+    if (sql.includes('FROM "Site"') && sql.includes('"sourceKey"')) {
+      if (typeof values[0] === "string" && values[0] !== site.sourceKey) {
+        return [];
+      }
+      return [
+        {
+          id: site.id,
+          slug: site.slug,
+          status: site.status,
+          vertical: site.vertical,
+          attributes: site.attributes,
+        },
+      ];
+    }
+    return [];
+  },
   $executeRaw: async () => 0,
   site: {
     findUnique: async (input: {

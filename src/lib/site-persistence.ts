@@ -16,6 +16,7 @@ import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import {
   mergeOperatorLeadAttributes,
+  preservePersistedLeadEligibility,
   type LeadDiscoveryRecord,
   type LeadEligibilityRecord,
 } from "@/lib/operator-lead-attributes";
@@ -313,6 +314,7 @@ export async function persistSiteImport<
               sourceUrl: true,
               status: true,
               vertical: true,
+              attributes: true,
             },
           });
 
@@ -339,6 +341,7 @@ export async function persistSiteImport<
                   sourceUrl: true,
                   status: true,
                   vertical: true,
+                  attributes: true,
                 },
               });
               if (!collision) {
@@ -379,7 +382,10 @@ export async function persistSiteImport<
                     input.vertical,
                     sourceKey,
                     input.leadIngest
-                      ? (draft.attributes as Prisma.InputJsonValue)
+                      ? (preservePersistedLeadEligibility(
+                          draft.attributes as Record<string, unknown>,
+                          existing.attributes,
+                        ) as Prisma.InputJsonValue)
                       : undefined,
                   ),
                   ...(input.contactEmail

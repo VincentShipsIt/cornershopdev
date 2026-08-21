@@ -56,18 +56,28 @@ export async function createOrReopenOperatorLead(input: {
 }> {
   const sourceKey = normalizeImportSource(input.source);
   const db = getDb();
-  const existing = await db.site.findUnique({
-    where: { sourceKey },
-    select: {
-      id: true,
-      slug: true,
-      status: true,
-      vertical: true,
-      attributes: true,
-    },
-  });
 
-  if (existing) {
+  const reopened = await db.$transaction(async (tx) => {
+    // Locked read: the row lock is held from the attribute read until commit,
+    // so a concurrent operator eligibility edit can never land between the
+    // merge input and the attribute write.
+    const locked = await tx.$queryRaw<
+      Array<{
+        id: string;
+        slug: string;
+        status: string;
+        vertical: string;
+        attributes: unknown;
+      }>
+    >`
+      SELECT "id", "slug", "status", "vertical", "attributes"
+      FROM "Site"
+      WHERE "sourceKey" = ${sourceKey}
+      FOR UPDATE
+    `;
+    const existing = locked[0];
+    if (!existing) return null;
+
     if (existing.vertical !== input.vertical) {
       throw new OperatorLeadError(
         "This source already belongs to another vertical and was not changed.",
@@ -80,76 +90,76 @@ export async function createOrReopenOperatorLead(input: {
         409,
       );
     }
-    await db.$transaction(async (tx) => {
-      const reopened = await tx.site.updateMany({
-        where: {
-          id: existing.id,
-          vertical: input.vertical,
-          status: { in: ["PROSPECT", "PREVIEW_READY"] },
+    const result = await tx.site.updateMany({
+      where: {
+        id: existing.id,
+        vertical: input.vertical,
+        status: { in: ["PROSPECT", "PREVIEW_READY"] },
+      },
+      data: {
+        status: "PREVIEW_READY",
+        ...(input.leadIngest
+          ? {
+              name: input.leadIngest.name,
+              phone: input.leadIngest.phone?.trim() || undefined,
+              address: input.leadIngest.address?.trim() || undefined,
+              attributes: mergeOperatorLeadAttributes(
+                existing.attributes,
+                input.leadIngest.discovery,
+                input.leadIngest.audit,
+                input.leadIngest.eligibility,
+              ) as Prisma.InputJsonValue,
+            }
+          : {}),
+        ...(input.contactEmail ? { leadContactEmail: input.contactEmail } : {}),
+      },
+    });
+    if (result.count !== 1) {
+      throw new OperatorLeadError(
+        "This lead changed while it was being reopened.",
+        409,
+      );
+    }
+    await tx.auditEvent.create({
+      data: {
+        type: "site.lead.reopened",
+        actor: input.actor,
+        metadata: {
+          sourceKey,
+          previousStatus: existing.status,
+          contactEmailUpdated: Boolean(input.contactEmail),
         },
-        data: {
-          status: "PREVIEW_READY",
-          ...(input.leadIngest
-            ? {
-                name: input.leadIngest.name,
-                phone: input.leadIngest.phone?.trim() || undefined,
-                address: input.leadIngest.address?.trim() || undefined,
-                attributes: mergeOperatorLeadAttributes(
-                  existing.attributes,
-                  input.leadIngest.discovery,
-                  input.leadIngest.audit,
-                  input.leadIngest.eligibility,
-                ) as Prisma.InputJsonValue,
-              }
-            : {}),
-          ...(input.contactEmail
-            ? { leadContactEmail: input.contactEmail }
-            : {}),
-        },
-      });
-      if (reopened.count !== 1) {
-        throw new OperatorLeadError(
-          "This lead changed while it was being reopened.",
-          409,
-        );
-      }
+        siteId: existing.id,
+      },
+    });
+    if (input.leadIngest) {
       await tx.auditEvent.create({
         data: {
-          type: "site.lead.reopened",
+          type: "site.lead.ingest.updated",
           actor: input.actor,
           metadata: {
             sourceKey,
+            city: input.leadIngest.discovery.city,
+            score: input.leadIngest.discovery.score,
+            placeId: input.leadIngest.discovery.placeId,
+            adapterId: input.leadIngest.discovery.adapterId,
+            eligibility: input.leadIngest.eligibility.state,
             previousStatus: existing.status,
-            contactEmailUpdated: Boolean(input.contactEmail),
           },
           siteId: existing.id,
         },
       });
-      if (input.leadIngest) {
-        await tx.auditEvent.create({
-          data: {
-            type: "site.lead.ingest.updated",
-            actor: input.actor,
-            metadata: {
-              sourceKey,
-              city: input.leadIngest.discovery.city,
-              score: input.leadIngest.discovery.score,
-              placeId: input.leadIngest.discovery.placeId,
-              adapterId: input.leadIngest.discovery.adapterId,
-              eligibility: input.leadIngest.eligibility.state,
-              previousStatus: existing.status,
-            },
-            siteId: existing.id,
-          },
-        });
-      }
-    });
+    }
+    return { slug: existing.slug };
+  });
+
+  if (reopened) {
     return {
-      siteSlug: existing.slug,
+      siteSlug: reopened.slug,
       importJobId: null,
       created: false,
       reopened: true,
-      urls: buildImportUrls(existing.slug),
+      urls: buildImportUrls(reopened.slug),
     };
   }
 

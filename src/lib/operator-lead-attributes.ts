@@ -162,13 +162,56 @@ export function mergeOperatorLeadAttributes(
     [LEAD_DISCOVERY_ATTRIBUTE_KEY]: discovery,
     [LOCAL_SEO_AUDIT_ATTRIBUTE_KEY]:
       audit ?? current[LOCAL_SEO_AUDIT_ATTRIBUTE_KEY] ?? null,
-    [LEAD_ELIGIBILITY_ATTRIBUTE_KEY]:
-      eligibility ??
-      current[LEAD_ELIGIBILITY_ATTRIBUTE_KEY] ??
-      createLeadEligibilityRecord({
-        updatedBy: "system:lead-discovery",
-        updatedAt: discovery.discoveredAt,
-      }),
+    [LEAD_ELIGIBILITY_ATTRIBUTE_KEY]: resolveAutomatedLeadEligibility(
+      parseLeadEligibility(current),
+      eligibility,
+      discovery,
+    ),
+  };
+}
+
+/**
+ * Automated discovery only ever produces UNKNOWN eligibility. An operator's
+ * ELIGIBLE/INELIGIBLE decision and its consent evidence are owned by the
+ * operator console, so a routine discovery rerun must never downgrade or
+ * delete them; only an explicit operator action may replace that record.
+ */
+function resolveAutomatedLeadEligibility(
+  current: LeadEligibilityRecord | null,
+  incoming: LeadEligibilityRecord | undefined,
+  discovery: LeadDiscoveryRecord,
+): LeadEligibilityRecord {
+  if (current && (!incoming || incoming.state === "UNKNOWN")) {
+    return current;
+  }
+  return (
+    incoming ??
+    current ??
+    createLeadEligibilityRecord({
+      updatedBy: "system:lead-discovery",
+      updatedAt: discovery.discoveredAt,
+    })
+  );
+}
+
+/**
+ * Re-binds the persisted row's operator-owned eligibility onto attributes
+ * merged from a freshly generated draft. The exact-source update path builds
+ * draft attributes from crawl output, which never contains the live row's
+ * eligibility record, so without this re-bind the wholesale attribute write
+ * would silently drop operator evidence on every rerun.
+ */
+export function preservePersistedLeadEligibility(
+  incomingAttributes: Record<string, unknown>,
+  persistedAttributes: unknown,
+): Record<string, unknown> {
+  const persistedEligibility = parseLeadEligibility(persistedAttributes);
+  if (!persistedEligibility) return incomingAttributes;
+  const incoming = parseLeadEligibility(incomingAttributes);
+  if (incoming && incoming.state !== "UNKNOWN") return incomingAttributes;
+  return {
+    ...incomingAttributes,
+    [LEAD_ELIGIBILITY_ATTRIBUTE_KEY]: persistedEligibility,
   };
 }
 

@@ -111,19 +111,28 @@ export async function ingestOperatorProspectLead(
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await db.$transaction(async (tx) => {
-        const existing = await tx.site.findUnique({
-          where: { sourceKey },
-          select: {
-            id: true,
-            slug: true,
-            status: true,
-            vertical: true,
-            phone: true,
-            address: true,
-            sourceUrl: true,
-            attributes: true,
-          },
-        });
+        // Locked read: the row lock is held from the attribute read until
+        // commit, so a concurrent operator eligibility edit can never land
+        // between the merge input and the attribute write.
+        const locked = await tx.$queryRaw<
+          Array<{
+            id: string;
+            slug: string;
+            status: string;
+            vertical: string;
+            phone: string | null;
+            address: string | null;
+            sourceUrl: string | null;
+            attributes: unknown;
+          }>
+        >`
+          SELECT "id", "slug", "status", "vertical", "phone", "address",
+                 "sourceUrl", "attributes"
+          FROM "Site"
+          WHERE "sourceKey" = ${sourceKey}
+          FOR UPDATE
+        `;
+        const existing = locked[0] ?? null;
         const action = resolveProspectIngestAction(existing, vertical);
         if (action === "conflict") {
           throw new OperatorLeadError(

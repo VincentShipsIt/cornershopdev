@@ -15,6 +15,19 @@ const failedSlug = `failed-redirected-lead-${suffix}`;
 const failurePlaceId = `forced-ingest-failure-${suffix}`;
 const triggerName = `lead_ingest_failure_trigger_${safeSuffix}`;
 const triggerFunction = `lead_ingest_failure_function_${safeSuffix}`;
+const rerunSource = `https://rerun-${suffix}.example.test`;
+const rerunSlug = `rerun-eligible-${suffix}`;
+const reopenSource = `https://reopen-${suffix}.example.test`;
+const reopenSlug = `reopen-eligible-${suffix}`;
+const redirectUpdateSource = `https://redirect-update-${suffix}.example.test`;
+const redirectUpdateSlug = `redirect-update-eligible-${suffix}`;
+const fenceSource = `https://fence-${suffix}.example.test`;
+const fenceSlug = `fence-eligible-${suffix}`;
+const fencePlaceId = `fence-ingest-${suffix}`;
+const fenceTriggerName = `lead_ingest_fence_trigger_${safeSuffix}`;
+const fenceTriggerFunction = `lead_ingest_fence_function_${safeSuffix}`;
+const fenceLockClassId = 1381259068;
+const fenceLockObjectId = 172;
 
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let createImportJob: typeof import("@/lib/site-persistence").createImportJob;
@@ -23,6 +36,11 @@ let recordImportFailure: typeof import("@/lib/site-persistence").recordImportFai
 let sampleSiteDraft: typeof import("@/lib/restaurant").sampleSiteDraft;
 let createLeadDiscoveryRecord: typeof import("@/lib/operator-lead-attributes").createLeadDiscoveryRecord;
 let createLeadEligibilityRecord: typeof import("@/lib/operator-lead-attributes").createLeadEligibilityRecord;
+let parseLeadEligibility: typeof import("@/lib/operator-lead-attributes").parseLeadEligibility;
+let parseLeadDiscovery: typeof import("@/lib/operator-lead-attributes").parseLeadDiscovery;
+let ingestOperatorProspectLead: typeof import("@/lib/operator-lead-ingest").ingestOperatorProspectLead;
+let createOrReopenOperatorLead: typeof import("@/lib/operator-leads").createOrReopenOperatorLead;
+let recordOperatorLeadAction: typeof import("@/lib/operator-leads").recordOperatorLeadAction;
 let normalizeImportSource: typeof import("@/lib/import-identity").normalizeImportSource;
 
 describe.skipIf(!enabled)("operator discovery import PostgreSQL atomicity", () => {
@@ -34,6 +52,16 @@ describe.skipIf(!enabled)("operator discovery import PostgreSQL atomicity", () =
     ({ sampleSiteDraft } = await import("@/lib/restaurant"));
     ({ createLeadDiscoveryRecord, createLeadEligibilityRecord } =
       await import("@/lib/operator-lead-attributes"));
+    ({
+      parseLeadEligibility,
+      parseLeadDiscovery,
+    } = await import("@/lib/operator-lead-attributes"));
+    ({ ingestOperatorProspectLead } = await import(
+      "@/lib/operator-lead-ingest"
+    ));
+    ({ createOrReopenOperatorLead, recordOperatorLeadAction } = await import(
+      "@/lib/operator-leads"
+    ));
     ({ normalizeImportSource } = await import("@/lib/import-identity"));
 
     await db.$executeRawUnsafe(`
@@ -52,6 +80,21 @@ describe.skipIf(!enabled)("operator discovery import PostgreSQL atomicity", () =
       BEFORE INSERT ON "AuditEvent"
       FOR EACH ROW EXECUTE FUNCTION "${triggerFunction}"()
     `);
+    await db.$executeRawUnsafe(`
+      CREATE FUNCTION "${fenceTriggerFunction}"() RETURNS trigger AS $fence$
+      BEGIN
+        IF NEW."slug" = '${fenceSlug}' THEN
+          PERFORM pg_advisory_xact_lock(${fenceLockClassId}, ${fenceLockObjectId});
+        END IF;
+        RETURN NEW;
+      END
+      $fence$ LANGUAGE plpgsql
+    `);
+    await db.$executeRawUnsafe(`
+      CREATE TRIGGER "${fenceTriggerName}"
+      BEFORE UPDATE ON "Site"
+      FOR EACH ROW EXECUTE FUNCTION "${fenceTriggerFunction}"()
+    `);
   });
 
   afterAll(async () => {
@@ -62,8 +105,25 @@ describe.skipIf(!enabled)("operator discovery import PostgreSQL atomicity", () =
     await db.$executeRawUnsafe(
       `DROP FUNCTION IF EXISTS "${triggerFunction}"()`,
     );
+    await db.$executeRawUnsafe(
+      `DROP TRIGGER IF EXISTS "${fenceTriggerName}" ON "Site"`,
+    );
+    await db.$executeRawUnsafe(
+      `DROP FUNCTION IF EXISTS "${fenceTriggerFunction}"()`,
+    );
     await db.site.deleteMany({
-      where: { slug: { in: [successfulSlug, failedSlug] } },
+      where: {
+        slug: {
+          in: [
+            successfulSlug,
+            failedSlug,
+            rerunSlug,
+            reopenSlug,
+            redirectUpdateSlug,
+            fenceSlug,
+          ],
+        },
+      },
     });
     await db.importJob.deleteMany({
       where: {
@@ -188,7 +248,265 @@ describe.skipIf(!enabled)("operator discovery import PostgreSQL atomicity", () =
       await db.importJob.findUniqueOrThrow({ where: { id: importJob.id } }),
     ).toMatchObject({ status: "FAILED", siteId: null });
   });
+
+  test("discovery rerun preserves operator eligibility evidence on exact-source update", async () => {
+    const sourceKey = normalizeImportSource(rerunSource);
+    await db.site.create({
+      data: {
+        slug: rerunSlug,
+        name: "Eligible Rerun Lead",
+        sourceUrl: rerunSource,
+        sourceKey,
+        vertical: "RESTAURANT",
+        status: "PROSPECT",
+        attributes: { leadEligibility: operatorEligibleRecord() },
+      },
+    });
+
+    const result = await ingestOperatorProspectLead({
+      source: rerunSource,
+      vertical: "RESTAURANT",
+      name: "Eligible Rerun Lead",
+      city: "Valletta",
+      score: 55,
+      reasons: ["No online booking"],
+      queries: [
+        { provider: "google_places", query: "restaurants in Valletta" },
+      ],
+      generatePreview: false,
+    });
+    expect(result.reopened).toBe(true);
+
+    const row = await db.site.findUniqueOrThrow({
+      where: { sourceKey },
+      select: { attributes: true },
+    });
+    expect(parseLeadEligibility(row.attributes)).toMatchObject({
+      state: "ELIGIBLE",
+      updatedBy: "operator:console",
+      evidence: { owner_consent: "written approval on file" },
+    });
+    expect(parseLeadDiscovery(row.attributes)).toMatchObject({ score: 55 });
+    expect(
+      await db.auditEvent.count({
+        where: { type: "site.lead.ingest.updated", site: { slug: rerunSlug } },
+      }),
+    ).toBe(1);
+  });
+
+  test("reopen preserves operator eligibility evidence", async () => {
+    const sourceKey = normalizeImportSource(reopenSource);
+    await db.site.create({
+      data: {
+        slug: reopenSlug,
+        name: "Eligible Reopen Lead",
+        sourceUrl: reopenSource,
+        sourceKey,
+        vertical: "RESTAURANT",
+        status: "PROSPECT",
+        attributes: { leadEligibility: operatorEligibleRecord() },
+      },
+    });
+
+    const result = await createOrReopenOperatorLead({
+      source: reopenSource,
+      vertical: "RESTAURANT",
+      actor: "system:lead-discovery",
+      leadIngest: {
+        name: "Eligible Reopen Lead",
+        phone: null,
+        address: null,
+        discovery: discoveryRecord(`reopen-${suffix}`, reopenSource),
+        audit: null,
+        eligibility: createLeadEligibilityRecord({
+          state: "UNKNOWN",
+          evidence: {},
+          updatedBy: "system:lead-discovery",
+        }),
+      },
+    });
+    expect(result.reopened).toBe(true);
+
+    const row = await db.site.findUniqueOrThrow({
+      where: { sourceKey },
+      select: { attributes: true, status: true },
+    });
+    expect(row.status).toBe("PREVIEW_READY");
+    expect(parseLeadEligibility(row.attributes)).toMatchObject({
+      state: "ELIGIBLE",
+      updatedBy: "operator:console",
+      evidence: { owner_consent: "written approval on file" },
+    });
+  });
+
+  test("canonical exact-source import update preserves operator eligibility evidence", async () => {
+    const sourceKey = normalizeImportSource(redirectUpdateSource);
+    await db.site.create({
+      data: {
+        slug: redirectUpdateSlug,
+        name: "Eligible Redirect Lead",
+        sourceUrl: redirectUpdateSource,
+        sourceKey,
+        vertical: "RESTAURANT",
+        status: "PREVIEW_READY",
+        attributes: { leadEligibility: operatorEligibleRecord() },
+      },
+    });
+    const importJob = await createImportJob(
+      redirectUpdateSource,
+      "RESTAURANT",
+    );
+
+    const persisted = await persistSiteImport({
+      draft: {
+        ...sampleSiteDraft,
+        slug: redirectUpdateSlug,
+        sourceUrl: redirectUpdateSource,
+      },
+      vertical: "RESTAURANT",
+      source: redirectUpdateSource,
+      importJobId: importJob.id,
+      actor: "system:lead-discovery",
+      leadIngest: {
+        name: "Eligible Redirect Lead",
+        phone: null,
+        address: null,
+        discovery: discoveryRecord(`redirect-update-${suffix}`, redirectUpdateSource),
+        audit: null,
+        eligibility: createLeadEligibilityRecord({
+          state: "UNKNOWN",
+          evidence: {},
+          updatedBy: "system:lead-discovery",
+        }),
+      },
+    });
+    expect(persisted.created).toBe(false);
+
+    const row = await db.site.findUniqueOrThrow({
+      where: { sourceKey },
+      select: { attributes: true },
+    });
+    expect(parseLeadEligibility(row.attributes)).toMatchObject({
+      state: "ELIGIBLE",
+      updatedBy: "operator:console",
+      evidence: { owner_consent: "written approval on file" },
+    });
+  });
+
+  test("concurrent operator eligibility edit serializes with an ingest rerun", async () => {
+    const sourceKey = normalizeImportSource(fenceSource);
+    await db.site.create({
+      data: {
+        slug: fenceSlug,
+        name: "Fence Lead",
+        sourceUrl: fenceSource,
+        sourceKey,
+        vertical: "RESTAURANT",
+        status: "PROSPECT",
+        attributes: {
+          leadEligibility: createLeadEligibilityRecord({
+            state: "UNKNOWN",
+            evidence: {},
+            updatedBy: "system:lead-discovery",
+          }),
+        },
+      },
+    });
+
+    let releaseBlocker!: () => void;
+    let blockerReady!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      blockerReady = resolve;
+    });
+    const blocker = db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`
+        DO $fence_blocker$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${fenceLockClassId}, ${fenceLockObjectId});
+        END
+        $fence_blocker$
+      `);
+      blockerReady();
+      await release;
+    });
+    await ready;
+
+    const ingest = ingestOperatorProspectLead({
+      source: fenceSource,
+      vertical: "RESTAURANT",
+      name: "Fence Lead",
+      city: "Valletta",
+      placeId: fencePlaceId,
+      score: 61,
+      reasons: ["Missing hours"],
+      queries: [
+        { provider: "google_places", query: "restaurants in Valletta" },
+      ],
+      generatePreview: false,
+    });
+    await waitForFenceWaiter();
+
+    // The operator decision starts while the ingest transaction still holds
+    // the Site row lock; it must wait for the ingest to commit instead of
+    // interleaving between the ingest's attribute read and write.
+    const operatorEdit = recordOperatorLeadAction({
+      siteSlug: fenceSlug,
+      action: "set_eligibility",
+      note: null,
+      actor: "operator:console",
+      eligibility: "ELIGIBLE",
+      eligibilityEvidence: { owner_consent: "granted by phone" },
+    });
+
+    releaseBlocker();
+    await blocker;
+    await expect(ingest).resolves.toMatchObject({ reopened: true });
+    await expect(operatorEdit).resolves.toBeTruthy();
+
+    const row = await db.site.findUniqueOrThrow({
+      where: { sourceKey },
+      select: { attributes: true },
+    });
+    expect(parseLeadEligibility(row.attributes)).toMatchObject({
+      state: "ELIGIBLE",
+      updatedBy: "operator:console",
+      evidence: { owner_consent: "granted by phone" },
+    });
+    expect(parseLeadDiscovery(row.attributes)).toMatchObject({ score: 61 });
+    expect(
+      await db.auditEvent.count({
+        where: { type: "site.lead.eligibility.updated", site: { slug: fenceSlug } },
+      }),
+    ).toBe(1);
+  });
 });
+
+function operatorEligibleRecord() {
+  return createLeadEligibilityRecord({
+    state: "ELIGIBLE",
+    evidence: { owner_consent: "written approval on file" },
+    updatedBy: "operator:console",
+  });
+}
+
+async function waitForFenceWaiter(): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await db.$queryRaw<Array<{ waiting: number }>>`
+      SELECT COUNT(*)::int AS waiting
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND classid = ${fenceLockClassId}
+        AND objid = ${fenceLockObjectId}
+        AND NOT granted
+    `;
+    if ((rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Ingest update did not reach the advisory-lock barrier");
+}
 
 function discoveryRecord(placeId: string, websiteUrl: string) {
   return createLeadDiscoveryRecord({
