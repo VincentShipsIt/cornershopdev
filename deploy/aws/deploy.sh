@@ -202,17 +202,19 @@ docker run -d \
   "$image_name" >/dev/null
 
 wait_for_health() {
-  local container="$1"
+  # `container` is a script-wide readonly; a local of the same name would abort
+  # the function under `set -u` on bash < 5 with "readonly variable".
+  local watched_container="$1"
   for _ in $(seq 1 36); do
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$watched_container")"
     if [[ "$status" == "healthy" ]]; then return 0; fi
     if [[ "$status" == "unhealthy" || "$status" == "exited" || "$status" == "dead" ]]; then
-      docker logs --tail 120 "$container" >&2
+      docker logs --tail 120 "$watched_container" >&2
       return 1
     fi
     sleep 5
   done
-  docker logs --tail 120 "$container" >&2
+  docker logs --tail 120 "$watched_container" >&2
   return 1
 }
 
