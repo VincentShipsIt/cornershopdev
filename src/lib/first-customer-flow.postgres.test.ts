@@ -34,6 +34,8 @@ const suffix = randomUUID();
 const siteId = `first-customer-site-${suffix}`;
 const slug = `first-customer-${suffix}`;
 const ownerEmail = `owner-${suffix}@restaurant.example.test`;
+const firstCustomerHeroSourceUrl = `https://restaurant.example.test/hero-${suffix}.jpg`;
+const firstCustomerHeroUrl = `https://assets.example/first-customer/${suffix}/hero.jpg`;
 const eventId = `evt_first_customer_${suffix}`;
 const checkoutSessionId = `cs_test_${suffix}`;
 const selectionSessionId = `session_select_${suffix}`;
@@ -73,8 +75,8 @@ describe.skipIf(!enabled)(
           phone: sampleSiteDraft.phone,
           email: ownerEmail,
           sourceUrl: "https://restaurant.example.test/menu",
-          heroImageUrl: sampleSiteDraft.heroImageUrl,
-          heroOriginalImageUrl: sampleSiteDraft.heroOriginalImageUrl,
+          heroImageUrl: firstCustomerHeroUrl,
+          heroOriginalImageUrl: firstCustomerHeroUrl,
           heroImageProvenance: "OWNER",
           draftTheme: { id: "warm" },
           draftThemeVersion: "legacy-v1",
@@ -126,6 +128,28 @@ describe.skipIf(!enabled)(
               }),
             ),
           },
+        },
+      });
+      // The immutable-photo publication gate requires the hero projection to
+      // reference an approved PhotoAsset stored immutably, so the journey
+      // seeds the owner hero through the same pipeline a real import uses.
+      await db.photoAsset.create({
+        data: {
+          siteId,
+          sourceUrl: firstCustomerHeroSourceUrl,
+          provenance: "OWNER",
+          sourceKind: "OWNER_UPLOAD",
+          contentSha256: "b".repeat(64),
+          originalStorageKey: `first-customer/${suffix}/hero.jpg`,
+          originalUrl: firstCustomerHeroUrl,
+          mediaType: "image/jpeg",
+          byteLength: 1_024,
+          candidateUsages: ["HERO"],
+          reviewStatus: "APPROVED",
+          reviewedAt: new Date(),
+          reviewedBy: `owner:${ownerEmail}`,
+          selectedUsage: "HERO",
+          activeVariant: "ORIGINAL",
         },
       });
     });
