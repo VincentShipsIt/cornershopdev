@@ -17,10 +17,18 @@ The deployment requires all of:
 - `CLAIM_TOKEN_SECRET`
 - `RESEND_API_KEY`
 
-Starter and Growth must be distinct active recurring Stripe Price IDs. Test
-mode and live mode have separate keys, prices, Customer Portal configurations,
-webhook endpoints, and signing secrets. Never copy a test identifier into
-Production or a live identifier into local development.
+The launch Checkout offers exactly one plan: the Restofront founding Starter
+subscription at EUR 49.00 per month. Its Stripe Price and Product must be live,
+active, non-metered, tax-exclusive, and recurring monthly. Growth remains a
+distinct configured ID for existing access and future migration safety, but the
+public Checkout route rejects it. Test mode and live mode have separate keys,
+prices, Customer Portal configurations, webhook endpoints, and signing secrets.
+Never copy a test identifier into Production or a live identifier into local
+development.
+
+Checkout disables promotion codes for this offer, requires billing-address and
+tax-ID collection, and provisions only when Stripe reports
+`payment_status=paid`. A completed zero-payment session cannot create ownership.
 
 When rotating a price, add the retiring price ID to
 `STRIPE_LEGACY_PRICE_IDS` and deploy that access allowlist before changing the
@@ -89,6 +97,14 @@ infer a mapping from organization membership alone.
 
 ## Local and test-mode verification
 
+The read-only, one-shot provider preflight validates the exact amount, currency,
+cadence, tax behavior, Product state, and Stripe mode without exposing the Price
+ID:
+
+```bash
+bun run operator:preflight-stripe --mode test
+```
+
 1. Use test-mode Price IDs and a test secret key in `.env.local`. Never commit
    that file.
 2. Start the app:
@@ -142,8 +158,9 @@ membership, or owner.
 These are deliberate production changes and require Vincent's explicit
 authority. This implementation does not perform them:
 
-1. Create or approve the live Starter and Growth Products and recurring Prices.
-   Record the approved offer, amount, currency, interval, and live Price IDs.
+1. Create or approve the live founding Starter Product and Price plus the
+   separately configured Growth access Price. Record the approved founding
+   offer, amount, currency, interval, tax behavior, and live Price IDs.
 2. Configure and test the live Customer Portal. Enable only the intended
    payment-method, cancellation, invoice, and plan-change features.
 3. Create the live webhook endpoint:
@@ -157,9 +174,11 @@ authority. This implementation does not perform them:
    a randomly generated claim-token secret of at least 32 characters as
    encrypted Production parameters under
    `/shipshit/production/cornershopdev/`.
-5. Deploy the reviewed release. The deploy now fails before cutover when any
-   billing parameter is absent, and `/api/health/ready` reports billing as
-   misconfigured without returning any credential or identifier.
+5. Deploy the reviewed release. Before cutover, deployment runs
+   `operator:preflight-stripe --mode live`; it fails if the live founding Price
+   drifts from EUR 49.00 monthly or its Product/mode/tax contract. The frequent
+   `/api/health/ready` probe remains provider-read-free and reports missing
+   billing configuration without returning any credential or identifier.
 6. Complete one explicitly authorized low-risk live Checkout, then verify one
    owner, one organization, one owner membership, one claimed site, one
    subscription, and one event-ledger row. Resend that event and verify counts
@@ -168,6 +187,39 @@ authority. This implementation does not perform them:
 Do not create live Products or Prices, enable the live portal, register the live
 endpoint, change encrypted parameters, or charge a customer as part of routine
 code verification.
+
+### Legacy operator-approval migration gate
+
+Migration `20260820120000_first_customer_evidence` refuses to proceed if an
+unaccepted legacy operator-approved invitation is still bound to an active
+Stripe Checkout. The old row has no durable authority evidence, while revoking
+it in SQL would leave the Checkout URL chargeable. Before retrying a blocked
+migration, the deploy script runs a predecessor-schema-safe read-only preflight
+from the reviewed image before the candidate entrypoint can apply migrations.
+It prints only counts, status, and identifier fingerprints.
+
+If the preflight blocks, identify the matching Checkout Sessions in the private
+database and expire every still-open Session in Stripe live mode. A completed
+Session must be investigated and must not be revoked by this procedure. Once
+Stripe reports every named Session as `expired`, use the same reviewed image to
+atomically terminalize the legacy rows and create site audit events:
+
+```bash
+docker run --rm --network shipshit \
+  --env-file /etc/cornershopdev/production.env \
+  --entrypoint bun cornershopdev:<reviewed-commit-sha> \
+  run operator:preflight-first-customer-migration \
+  --environment production \
+  --mode revoke-expired \
+  --execute
+```
+
+The command refuses the entire write if any Checkout is not live-mode and
+expired, and each update uses a database compare-and-swap on the invitation,
+site, and Checkout ID. Rerun the normal deployment afterward. Never invent an
+approval reference, directly edit a bound invitation, or bypass the migration
+exception. Unbound, unaccepted legacy operator approvals are revoked by the
+migration itself.
 
 ## Failed delivery and replay
 

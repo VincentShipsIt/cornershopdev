@@ -6,7 +6,7 @@ import {
 } from "@/lib/better-auth-config";
 
 describe("Better Auth deployment configuration", () => {
-  it("uses the dedicated secret before the claim-secret rollout fallback", () => {
+  it("requires a dedicated secret in production", () => {
     expect(
       resolveBetterAuthSecret({
         NODE_ENV: "production",
@@ -14,12 +14,19 @@ describe("Better Auth deployment configuration", () => {
         CLAIM_TOKEN_SECRET: "c".repeat(32),
       }),
     ).toBe("b".repeat(32));
-    expect(
+    expect(() =>
       resolveBetterAuthSecret({
         NODE_ENV: "production",
         CLAIM_TOKEN_SECRET: "c".repeat(32),
       }),
-    ).toBe("c".repeat(32));
+    ).toThrow("BETTER_AUTH_SECRET");
+    expect(() =>
+      resolveBetterAuthSecret({
+        NODE_ENV: "production",
+        BETTER_AUTH_SECRET: "c".repeat(32),
+        CLAIM_TOKEN_SECRET: "c".repeat(32),
+      }),
+    ).toThrow("distinct");
   });
 
   it("fails closed without a production-grade secret", () => {
@@ -50,5 +57,15 @@ describe("Better Auth deployment configuration", () => {
     expect(betterAuthTrustedOrigins(environment)).not.toContain(
       "http://localhost:3000",
     );
+  });
+
+  it("trusts the exact configured loopback port for the browser harness", () => {
+    expect(
+      betterAuthTrustedOrigins({
+        NODE_ENV: "production",
+        NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3100",
+        PLATFORM_HOSTNAMES: "127.0.0.1",
+      }),
+    ).toContain("http://127.0.0.1:3100");
   });
 });

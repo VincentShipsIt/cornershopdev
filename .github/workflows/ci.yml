@@ -32,6 +32,7 @@ jobs:
       # Real Postgres for unit + opt-in integration suites. Prisma generate only
       # needs the URL shape; migrate + postgres tests exercise the service.
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/cornershopdev_ci
+      WORKFLOW_POSTGRES_URL: postgresql://ci:ci@127.0.0.1:5432/cornershopdev_ci
       BETTER_AUTH_SECRET: ci-only-better-auth-secret-32-bytes
       WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
     steps:
@@ -43,6 +44,11 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bunx --bun prisma migrate deploy
+      - name: Seeded predecessor upgrade through current migrations
+        env:
+          SITE_CONTACT_MIGRATION_POSTGRES_TEST: "1"
+        run: bun test src/lib/site-contact-migration.postgres.test.tsx
+      - run: bun run workflow:migrate
       - run: bun run test
       # Own process: bun mock.module("@/lib/db") is process-global, so the
       # publication suite cannot share the unit-test run.
@@ -50,9 +56,31 @@ jobs:
         env:
           SITE_PUBLICATION_POSTGRES_TEST: "1"
         run: bun test src/lib/site-publication.postgres.test.ts
+      - name: Postgres source-monitoring concurrency suite
+        env:
+          SOURCE_MONITORING_POSTGRES_TEST: "1"
+        run: bun test src/lib/source-monitoring.postgres.test.ts
+      - name: Postgres claim-invitation concurrency suite
+        env:
+          CLAIM_INVITATIONS_POSTGRES_TEST: "1"
+        run: bun test src/lib/claim-invitations.postgres.test.ts
+      - name: Postgres authentication retry concurrency suite
+        env:
+          AUTH_MAGIC_LINK_RETRY_POSTGRES_TEST: "1"
+        run: bun test src/lib/magic-link-retry.postgres.test.ts
+      - name: First-customer service integration journey
+        id: first_customer_service_journey
+        env:
+          FIRST_CUSTOMER_FLOW_POSTGRES_TEST: "1"
+        shell: bash
+        run: |
+          set -o pipefail
+          bun test src/lib/first-customer-flow.postgres.test.ts 2>&1 | tee first-customer-service-journey.log
       - run: bun run lint
       - run: bun run design:lint
       - run: bun run build
+      - name: Cold-cache brand font contract
+        run: bun run verify:brand-fonts
       # These static-route audits do not exercise workflows. Keep the server on
       # the local world instead of inheriting the job's Postgres test backend.
       - name: Lighthouse budgets
@@ -67,16 +95,142 @@ jobs:
         with:
           name: lighthouseci
           path: .lighthouseci/
+          include-hidden-files: true
           retention-days: 14
+      - name: Record first-customer evidence boundary
+        if: always()
+        env:
+          JOURNEY_OUTCOME: ${{ steps.first_customer_service_journey.outcome }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p .artifacts
+          bun -e 'const passed = process.env.JOURNEY_OUTCOME === "success"; await Bun.write(".artifacts/first-customer-evidence.json", JSON.stringify({ schemaVersion: 1, environment: "test", scope: "service-integration", outcome: passed ? "AUTOMATED_SERVICE_JOURNEY_VERIFIED" : "NOT_VERIFIED", browserJourneyVerified: false, realPaymentVerified: false, realCustomerAcceptanceVerified: false, productionAccepted: false, commitSha: process.env.COMMIT_SHA, generatedAt: new Date().toISOString() }, null, 2))'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: first-customer-automated-evidence
+          path: |
+            .artifacts/first-customer-evidence.json
+            first-customer-service-journey.log
+          retention-days: 30
       - run: shellcheck deploy/aws/*.sh
       - run: bash deploy/aws/test-host-launcher.sh
       - run: bash deploy/aws/test-release-bundle.sh
+
+  first-customer-browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: cornershopdev_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U e2e -d cornershopdev_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CORNERSHOP_ENV: test
+      FIRST_CUSTOMER_E2E: "1"
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+      PLATFORM_HOSTNAMES: localhost,127.0.0.1
+      DATABASE_URL: postgresql://e2e:e2e@127.0.0.1:5432/cornershopdev_e2e
+      WORKFLOW_POSTGRES_URL: postgresql://e2e:e2e@127.0.0.1:5432/cornershopdev_e2e
+      REDIS_URL: redis://127.0.0.1:6379
+      BETTER_AUTH_SECRET: e2e-only-better-auth-secret-32-bytes
+      CLAIM_TOKEN_SECRET: e2e-only-claim-token-secret-32-bytes
+      STRIPE_SECRET_KEY: sk_test_first_customer_e2e
+      STRIPE_WEBHOOK_SECRET: whsec_first_customer_e2e
+      STRIPE_STARTER_PRICE_ID: price_first_customer_e2e
+      STRIPE_GROWTH_PRICE_ID: price_growth_e2e_access_only
+      STRIPE_API_BASE_URL: http://127.0.0.1:4100
+      RESEND_API_KEY: re_test_first_customer_e2e
+      RESEND_API_BASE_URL: http://127.0.0.1:4100
+      EMAIL_FROM: Restofront Test <test@restaurant.example.test>
+      WORKFLOW_ENABLED: "false"
+      WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun prisma migrate deploy
+      - run: bun run workflow:migrate
+      - run: bun run build
+      - run: bunx playwright install --with-deps chromium
+      - name: Browser first-customer journey
+        id: browser_journey
+        shell: bash
+        run: |
+          set -o pipefail
+          bun run test:e2e:first-customer 2>&1 | tee first-customer-browser-e2e.log
+      - name: Record browser evidence boundary
+        if: always()
+        env:
+          JOURNEY_OUTCOME: ${{ steps.browser_journey.outcome }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p .artifacts
+          bun -e 'const passed = process.env.JOURNEY_OUTCOME === "success"; await Bun.write(".artifacts/first-customer-browser-evidence.json", JSON.stringify({ schemaVersion: 1, environment: "test", scope: "browser-http-provider-double", outcome: passed ? "AUTOMATED_BROWSER_JOURNEY_VERIFIED" : "NOT_VERIFIED", browserJourneyVerified: passed, realPaymentVerified: false, realCustomerAcceptanceVerified: false, productionAccepted: false, commitSha: process.env.COMMIT_SHA, generatedAt: new Date().toISOString() }, null, 2))'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: first-customer-browser-evidence
+          path: |
+            .artifacts/first-customer-browser-evidence.json
+            first-customer-browser-e2e.log
+            playwright-report/
+            test-results/
+          retention-days: 30
+
+  container-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: cornershopdev_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d cornershopdev_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build production candidate image
+        run: docker build --tag cornershopdev:runtime-contract .
+      - name: Verify production container runtime
+        run: bash deploy/aws/test-container-runtime.sh cornershopdev:runtime-contract
 
   deploy:
     # Production is release-only. A manual dispatch runs verification but cannot
     # bypass a published stable tag, exact-main provenance, or release evidence.
     if: github.event_name == 'release' && github.event.release.prerelease == false
-    needs: verify
+    needs: [verify, first-customer-browser-e2e, container-runtime]
     permissions:
       contents: read
       id-token: write

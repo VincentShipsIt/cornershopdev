@@ -9,6 +9,31 @@ export type BillingPlan = {
   priceId: string;
 };
 
+export const RESTOFRONT_FOUNDING_PLAN_ID = "starter" as const;
+export const RESTOFRONT_FOUNDING_PRICE = {
+  currency: "eur",
+  unitAmount: 4_900,
+  interval: "month",
+  intervalCount: 1,
+  taxBehavior: "exclusive",
+} as const;
+
+export type StripePriceConfiguration = {
+  id: string;
+  active: boolean;
+  currency: string;
+  unit_amount: number | null;
+  type: string;
+  livemode: boolean;
+  tax_behavior?: string | null;
+  recurring: {
+    interval: string;
+    interval_count: number;
+    usage_type?: string;
+  } | null;
+  product: string | { active?: boolean; deleted?: boolean | void };
+};
+
 export class BillingConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -58,6 +83,47 @@ export function configuredBillingPriceIds(
     current.add(validatePriceId(priceId, "STRIPE_LEGACY_PRICE_IDS"));
   }
   return current;
+}
+
+/**
+ * Stripe IDs alone do not prove the offer. This validates the expanded live
+ * resource immediately before Checkout and in the operator preflight so a
+ * wrong mode, amount, cadence, tax treatment, or archived Product fails closed.
+ */
+export function validateRestofrontFoundingPrice(
+  price: StripePriceConfiguration,
+  input: { expectedPriceId: string; expectedLivemode: boolean },
+): void {
+  const productActive =
+    typeof price.product !== "string" &&
+    price.product.active === true &&
+    price.product.deleted !== true;
+  const recurring = price.recurring;
+  const valid =
+    price.id === input.expectedPriceId &&
+    price.livemode === input.expectedLivemode &&
+    price.active &&
+    price.type === "recurring" &&
+    price.currency.toLowerCase() === RESTOFRONT_FOUNDING_PRICE.currency &&
+    price.unit_amount === RESTOFRONT_FOUNDING_PRICE.unitAmount &&
+    price.tax_behavior === RESTOFRONT_FOUNDING_PRICE.taxBehavior &&
+    recurring?.interval === RESTOFRONT_FOUNDING_PRICE.interval &&
+    recurring.interval_count === RESTOFRONT_FOUNDING_PRICE.intervalCount &&
+    recurring.usage_type !== "metered" &&
+    productActive;
+  if (!valid) {
+    throw new BillingConfigurationError(
+      "The Restofront founding Stripe price does not match the approved offer",
+    );
+  }
+}
+
+export function stripeLivemodeForSecret(
+  secret: string | undefined,
+): boolean {
+  if (secret?.startsWith("sk_live_")) return true;
+  if (secret?.startsWith("sk_test_")) return false;
+  throw new BillingConfigurationError("STRIPE_SECRET_KEY is not configured");
 }
 
 function validatePriceId(

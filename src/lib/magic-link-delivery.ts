@@ -1,9 +1,12 @@
 import "server-only";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { buildMagicLinkEmail } from "@/lib/magic-link-email";
+import { ownerMembershipWhere } from "@/lib/owner-membership";
 import { getResend } from "@/lib/resend";
 import {
+  canRetryMagicLink,
   hashAuthToken,
   MAGIC_LINK_MAX_RETRIES,
   MAGIC_LINK_TTL_MS,
@@ -38,6 +41,7 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
       email: true,
       platformRole: true,
       memberships: {
+        where: ownerMembershipWhere(),
         select: {
           organization: {
             select: {
@@ -82,77 +86,99 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
   const expiresAt = new Date(now.getTime() + MAGIC_LINK_TTL_MS);
   const destination = isSuperadmin ? "ADMIN" : "WORKSPACE";
   const primarySite = workspaces[0] ?? null;
-  const link = await getDb().$transaction(
-    async (tx) => {
-      const replacedLinks = metadata.replacesId
-        ? await tx.authMagicLink.findMany({
-            where: {
-              id: metadata.replacesId,
-              userId: user.id,
-              consumedAt: null,
-              revokedAt: null,
-              retryCount: { lt: MAGIC_LINK_MAX_RETRIES },
-            },
-            select: { id: true, tokenHash: true },
-          })
-        : await tx.authMagicLink.findMany({
-            where: {
-              userId: user.id,
-              destination,
-              consumedAt: null,
-              revokedAt: null,
-            },
-            select: { id: true, tokenHash: true },
-          });
-      if (metadata.replacesId && replacedLinks.length !== 1) {
-        throw new Error("This delivery was already retried.");
-      }
-
-      if (replacedLinks.length > 0) {
-        await tx.authMagicLink.updateMany({
-          where: { id: { in: replacedLinks.map((link) => link.id) } },
-          data: { revokedAt: now },
+  let link: { id: string; rotationGeneration: number };
+  try {
+    link = await getDb().$transaction(
+      async (tx) => {
+        const sequence = await tx.user.findUniqueOrThrow({
+          where: { id: user.id },
+          select: { authLinkSequence: true },
         });
-        await tx.verification.deleteMany({
+        const replacedLink = metadata.replacesId
+          ? await tx.authMagicLink.findFirst({
+              where: {
+                id: metadata.replacesId,
+                userId: user.id,
+                consumedAt: null,
+                retryCount: { lt: MAGIC_LINK_MAX_RETRIES },
+              },
+              select: {
+                id: true,
+                deliveryStatus: true,
+                retryCount: true,
+                consumedAt: true,
+                revokedAt: true,
+                createdAt: true,
+                lastAttemptAt: true,
+                rotationGeneration: true,
+              },
+            })
+          : null;
+        if (
+          metadata.replacesId &&
+          (!replacedLink ||
+            metadata.retryCount !== replacedLink.retryCount + 1 ||
+            !canRetryMagicLink({
+              ...replacedLink,
+              authLinkSequence: sequence.authLinkSequence,
+            }))
+        ) {
+          throw new Error("This delivery was already retried.");
+        }
+
+        const advanced = await tx.user.updateMany({
           where: {
-            identifier: {
-              in: replacedLinks.map((link) => link.tokenHash),
+            id: user.id,
+            authLinkSequence: sequence.authLinkSequence,
+          },
+          data: { authLinkSequence: { increment: 1 } },
+        });
+        if (advanced.count !== 1) {
+          throw new Error("This delivery was already retried.");
+        }
+        const rotationGeneration = sequence.authLinkSequence + 1;
+
+        const created = await tx.authMagicLink.create({
+          data: {
+            tokenHash,
+            destination,
+            brandVertical: isSuperadmin ? null : primarySite?.vertical,
+            expiresAt,
+            userId: user.id,
+            retryCount: metadata.retryCount,
+            rotationGeneration,
+          },
+          select: { id: true },
+        });
+        await tx.authEvent.create({
+          data: {
+            type: metadata.replacesId
+              ? "auth.magic_link.retried"
+              : "auth.magic_link.requested",
+            actor: metadata.actor ?? "user:self",
+            subjectUserId: user.id,
+            magicLinkId: created.id,
+            metadata: {
+              destination,
+              replacesId: metadata.replacesId ?? null,
+              retryCount: metadata.retryCount,
+              provider: "better-auth",
             },
           },
         });
-      }
-
-      const created = await tx.authMagicLink.create({
-        data: {
-          tokenHash,
-          destination,
-          brandVertical: isSuperadmin ? null : primarySite?.vertical,
-          expiresAt,
-          userId: user.id,
-          retryCount: metadata.retryCount,
-        },
-        select: { id: true },
-      });
-      await tx.authEvent.create({
-        data: {
-          type: metadata.replacesId
-            ? "auth.magic_link.retried"
-            : "auth.magic_link.requested",
-          actor: metadata.actor ?? "user:self",
-          subjectUserId: user.id,
-          magicLinkId: created.id,
-          metadata: {
-            destination,
-            replacesId: metadata.replacesId ?? null,
-            retryCount: metadata.retryCount,
-            provider: "better-auth",
-          },
-        },
-      });
-      return created;
-    },
-    { isolationLevel: "Serializable" },
-  );
+        return {
+          ...created,
+          rotationGeneration,
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
+  } catch (error) {
+    await getDb().verification.deleteMany({
+      where: { identifier: tokenHash },
+    });
+    throw error;
+  }
 
   const verifyUrl = new URL("/api/auth/verify", input.url);
   verifyUrl.searchParams.set("token", input.token);
@@ -163,6 +189,7 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
     workspaceCount: workspaces.length,
   });
 
+  let providerMessageId: string;
   try {
     const { data, error } = await getResend().emails.send(
       {
@@ -171,52 +198,214 @@ export async function deliverMagicLink(input: DeliveryInput): Promise<void> {
         replyTo: emailMessage.replyTo,
         subject: emailMessage.subject,
         html: emailMessage.html,
+        tags: [
+          { name: "category", value: "auth_magic_link" },
+          { name: "auth_magic_link_id", value: link.id },
+        ],
       },
       { headers: { "Idempotency-Key": `magic-link-${link.id}` } },
     );
     if (error) throw new Error(error.message);
-    await recordDelivery(link.id, "SENT", data?.id ?? null, null);
+    if (!data?.id) throw new Error("Resend did not return a message identifier");
+    providerMessageId = data.id;
   } catch (error) {
-    await recordDelivery(
-      link.id,
-      "FAILED",
-      null,
-      deliveryFailureCode(error),
-    );
+    await finalizeMagicLinkDelivery({
+      id: link.id,
+      rotationGeneration: link.rotationGeneration,
+      outcome: "FAILED",
+      providerMessageId: null,
+      failureCode: deliveryFailureCode(error),
+    });
+    return;
   }
+
+  await finalizeMagicLinkDelivery({
+    id: link.id,
+    rotationGeneration: link.rotationGeneration,
+    outcome: "ACCEPTED",
+    providerMessageId,
+    failureCode: null,
+  });
 }
 
-async function recordDelivery(
-  id: string,
-  status: "SENT" | "FAILED",
-  providerMessageId: string | null,
-  failureCode: string | null,
+export async function finalizeMagicLinkDelivery(
+  input: {
+    id: string;
+    rotationGeneration: number;
+    outcome: "ACCEPTED" | "FAILED";
+    providerMessageId: string | null;
+    failureCode: string | null;
+  },
+  database: Pick<PrismaClient, "$transaction"> = getDb(),
 ): Promise<void> {
   const now = new Date();
-  await getDb().$transaction(async (tx) => {
-    const updated = await tx.authMagicLink.updateMany({
-      where: { id, deliveryStatus: "PENDING" },
-      data: {
-        deliveryStatus: status,
-        deliveryAttempts: { increment: 1 },
-        providerMessageId,
-        failureCode,
-        lastAttemptAt: now,
-        deliveredAt: status === "SENT" ? now : null,
+  await database.$transaction(async (tx) => {
+    const link = await tx.authMagicLink.findUnique({
+      where: { id: input.id },
+      select: {
+        id: true,
+        userId: true,
+        tokenHash: true,
+        rotationGeneration: true,
+        deliveryStatus: true,
+        providerMessageId: true,
+        failureCode: true,
       },
     });
-    if (updated.count === 1) {
-      await tx.authEvent.create({
+    if (!link || link.rotationGeneration !== input.rotationGeneration) {
+      throw new Error("Authentication delivery reservation changed");
+    }
+    if (
+      input.providerMessageId &&
+      link.providerMessageId &&
+      link.providerMessageId !== input.providerMessageId
+    ) {
+      throw new Error("Authentication provider message identity changed");
+    }
+
+    const attempted = await tx.authMagicLink.updateMany({
+      where: {
+        id: input.id,
+        rotationGeneration: input.rotationGeneration,
+        OR:
+          input.providerMessageId
+            ? [
+                { providerMessageId: null },
+                { providerMessageId: input.providerMessageId },
+              ]
+            : undefined,
+      },
+      data: {
+        deliveryAttempts: { increment: 1 },
+        providerMessageId: input.providerMessageId ?? undefined,
+        lastAttemptAt: now,
+      },
+    });
+    if (attempted.count !== 1) {
+      throw new Error("Authentication delivery reservation changed");
+    }
+
+    if (input.outcome === "ACCEPTED") {
+      await tx.authMagicLink.updateMany({
+        where: { id: input.id, deliveryStatus: "PENDING" },
+        data: { deliveryStatus: "SENT", failureCode: null },
+      });
+    } else {
+      await tx.authMagicLink.updateMany({
+        where: { id: input.id, deliveryStatus: "PENDING" },
         data: {
-          type:
-            status === "SENT"
-              ? "auth.magic_link.delivered"
-              : "auth.magic_link.delivery_failed",
-          magicLinkId: id,
-          metadata: { failureCode, provider: "better-auth" },
+          deliveryStatus: "FAILED",
+          failureCode: input.failureCode,
         },
       });
     }
+
+    const finalized = await tx.authMagicLink.findUniqueOrThrow({
+      where: { id: input.id },
+      select: { deliveryStatus: true, failureCode: true },
+    });
+    const usable =
+      finalized.deliveryStatus === "SENT" ||
+      finalized.deliveryStatus === "DELIVERED";
+    await reconcileMagicLinkActivation(tx, {
+      userId: link.userId,
+      rotationGeneration: input.rotationGeneration,
+      usable,
+      now,
+    });
+
+    await tx.authEvent.create({
+      data: {
+        type: usable
+          ? "auth.magic_link.provider_accepted"
+          : "auth.magic_link.delivery_failed",
+        magicLinkId: input.id,
+        metadata: {
+          failureCode: finalized.failureCode ?? input.failureCode,
+          provider: "better-auth",
+          rotationGeneration: input.rotationGeneration,
+        },
+      },
+    });
+  });
+}
+
+export async function reconcileMagicLinkActivation(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    rotationGeneration: number;
+    usable: boolean;
+    now: Date;
+  },
+): Promise<void> {
+  if (input.usable) {
+    const activated = await tx.user.updateMany({
+      where: {
+        id: input.userId,
+        authLinkActiveGeneration: { lt: input.rotationGeneration },
+      },
+      data: { authLinkActiveGeneration: input.rotationGeneration },
+    });
+    const active = await tx.user.findUniqueOrThrow({
+      where: { id: input.userId },
+      select: { authLinkActiveGeneration: true },
+    });
+    if (
+      activated.count === 1 ||
+      active.authLinkActiveGeneration === input.rotationGeneration
+    ) {
+      await revokeMagicLinks(tx, {
+        userId: input.userId,
+        generation: { lt: input.rotationGeneration },
+        now: input.now,
+      });
+    } else if (active.authLinkActiveGeneration > input.rotationGeneration) {
+      await revokeMagicLinks(tx, {
+        userId: input.userId,
+        generation: { equals: input.rotationGeneration },
+        now: input.now,
+      });
+    }
+    return;
+  }
+  await revokeMagicLinks(tx, {
+    userId: input.userId,
+    generation: { equals: input.rotationGeneration },
+    now: input.now,
+  });
+}
+
+async function revokeMagicLinks(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    generation: { lt: number } | { equals: number };
+    now: Date;
+  },
+): Promise<void> {
+  const links = await tx.authMagicLink.findMany({
+    where: {
+      userId: input.userId,
+      rotationGeneration: input.generation,
+      consumedAt: null,
+      revokedAt: null,
+    },
+    select: { id: true, tokenHash: true },
+  });
+  if (links.length === 0) return;
+  await tx.authMagicLink.updateMany({
+    where: {
+      id: { in: links.map((link) => link.id) },
+      consumedAt: null,
+      revokedAt: null,
+    },
+    data: { revokedAt: input.now },
+  });
+  await tx.verification.deleteMany({
+    where: {
+      identifier: { in: links.map((link) => link.tokenHash) },
+    },
   });
 }
 

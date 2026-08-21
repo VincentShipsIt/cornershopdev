@@ -111,11 +111,16 @@ export async function sendLeadEmail(
   const db = getDb();
   const site = await db.site.findUnique({
     where: { id: input.siteId },
-    select: { slug: true, name: true, vertical: true, email: true },
+    select: {
+      slug: true,
+      name: true,
+      vertical: true,
+      leadContactEmail: true,
+    },
   });
   if (!site) throw new OutreachError("Site not found.", 404);
 
-  const to = input.to ?? site.email;
+  const to = input.to ?? site.leadContactEmail;
   if (!to) {
     throw new OutreachError(
       "No contact email on file for this site.",
@@ -408,14 +413,14 @@ async function sendOperatorReply(input: {
       slug: true,
       name: true,
       vertical: true,
-      email: true,
+      leadContactEmail: true,
     },
   });
   if (!site) throw new OutreachError("Site not found.", 404);
   if (site.vertical !== Vertical.RESTAURANT) {
     throw new OutreachError("This lead is not eligible for outreach.", 409);
   }
-  const to = site.email;
+  const to = site.leadContactEmail;
   if (!to) {
     throw new OutreachError("No contact email on file for this site.", 400);
   }
@@ -850,7 +855,7 @@ async function assertReviewedRestofrontDelivery(
     transaction.site.findUnique({
       where: { id: input.siteId },
       select: {
-        email: true,
+        leadContactEmail: true,
         status: true,
         vertical: true,
         updatedAt: true,
@@ -872,8 +877,8 @@ async function assertReviewedRestofrontDelivery(
     pauseSetting?.value === true ||
     site.vertical !== Vertical.RESTAURANT ||
     !mutableLeadStatuses.has(site.status) ||
-    !site.email ||
-    normalizeAccountEmail(site.email) !==
+    !site.leadContactEmail ||
+    normalizeAccountEmail(site.leadContactEmail) !==
       normalizeAccountEmail(input.expectedRecipient) ||
     site.auditEvents[0]?.createdAt.toISOString() !== input.expectedReviewedAt ||
     !isOperatorReviewCurrent(

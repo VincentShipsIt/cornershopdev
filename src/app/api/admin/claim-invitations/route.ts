@@ -10,17 +10,11 @@ import {
   revokeClaimInvitation,
   revokeUndeliveredInvitation,
 } from "@/lib/claim-invitations";
+import { operatorClaimInvitationRequestSchema } from "@/lib/operator-claim-invitation-request";
 import { limitOperatorClaimInvitation } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
-
-const requestSchema = z.object({
-  siteSlug: z.string().trim().min(2).max(80),
-  email: z.email().max(320),
-  action: z.enum(["issue", "resend"]).default("issue"),
-  invitationId: z.string().trim().min(1).max(100).optional(),
-});
 
 export async function POST(request: Request) {
   if (!isSameOriginMutation(request, { requireOrigin: true })) {
@@ -47,13 +41,15 @@ export async function POST(request: Request) {
 
   let siteSlug = "unknown";
   try {
-    const input = requestSchema.parse(await request.json());
+    const input = operatorClaimInvitationRequestSchema.parse(
+      await request.json(),
+    );
     siteSlug = input.siteSlug;
     const invitation =
       input.action === "resend"
         ? await resendClaimInvitation({
             siteSlug,
-            invitationId: z.string().parse(input.invitationId),
+            invitationId: input.invitationId!,
             actor: `operator:${operator.id}`,
           })
         : await issueClaimInvitation({
@@ -61,6 +57,7 @@ export async function POST(request: Request) {
             email: input.email,
             proofMethod: "OPERATOR_APPROVAL",
             actor: `operator:${operator.id}`,
+            approvalEvidenceRef: input.approvalEvidenceRef,
           });
     try {
       await deliverClaimInvitation(
@@ -88,6 +85,7 @@ export async function POST(request: Request) {
         siteSlug,
         reason: error.code,
         actor: `operator:${operator.id}`,
+        invitationId: error.invitationId,
       });
       return NextResponse.json(
         { error: error.message },

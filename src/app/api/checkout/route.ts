@@ -1,7 +1,16 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { configuredBillingPlans } from "@/lib/billing-plans";
-import { checkoutSessionAction } from "@/lib/checkout-session-policy";
+import {
+  configuredBillingPlans,
+  RESTOFRONT_FOUNDING_PLAN_ID,
+  stripeLivemodeForSecret,
+  validateRestofrontFoundingPrice,
+} from "@/lib/billing-plans";
+import { alertCheckoutStartFailure } from "@/lib/billing-operator-alerts";
+import {
+  checkoutSessionAction,
+  isReusableFoundingCheckout,
+} from "@/lib/checkout-session-policy";
 import {
   authorizeClaimInvitationForCheckout,
   bindClaimInvitationToCheckout,
@@ -18,9 +27,11 @@ import {
 import { limitClaimCheckout } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { getStripe } from "@/lib/stripe";
+import { secureCookieRequired } from "@/lib/first-customer-test-mode";
+import { isVerticalClaimEnabled } from "@/lib/verticals/registry";
 
 const requestSchema = z.object({
-  plan: z.enum(["starter", "growth"]),
+  plan: z.literal(RESTOFRONT_FOUNDING_PLAN_ID),
   siteSlug: z.string().trim().min(2).max(80),
   invitationToken: z
     .string()
@@ -66,13 +77,28 @@ export async function POST(request: Request) {
       siteSlug,
       token: invitationToken,
     });
+    if (!isVerticalClaimEnabled(invitation.vertical)) {
+      throw new ClaimFlowError(
+        "not_claimable",
+        409,
+        "This site already has an owner or is not available to claim.",
+        invitation.id,
+      );
+    }
     const stripe = getStripe();
+    const price = await stripe.prices.retrieve(priceId, {
+      expand: ["product"],
+    });
+    validateRestofrontFoundingPrice(price, {
+      expectedPriceId: priceId,
+      expectedLivemode: stripeLivemodeForSecret(process.env.STRIPE_SECRET_KEY),
+    });
 
     if (invitation.checkoutSessionId) {
       const existing = await stripe.checkout.sessions.retrieve(
         invitation.checkoutSessionId,
       );
-      const action = checkoutSessionAction(
+      let action = checkoutSessionAction(
         {
           status: existing.status,
           url: existing.url,
@@ -80,6 +106,17 @@ export async function POST(request: Request) {
         },
         priceId,
       );
+      if (
+        action === "reuse" &&
+        !isReusableFoundingCheckout({
+          allowPromotionCodes: existing.allow_promotion_codes,
+          automaticTaxEnabled: existing.automatic_tax.enabled,
+          billingAddressCollection: existing.billing_address_collection,
+          taxIdCollectionEnabled: existing.tax_id_collection?.enabled === true,
+        })
+      ) {
+        action = "expire_and_replace";
+      }
       if (action === "reuse" && existing.url) {
         return bindReturnCredential(
           invitation,
@@ -129,7 +166,10 @@ export async function POST(request: Request) {
         mode: "subscription",
         expires_at: checkoutExpiresAt,
         line_items: [{ price: priceId, quantity: 1 }],
-        allow_promotion_codes: true,
+        allow_promotion_codes: false,
+        automatic_tax: { enabled: true },
+        billing_address_collection: "required",
+        tax_id_collection: { enabled: true },
         customer_email: invitation.email,
         client_reference_id: invitation.id,
         metadata: {
@@ -179,6 +219,7 @@ export async function POST(request: Request) {
         siteSlug,
         reason: error.code,
         actor: "claimant:checkout",
+        invitationId: error.invitationId,
       });
       return Response.json({ error: error.message }, { status: error.status });
     }
@@ -187,6 +228,7 @@ export async function POST(request: Request) {
       siteSlug,
       error: error instanceof Error ? error.message : "unknown",
     });
+    await alertCheckoutStartFailure(siteSlug);
     return Response.json(
       { error: "Checkout could not start. Try again in a moment." },
       { status: 500 },
@@ -233,7 +275,7 @@ async function bindReturnCredential(
   const cookieStore = await cookies();
   cookieStore.set(CHECKOUT_RETURN_COOKIE, returnToken.token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookieRequired(),
     sameSite: "lax",
     maxAge: 30 * 60,
     path: "/",

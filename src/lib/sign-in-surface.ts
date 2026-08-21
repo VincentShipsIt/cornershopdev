@@ -40,3 +40,12 @@ export function signInSurface(
     inverse: true,
   };
 }
+
+export function signInErrorMessage(error: string | string[] | undefined) {
+  const code = Array.isArray(error) ? error[0] : error;
+  if (!code) return null;
+  if (code === "INVALID_TOKEN" || code === "invalid-link") {
+    return "That secure link is invalid, expired, or already used. Request a new one below.";
+  }
+  return "Sign-in could not be completed. Request a new secure link below.";
+}

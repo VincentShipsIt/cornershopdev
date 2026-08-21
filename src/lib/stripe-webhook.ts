@@ -6,12 +6,19 @@ import {
   billingPlanForPrice,
   configuredBillingPlans,
   configuredBillingPriceIds,
+  RESTOFRONT_FOUNDING_PLAN_ID,
+  RESTOFRONT_FOUNDING_PRICE,
 } from "@/lib/billing-plans";
-import { claimSite, SiteNotClaimableError } from "@/lib/site-claim";
+import {
+  claimSite,
+  hasValidClaimApprovalEvidence,
+  SiteNotClaimableError,
+} from "@/lib/site-claim";
 import {
   stripeSubscriptionSnapshot,
   type StripeSubscriptionSnapshot,
 } from "@/lib/stripe-subscription";
+import { reconcileSiteSubscriptionLifecycle } from "@/lib/subscription-site-lifecycle";
 
 const checkoutEventTypes = new Set<Stripe.Event.Type>([
   "checkout.session.completed",
@@ -75,6 +82,7 @@ export async function processStripeWebhookEvent(
         data: {
           eventId: event.id,
           type: event.type,
+          livemode: event.livemode,
           stripeCreatedAt: stripeTimestamp(event.created),
         },
       });
@@ -126,6 +134,7 @@ async function persistRejectedEvent(
         data: {
           eventId: event.id,
           type: event.type,
+          livemode: event.livemode,
           stripeCreatedAt: stripeTimestamp(event.created),
           status: "REJECTED",
           failureReason: reason,
@@ -207,7 +216,7 @@ async function provisionCheckout(
   if (
     session.mode !== "subscription" ||
     session.status !== "complete" ||
-    session.payment_status === "unpaid"
+    session.payment_status !== "paid"
   ) {
     throw new StripeWebhookValidationError("Checkout is not paid and complete");
   }
@@ -221,6 +230,10 @@ async function provisionCheckout(
     select: {
       id: true,
       email: true,
+      proofMethod: true,
+      approvalEvidenceRef: true,
+      approvedBy: true,
+      approvedAt: true,
       acceptedAt: true,
       checkoutSessionId: true,
       stripePriceId: true,
@@ -237,6 +250,11 @@ async function provisionCheckout(
       "Checkout is not bound to this claim invitation",
     );
   }
+  if (!hasValidClaimApprovalEvidence(invitation)) {
+    throw new StripeWebhookValidationError(
+      "Claim invitation ownership evidence is invalid",
+    );
+  }
 
   const priceId = snapshot.stripePriceId;
   const metadataPlan = session.metadata?.plan;
@@ -249,6 +267,17 @@ async function provisionCheckout(
     (currentPlan && currentPlan.id !== metadataPlan)
   ) {
     throw new StripeWebhookValidationError("Checkout price is not configured");
+  }
+  if (
+    metadataPlan === RESTOFRONT_FOUNDING_PLAN_ID &&
+    (session.currency?.toLowerCase() !==
+      RESTOFRONT_FOUNDING_PRICE.currency ||
+      session.amount_subtotal !== RESTOFRONT_FOUNDING_PRICE.unitAmount ||
+      (session.total_details?.amount_discount ?? 0) !== 0)
+  ) {
+    throw new StripeWebhookValidationError(
+      "Checkout total does not match the founding offer",
+    );
   }
 
   const email = session.customer_details?.email ?? session.customer_email;
@@ -269,6 +298,7 @@ async function provisionCheckout(
     ...snapshot,
     subscriptionStatus: snapshot.status,
     stripeEventCreatedAt: stripeTimestamp(event.created),
+    stripeEventId: event.id,
   });
   if (!invitation.acceptedAt) {
     await tx.auditEvent.create({
@@ -278,7 +308,13 @@ async function provisionCheckout(
         siteId: invitation.site.id,
         metadata: {
           stripeEventId: event.id,
+          stripeEventType: event.type,
+          livemode: event.livemode,
+          claimInvitationId: invitation.id,
+          checkoutSessionId: session.id,
           stripeSubscriptionId: snapshot.stripeSubscriptionId,
+          stripePriceId: snapshot.stripePriceId,
+          paymentStatus: session.payment_status,
           organizationId: access.organizationId,
           plan: metadataPlan,
         },
@@ -314,71 +350,13 @@ async function synchronizeSubscription(
 
   const subscription = await tx.subscription.findFirst({
     where: { stripeSubscriptionId: snapshot.stripeSubscriptionId },
-    select: {
-      siteId: true,
-      site: {
-        select: {
-          status: true,
-          publishedSiteVersionId: true,
-        },
-      },
-    },
+    select: { siteId: true },
   });
   if (!subscription) return;
-
-  // Paid live delivery follows Stripe status. ACTIVE restores a billing pause;
-  // PAST_DUE / CANCELED pause claimed or live sites so custom domains stop
-  // serving until payment is restored. INCOMPLETE is left alone so checkout
-  // mid-flight does not thrash site status.
-  if (snapshot.status === "ACTIVE") {
-    if (subscription.site.status !== "PAUSED") return;
-    await tx.site.update({
-      where: { id: subscription.siteId },
-      data: {
-        status: subscription.site.publishedSiteVersionId ? "LIVE" : "CLAIMED",
-      },
-    });
-    await tx.auditEvent.create({
-      data: {
-        type: "billing.site.restored",
-        actor: "stripe-webhook",
-        siteId: subscription.siteId,
-        metadata: {
-          stripeEventId: event.id,
-          subscriptionStatus: snapshot.status,
-          restoredTo: subscription.site.publishedSiteVersionId
-            ? "LIVE"
-            : "CLAIMED",
-        },
-      },
-    });
-    return;
-  }
-
-  if (snapshot.status !== "PAST_DUE" && snapshot.status !== "CANCELED") {
-    return;
-  }
-  if (
-    subscription.site.status !== "CLAIMED" &&
-    subscription.site.status !== "LIVE"
-  ) {
-    return;
-  }
-  await tx.site.update({
-    where: { id: subscription.siteId },
-    data: { status: "PAUSED" },
-  });
-  await tx.auditEvent.create({
-    data: {
-      type: "billing.site.paused",
-      actor: "stripe-webhook",
-      siteId: subscription.siteId,
-      metadata: {
-        stripeEventId: event.id,
-        subscriptionStatus: snapshot.status,
-        previousStatus: subscription.site.status,
-      },
-    },
+  await reconcileSiteSubscriptionLifecycle(tx, {
+    siteId: subscription.siteId,
+    subscriptionStatus: snapshot.status,
+    stripeEventId: event.id,
   });
 }
 

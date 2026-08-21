@@ -1,6 +1,11 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
 
+  const { assertFirstCustomerTestModeSafety } = await import(
+    "@/lib/first-customer-test-mode"
+  );
+  assertFirstCustomerTestModeSafety();
+
   if (process.env.DATABASE_URL) {
     const { startAnalyticsRetentionScheduler } = await import(
       "@/lib/analytics-retention-runtime"

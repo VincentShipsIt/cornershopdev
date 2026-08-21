@@ -26,7 +26,9 @@ mock.module("@/lib/db", () => ({ getDb: () => ({}) }));
 
 const previousDatabaseUrl = process.env.DATABASE_URL;
 const previousWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const { POST } = await import("@/app/api/webhooks/stripe/route");
+const { POST, schedulePersistedStripeWebhookRejection } = await import(
+  "@/app/api/webhooks/stripe/route"
+);
 
 describe("Stripe webhook operator alert lifecycle", () => {
   beforeEach(() => {
@@ -94,6 +96,29 @@ describe("Stripe webhook operator alert lifecycle", () => {
       expect.objectContaining({
         kind: "CHECKOUT_WEBHOOK_FAILURE",
         dedupKey: "checkout.session.completed:evt_failed",
+      }),
+    );
+  });
+
+  it("extends the response lifecycle for persisted rejection alerts", async () => {
+    const rejectionAlert = mock(async () => "delivered" as const);
+
+    schedulePersistedStripeWebhookRejection(
+      {
+        id: "evt_failed",
+        type: "checkout.session.completed",
+      },
+      (callback) => scheduledCallbacks.push(callback),
+      rejectionAlert,
+    );
+
+    expect(rejectionAlert).not.toHaveBeenCalled();
+    expect(scheduledCallbacks).toHaveLength(1);
+    await scheduledCallbacks[0]!();
+    expect(rejectionAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "evt_failed",
+        type: "checkout.session.completed",
       }),
     );
   });

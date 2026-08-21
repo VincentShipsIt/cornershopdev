@@ -18,10 +18,16 @@ export function SourceMonitoringPanel({
   siteSlug,
   initial,
   demo = false,
+  draftRevision,
+  hasUnsavedChanges,
+  onAcceptedDraft,
 }: {
   siteSlug: string;
   initial: SourceMonitoringDashboardDto;
   demo?: boolean;
+  draftRevision: number;
+  hasUnsavedChanges: boolean;
+  onAcceptedDraft?: (input: { revision: number; draft: unknown }) => void;
 }) {
   const [suggestions, setSuggestions] = useState(initial.suggestions);
   const [editing, setEditing] = useState<Record<string, string>>(() =>
@@ -37,6 +43,12 @@ export function SourceMonitoringPanel({
 
   async function review(id: string, action: "accept" | "reject") {
     if (demo) return;
+    if (action === "accept" && hasUnsavedChanges) {
+      setError(
+        "Save or discard your current draft edits before accepting a monitored change.",
+      );
+      return;
+    }
     setUpdating(id);
     setError(null);
     try {
@@ -47,16 +59,46 @@ export function SourceMonitoringPanel({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, editedValue }),
+          body: JSON.stringify({
+            action,
+            editedValue,
+            ...(action === "accept" ? { expectedRevision: draftRevision } : {}),
+          }),
         },
       );
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as {
+        error?: string;
+        revision?: number;
+        draft?: unknown;
+      };
+      const acceptedRevision = result.revision;
       if (!response.ok) {
         throw new Error(result.error ?? "Suggestion review failed");
+      }
+      if (
+        action === "accept" &&
+        (typeof acceptedRevision !== "number" ||
+          !Number.isInteger(acceptedRevision))
+      ) {
+        throw new Error("Suggestion review did not return a draft revision");
       }
       setSuggestions((current) =>
         current.filter((suggestion) => suggestion.id !== id),
       );
+      if (action === "accept") {
+        if (typeof acceptedRevision !== "number") {
+          throw new Error("Suggestion review did not return a draft revision");
+        }
+        if (onAcceptedDraft) {
+          if (result.draft === undefined) {
+            throw new Error("Suggestion review did not return the accepted draft");
+          }
+          onAcceptedDraft({ revision: acceptedRevision, draft: result.draft });
+        } else {
+          // The operator surface has no local draft editor to reconcile.
+          window.location.reload();
+        }
+      }
     } catch (caught) {
       setError(
         caught instanceof SyntaxError

@@ -4,6 +4,8 @@ import {
   BillingConfigurationError,
   configuredBillingPlans,
   configuredBillingPriceIds,
+  stripeLivemodeForSecret,
+  validateRestofrontFoundingPrice,
 } from "@/lib/billing-plans";
 
 const configured = {
@@ -48,5 +50,58 @@ describe("configuredBillingPlans", () => {
         configuredBillingPlans(configured),
       ),
     ).toBeNull();
+  });
+});
+
+describe("Restofront founding Stripe price", () => {
+  const price = {
+    id: "price_starter",
+    active: true,
+    currency: "eur",
+    unit_amount: 4_900,
+    type: "recurring",
+    livemode: true,
+    tax_behavior: "exclusive",
+    recurring: {
+      interval: "month",
+      interval_count: 1,
+      usage_type: "licensed",
+    },
+    product: { active: true },
+  };
+
+  it("accepts only the approved live €49 monthly exclusive-tax offer", () => {
+    expect(() =>
+      validateRestofrontFoundingPrice(price, {
+        expectedPriceId: "price_starter",
+        expectedLivemode: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects wrong amount, mode, cadence, tax, or archived product", () => {
+    for (const candidate of [
+      { ...price, unit_amount: 4_999 },
+      { ...price, livemode: false },
+      { ...price, recurring: { ...price.recurring, interval: "year" } },
+      { ...price, tax_behavior: "inclusive" },
+      { ...price, product: { active: false } },
+      { ...price, product: "prod_unexpanded" },
+    ]) {
+      expect(() =>
+        validateRestofrontFoundingPrice(candidate, {
+          expectedPriceId: "price_starter",
+          expectedLivemode: true,
+        }),
+      ).toThrow(BillingConfigurationError);
+    }
+  });
+
+  it("derives expected mode only from an explicit Stripe secret mode", () => {
+    expect(stripeLivemodeForSecret("sk_live_example")).toBe(true);
+    expect(stripeLivemodeForSecret("sk_test_example")).toBe(false);
+    expect(() => stripeLivemodeForSecret("rk_live_example")).toThrow(
+      BillingConfigurationError,
+    );
   });
 });

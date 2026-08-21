@@ -3,14 +3,27 @@ import { revalidateTag } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { siteStatusForDomainState } from "@/lib/domain-routing";
+import {
+  evidenceDigest,
+  integrationUrlDigest,
+} from "@/lib/evidence-digests";
 import { hasUnreviewedRestaurantTranslations } from "@/lib/restaurant-menu-editor";
+import { hasUnreviewedFoodRetailTranslations } from "@/lib/verticals/food-retail/editor";
+import { DraftRevisionConflictError } from "@/lib/site-persistence";
 import { previewCacheTagFor } from "@/lib/site-surface";
+import {
+  assertVerticalPublicationEnabled,
+  SitePublicationCapabilityError,
+} from "@/lib/site-publication-capability";
 import {
   projectPublishedSiteVersion,
   projectSiteDraft,
   siteDraftRelations,
 } from "@/lib/sites";
 import type { VerticalId } from "@/lib/verticals/types";
+
+export { SitePublicationCapabilityError };
 
 const retryablePublishCodes = new Set(["P2002", "P2034"]);
 
@@ -23,6 +36,7 @@ export type PublishSiteDraftInput = {
     email: string;
   };
   changeSummary: string;
+  expectedRevision: number;
   now?: Date;
 };
 
@@ -73,6 +87,7 @@ export class SitePublicationTranslationError extends Error {
 export async function publishSiteDraft(
   input: PublishSiteDraftInput,
 ): Promise<PublishedSiteVersion> {
+  assertVerticalPublicationEnabled(input.vertical);
   const changeSummary = input.changeSummary.trim();
   if (changeSummary.length < 3 || changeSummary.length > 280) {
     throw new Error("Change summary must be between 3 and 280 characters");
@@ -100,21 +115,25 @@ export async function publishSiteDraft(
             // billing pause by changing PAUSED back to LIVE.
             throw new SitePublicationStateError();
           }
+          if (site.draftRevision !== input.expectedRevision) {
+            throw new DraftRevisionConflictError(site.draftRevision);
+          }
 
           // `projectSiteDraft` is the private-preview projection. Parsing it
           // here before any write means validation failure cannot create a
           // version, move the pointer, change status, or write an audit row.
           const loaded = projectSiteDraft(site);
-          if (
-            loaded.vertical === Vertical.RESTAURANT &&
-            hasUnreviewedRestaurantTranslations(
-              loaded.draft as {
-                translations: Array<{
-                  status: "current" | "stale" | "draft";
-                }>;
-              },
-            )
-          ) {
+          const reviewableDraft = loaded.draft as {
+            translations: Array<{
+              status: "current" | "stale" | "draft";
+            }>;
+          };
+          const hasUnreviewedTranslations =
+            (loaded.vertical === Vertical.RESTAURANT &&
+              hasUnreviewedRestaurantTranslations(reviewableDraft)) ||
+            (loaded.vertical === Vertical.FOOD_RETAIL &&
+              hasUnreviewedFoodRetailTranslations(reviewableDraft));
+          if (hasUnreviewedTranslations) {
             throw new SitePublicationTranslationError();
           }
           const draft = loaded.draft as Prisma.InputJsonValue;
@@ -181,6 +200,20 @@ export async function publishSiteDraft(
                 themeId: loaded.theme.id,
                 themeVersion: loaded.theme.version,
                 live: verifiedDomainCount > 0,
+                draftRevision: site.draftRevision,
+                draftContentDigest: evidenceDigest(loaded.draft),
+                integrationUrlDigest: integrationUrlDigest(
+                  (
+                    loaded.draft as {
+                      integrations: Array<{
+                        type: string;
+                        url: string;
+                        enabled: boolean;
+                      }>;
+                    }
+                  ).integrations,
+                ),
+                previousSiteVersionId: site.publishedSiteVersionId,
               },
             },
           });
@@ -279,6 +312,7 @@ export async function rollbackPublishedSiteVersion(input: {
   };
   now?: Date;
 }): Promise<PublishedSiteVersion> {
+  assertVerticalPublicationEnabled(input.vertical);
   if (!process.env.DATABASE_URL) {
     throw new Error("Site publishing is temporarily unavailable");
   }
@@ -356,6 +390,14 @@ export async function rollbackPublishedSiteVersion(input: {
             },
             select: { id: true, version: true },
           });
+          const verifiedDomainCount = await tx.domain.count({
+            where: { siteId: input.siteId, verified: true },
+          });
+          const nextStatus = siteStatusForDomainState({
+            currentStatus: site.status,
+            hasVerifiedDomain: verifiedDomainCount > 0,
+            hasValidPublishedVersion: true,
+          });
 
           const moved = await tx.site.updateMany({
             where: {
@@ -365,7 +407,7 @@ export async function rollbackPublishedSiteVersion(input: {
             },
             data: {
               publishedSiteVersionId: version.id,
-              status: "LIVE",
+              status: nextStatus,
             },
           });
           if (moved.count !== 1) {
@@ -386,6 +428,7 @@ export async function rollbackPublishedSiteVersion(input: {
                 actorEmail: input.actor.email,
                 themeId: projected.theme.id,
                 themeVersion: projected.theme.version,
+                live: nextStatus === "LIVE",
               },
             },
           });

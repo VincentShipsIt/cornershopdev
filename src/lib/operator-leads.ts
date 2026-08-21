@@ -70,7 +70,9 @@ export async function createOrReopenOperatorLead(input: {
         },
         data: {
           status: "PREVIEW_READY",
-          ...(input.contactEmail ? { email: input.contactEmail } : {}),
+          ...(input.contactEmail
+            ? { leadContactEmail: input.contactEmail }
+            : {}),
         },
       });
       if (reopened.count !== 1) {

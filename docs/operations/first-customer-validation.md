@@ -1,6 +1,6 @@
 # Restofront first-customer validation runbook
 
-**Runbook version:** 2026-07-26
+**Runbook version:** 2026-08-20
 
 **Issues:** [#20](https://github.com/VincentShipsIt/cornershopdev/issues/20)
 and [#47](https://github.com/VincentShipsIt/cornershopdev/issues/47)
@@ -18,11 +18,37 @@ capabilities therefore remain unavailable for first-customer acceptance. See
 release blockers. Issue #47 must remain open until the real commercial and
 customer-domain evidence below exists.
 
+The executable, read-only production evidence gate is documented in
+[`first-customer-production-exercise.md`](./first-customer-production-exercise.md).
+Its automated-path result is platform evidence only; issue acceptance still
+requires `REAL_CUSTOMER_ACCEPTANCE_VERIFIED` from live provider, customer,
+custom-domain, alert-receipt, and human cost/review evidence.
+
 This is the commercial and operational exit plan for the first paid Restofront
 restaurant. It separates verified platform evidence from evidence that can only
 come from an authorized restaurant owner and a real payment. A working preview,
 green deploy, or founder test never substitutes for owner consent, ownership
 verification, a settled Stripe charge, or a published customer domain.
+
+## Automated browser boundary
+
+GitHub CI runs a Chromium journey against a production build and real
+PostgreSQL/Redis services. It uses loopback-only Stripe and Resend doubles to
+exercise the actual claim page, `/api/claim-invitations`, founding-plan
+`/api/checkout`, an external test Checkout page, signed Stripe webhook,
+checkout bootstrap, magic-link sign-in, workspace chooser and cookie rotation,
+dashboard save/publish HTTP routes, and the public-host rewrite with immutable
+version identity. The journey also proves a used claim is rejected, a stale
+workspace cookie cannot open the dashboard, private Save leaves the public host
+unpublished, and booking/ordering destinations survive Publish.
+
+The double boundary requires `CORNERSHOP_ENV=test`,
+`FIRST_CUSTOMER_E2E=1`, loopback app/provider/database origins, test provider
+keys, and no `VERCEL_ENV`. Instrumentation aborts startup if any part is unsafe.
+CI artifacts say `AUTOMATED_BROWSER_JOURNEY_VERIFIED` and explicitly keep
+`realPaymentVerified`, `realCustomerAcceptanceVerified`, and
+`productionAccepted` false. They are platform evidence, never issue #20/#47
+real-world acceptance evidence.
 
 ## The one-price offer
 
@@ -62,9 +88,9 @@ owner uploads, or explicitly permissioned customer imagery may go live.
 | Existing booking/ordering destinations preserved | Working in product design | Compare the source and published URLs before launch; no customer-path evidence exists yet. |
 | Custom domain and SSL | Working platform capability | Must be proven on a domain the restaurant has authorized. A platform or Restofront domain does not count. |
 | Booking-request inbox and first-party analytics | Deployed in PR #59 | Analytics activate only on a verified customer domain; no customer-domain data exists yet. |
-| Safe private Save and atomic Publish | Merged on main; not production-deployed | Do not imply that production has the implementation until a SHA-bound release deploy proves it. |
-| Secure, owner-bound invitation | Merged on main; not production-deployed | Do not send a claim URL until production config/deploy gates pass and a real owner authorizes the exercise. |
-| Durable one-plan billing lifecycle | Merged on main; not production-deployed | Do not initiate a live checkout until the exact release is deployed and the customer authorizes a live charge. |
+| Safe private Save and atomic Publish | Merged on main; not production-deployed | Do not imply that production has the implementation until a SHA-bound release deploy proves it. Acceptance still requires a real owner save, unchanged-live-pointer evidence, and exact published-version evidence. |
+| Secure, owner-bound invitation | Merged on main; not production-deployed | Do not send a claim URL until production config/deploy gates pass and a real owner authorizes the exercise. Acceptance still requires authorized owner receipt, signed provider delivery, one acceptance, and rejected replay evidence. |
+| Durable one-plan billing lifecycle | Merged on main; not production-deployed | Do not initiate a live checkout until the exact release is deployed and the customer authorizes a live charge. Acceptance still requires an authorized settled live €49 charge and idempotent live webhook evidence. |
 
 Public Restofront marketing and the claim UI sell this same €49/month founding
 plan and authentic-image policy. Live Stripe still has to match: set the Starter
@@ -96,61 +122,57 @@ Statuses mean:
 - `VERIFIED` — objective evidence already exists.
 - `DOCUMENTED` — the rule or offer is written, but the customer event has not
   happened.
-- `BLOCKED` — a named engineering dependency prevents safe execution.
+- `AUTOMATED` — the platform path is covered by deterministic tests, but the
+  customer/provider event has not happened.
 - `HUMAN` — only an authorized person or real-world event can supply evidence.
 
 | Issue criterion | Status on 2026-07-26 | Required acceptance evidence | Dependency or owner |
 | --- | --- | --- | --- |
 | #20: operator creates or opens the Le Petit Meunier lead | `HUMAN` | Timestamped operator-console record for the canonical `le-petit-meunier` site, with no private contact data copied into GitHub. | Operator action; not blocked by #18, #13, or #8. |
-| #20: verified owner accepts a single-use invitation | `BLOCKED` | Invitation audit events showing creation, verification, one acceptance, expiry, and failed replay; owner identity/authority attestation stored privately. | #13, plus real owner consent. |
-| #20: Stripe collects the first payment and webhook provisions the account | `BLOCKED` | Settled live-mode Checkout/Payment identifier, matching idempotent webhook event, and one user, organization, owner membership, and active subscription. Redact personal/payment data. | #13 then #8, plus customer authorization to charge. |
-| #20: owner signs in and edits a menu item | `BLOCKED` | Owner session audit, before/after value, and owner confirmation that the edit is intentional. | #13 and #8 provision access; real owner action. |
-| #20: Save changes only the private preview | `BLOCKED` | Before/after captures proving the draft changed while the public snapshot and custom domain did not. | #18. |
-| #20: Publish atomically updates the public site | `BLOCKED` | Publish audit event and immutable version identifiers; old version remains live on a forced validation failure; new version appears only after successful publish. | #18. |
-| #20: verified custom domain serves the correct site with valid SSL | `BLOCKED` | Owner-authorized DNS change, platform domain-verification record, public DNS answer, valid certificate, HTTP 200, and content/version match to the published snapshot. | #18 for the served snapshot; #13 and #8 for the safe paid-owner path; owner/domain administrator action. |
-| #20: booking and ordering links remain unchanged | `HUMAN` | Machine-readable source-versus-published URL comparison plus owner confirmation for every retained provider link. | Final launch check; not directly blocked by #18, #13, or #8. |
-| #20: checkout, publish, and public-site failure alerting | `BLOCKED` | One safe synthetic failure per path with timestamped alert receipt, destination, acknowledgement, and runbook link. | #8 owns checkout failure behavior; #18 owns publish failure behavior. Public-site alerting remains a separate operations gate. |
+| #20: verified owner accepts a single-use invitation | `AUTOMATED` | Invitation audit events showing creation, signed delivery, verification, one acceptance, expiry, and failed replay; owner identity/authority attestation stored privately. | Real owner consent and action. |
+| #20: Stripe collects the first payment and webhook provisions the account | `AUTOMATED` | Settled live-mode Checkout/Payment identifier, matching idempotent webhook event, and one user, organization, owner membership, and active subscription. Redact personal/payment data. | Customer authorization and a real live charge. |
+| #20: owner signs in and edits a menu item | `AUTOMATED` | Owner session audit, before/after value, and owner confirmation that the edit is intentional. | Real owner action. |
+| #20: Save changes only the private preview | `AUTOMATED` | Before/after evidence proving the draft changed while the published pointer and custom domain did not. | Real owner action on production data. |
+| #20: Publish atomically updates the public site | `AUTOMATED` | Publish audit event and immutable version identifiers; old version remains live on a forced validation failure; new version appears only after successful publish. | Authorized production publish. |
+| #20: verified custom domain serves the correct site with valid SSL | `AUTOMATED` | Owner-authorized DNS change, platform domain-verification record, public DNS answer, valid certificate, HTTP 200, and content/version match to the published snapshot. | Owner/domain administrator authorization and production DNS. |
+| #20: booking and ordering links remain unchanged | `HUMAN` | Machine-readable source-versus-published URL comparison plus owner confirmation for every retained provider link. | Final authorized launch check. |
+| #20: checkout, publish, and public-site failure alerting | `AUTOMATED` | One safe synthetic failure per path with timestamped alert receipt, destination, acknowledgement, and runbook link. | Controlled production exercise and receipt acknowledgement. |
 | #20: price, onboarding time, support, and decision date recorded | `DOCUMENTED` | Completed worksheet below and a calendar/review link dated exactly 30 days after the first settled charge. | Founder records actuals; no engineering dependency. |
 | #20: evidence and operational instructions attached | `DOCUMENTED` | Link this runbook now; attach the completed evidence rows only after each event occurs. | Issue owner. |
 | #47: one price and offer written before the first conversation | `DOCUMENTED` | Immutable link to this runbook revision predating the first recorded conversation. | Commercial owner. Public pricing must be aligned before use. |
-| #47: every promised capability is working, upcoming, or removed | `DOCUMENTED` | Promise ledger above reviewed immediately before the conversation. | Commercial owner; update when #18, #13, or #8 lands. |
-| #47: first restaurant pays and reaches a published custom domain | `BLOCKED` | Same payment, publication, DNS, SSL, and content-match evidence as #20. | #13, #8, #18, and customer action. |
+| #47: every promised capability is working, upcoming, or removed | `DOCUMENTED` | Promise ledger above reviewed immediately before the conversation. | Commercial owner; review immediately before use. |
+| #47: first restaurant pays and reaches a published custom domain | `HUMAN` | Same payment, publication, DNS, SSL, and content-match evidence as #20. | Authorized customer payment, edit, publish, and DNS action. |
 | #47: founder-assisted work and recurring support cost recorded | `HUMAN` | Completed onboarding entries and at least the first 30 days of support entries in the worksheet. | Founder; actual activity only. |
 | #47: second qualified restaurant lead documented | `HUMAN` | A second lead record satisfying every qualification rule below. | Commercial acquisition; no engineering dependency. |
 | #47: dated keep/change/stop review scheduled and recorded | `HUMAN` | Calendar/review link scheduled for `first settled charge date + 30 calendar days`, then completed decision record. | Founder; cannot be dated until a real first charge exists. |
 
-## Exact dependency boundary
+## Historical engineering dependencies
+
+Issues #8, #13, and #18 delivered the billing, claim, and publication platform
+boundaries described below. They are no longer reasons to mark a real-world row
+complete: test-mode and platform evidence still cannot substitute for the live
+customer, provider, payment, DNS, alert-receipt, and 30-day evidence required by
+the production gate.
 
 ### #18 — safe draft and publish
 
-#18 blocks proof that Save is private, Publish is validated and atomic, failed
-publication leaves the current site untouched, and the custom domain always
-serves the latest immutable published snapshot. It therefore blocks #20's
-private-Save, atomic-Publish, publish-alert, and correct-published-domain
-criteria, plus #47's published-custom-domain criterion.
-
-#18 does not block writing the offer, creating/opening the operator lead,
-qualifying a second lead, measuring founder time, comparing source integration
-URLs, or scheduling the decision after a real charge.
+#18 established private Save, validated atomic Publish, failure rollback, and
+immutable public version routing. The production exercise must still observe
+those guarantees on the authorized restaurant journey.
 
 ### #13 — secure claiming and ownership verification
 
-#13 blocks any claim invitation, owner acceptance, or checkout being treated as
-authorized. It therefore blocks #20's verified single-use invitation, safe
-first payment, provisioned owner access, real owner edit, and the trusted-owner
-portion of the custom-domain journey. It also blocks #47's paid-customer exit.
+#13 established the owner-bound claim invitation and ownership-proof boundary.
+The first customer's consent, authority, delivery, acceptance, and replay
+evidence remain real-world gates.
 
 A public preview URL, an email entered into checkout, founder familiarity with
 the restaurant, or control of the Restofront domain is not ownership proof.
 
 ### #8 — durable Stripe provisioning and subscription lifecycle
 
-#8 blocks a live charge because provisioning still cannot be accepted as
-idempotent and browser-independent, the full subscription lifecycle is not
-verified, and access gates are incomplete. It therefore blocks #20's payment
-and provisioning criterion, the paid owner session used for the edit, checkout
-failure evidence, and subscription-gated publication. It also blocks #47's
-first-payment and published-custom-domain exit.
+#8 established browser-independent, idempotent Stripe provisioning and the
+subscription lifecycle. It did not perform or authorize the first live charge.
 
 Neither a Stripe test-mode success nor a browser return from Checkout counts as
 the first payment.

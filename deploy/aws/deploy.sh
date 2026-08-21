@@ -174,6 +174,20 @@ aws s3 cp "$artifact_uri" "$artifact_file" --region us-west-1 --only-show-errors
 gzip -dc "$artifact_file" | docker load >/dev/null
 docker image inspect "$image_name" >/dev/null
 
+# Run from the reviewed image before its entrypoint can apply migrations. This
+# uses only predecessor-schema columns and blocks a chargeable legacy Checkout
+# from being stranded by the migration. Remediation is an explicit operator
+# procedure after the matching Stripe Session has been expired.
+docker run --rm \
+  --network shipshit \
+  --env-file "$environment_file" \
+  --entrypoint bun \
+  "$image_name" \
+  run operator:preflight-first-customer-migration \
+  --environment production \
+  --mode check \
+  --execute >/dev/null
+
 docker rm -f "$candidate" >/dev/null 2>&1 || true
 docker run -d \
   --name "$candidate" \
@@ -213,6 +227,10 @@ echo "release-state outreach-configured sha=${deployed_sha}"
 docker exec "$candidate" \
   bun run operator:preflight-platform-edge --phase dns
 echo "release-state wildcard-dns-ready sha=${deployed_sha}"
+# One deployment-time provider read proves the configured live Price still
+# matches the approved founding offer. It is intentionally separate from the
+# five-second health probe so normal readiness never hammers Stripe.
+docker exec "$candidate" bun run operator:preflight-stripe --mode live >/dev/null
 docker rm -f "$previous" >/dev/null 2>&1 || true
 if docker inspect "$container" >/dev/null 2>&1; then
   docker stop "$container" >/dev/null

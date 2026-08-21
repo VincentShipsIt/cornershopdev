@@ -9,13 +9,19 @@ import { getSiteBillingAccess } from "@/lib/billing-access";
 import { getCurrentSession } from "@/lib/current-session";
 import { Vertical } from "@/generated/prisma/enums";
 import { publicSiteOrigin } from "@/lib/domain-routing";
-import { getRestaurantDraft } from "@/lib/restaurants";
+import { getRestaurantOwnerDraft } from "@/lib/restaurants";
 import { sampleRestaurant } from "@/lib/restaurant";
 import { getSitePublicationHistory } from "@/lib/site-publication";
 import { getSourceMonitoringDashboard } from "@/lib/source-monitoring";
 import { resolveRequestBrand } from "@/lib/verticals/request-site";
 import { listAccountWorkspaces } from "@/lib/workspaces";
 import { UnsupportedVerticalDashboard } from "@/app/dashboard/unsupported-vertical-dashboard";
+import { FoodRetailDashboard } from "@/app/dashboard/food-retail-dashboard";
+import { LocalServiceDashboard } from "@/app/dashboard/local-service-dashboard";
+import { findSiteDraft } from "@/lib/sites";
+import type { FoodRetailSiteDraft } from "@/lib/verticals/food-retail/schema";
+import type { LocalServiceSiteDraft } from "@/lib/verticals/local-service/schema";
+import { EditorialFontScope } from "@/components/fonts/editorial-font-scope";
 
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await resolveRequestBrand();
@@ -41,19 +47,57 @@ export default async function DashboardPage({
     session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
+  if (access?.ok && access.site.vertical === Vertical.FOOD_RETAIL) {
+    const loaded = await findSiteDraft(access.site.slug);
+    if (!loaded || loaded.vertical !== Vertical.FOOD_RETAIL) redirect("/sign-in");
+    return (
+      <EditorialFontScope>
+        <FoodRetailDashboard
+          email={access.user.email}
+          brand={await resolveRequestBrand()}
+          initialDraft={loaded.draft as FoodRetailSiteDraft}
+          initialRevision={loaded.revision}
+        />
+      </EditorialFontScope>
+    );
+  }
+
+  if (access?.ok && access.site.vertical === Vertical.LOCAL_SERVICE) {
+    const [loaded, workspaces] = await Promise.all([
+      findSiteDraft(access.site.slug),
+      listAccountWorkspaces(access.session.userId),
+    ]);
+    if (!loaded || loaded.vertical !== Vertical.LOCAL_SERVICE) {
+      redirect("/sign-in");
+    }
+    return (
+      <EditorialFontScope>
+        <LocalServiceDashboard
+          email={access.user.email}
+          brand={await resolveRequestBrand()}
+          initialDraft={loaded.draft as LocalServiceSiteDraft}
+          initialRevision={loaded.revision}
+          canSwitchWorkspace={workspaces.length > 1}
+        />
+      </EditorialFontScope>
+    );
+  }
+
   if (access?.ok && access.site.vertical !== Vertical.RESTAURANT) {
     return (
-      <UnsupportedVerticalDashboard
-        email={access.user.email}
-        slug={access.site.slug}
-        vertical={access.site.vertical}
-        brand={await resolveRequestBrand()}
-      />
+      <EditorialFontScope>
+        <UnsupportedVerticalDashboard
+          email={access.user.email}
+          slug={access.site.slug}
+          vertical={access.site.vertical}
+          brand={await resolveRequestBrand()}
+        />
+      </EditorialFontScope>
     );
   }
 
   const [
-    draft,
+    ownerDraft,
     analyticsSummary,
     bookingInbox,
     billingAccess,
@@ -62,7 +106,7 @@ export default async function DashboardPage({
     sourceMonitoring,
   ] = access?.ok
     ? await Promise.all([
-        getRestaurantDraft(access.site.slug),
+        getRestaurantOwnerDraft(access.site.slug),
         getSiteAnalyticsSummary(access.site.id),
         getBookingRequestInbox(access.site.id),
         getSiteBillingAccess(access.site.id),
@@ -71,7 +115,7 @@ export default async function DashboardPage({
         getSourceMonitoringDashboard(access.site.id),
       ])
     : [
-        sampleRestaurant,
+        { draft: sampleRestaurant, revision: 0 },
         buildEmptyAnalyticsSummary(),
         {
           requests: [],
@@ -96,37 +140,40 @@ export default async function DashboardPage({
 
   // A claimed restaurant without a loadable draft is a data integrity problem,
   // not a cue to invent sample content under the owner's real slug.
-  if (access?.ok && !draft) {
+  if (access?.ok && !ownerDraft) {
     redirect("/sign-in");
   }
 
   return (
-    <Dashboard
-      initialDraft={draft ?? sampleRestaurant}
-      email={access?.ok ? access.user.email : "demo@cornershop.dev"}
-      checkoutComplete={query.checkout === "success"}
-      demo={!session}
-      brand={await resolveRequestBrand()}
-      analyticsSummary={analyticsSummary}
-      bookingInbox={bookingInbox}
-      billingAccess={billingAccess}
-      publicationHistory={publicationHistory.map((item) => ({
-        ...item,
-        publishedAt: item.publishedAt.toISOString(),
-      }))}
-      canSwitchWorkspace={workspaces.length > 1}
-      sourceMonitoring={sourceMonitoring}
-      platformUrl={
-        access?.ok
-          ? publicSiteOrigin({
-              slug: access.site.slug,
-              vertical: access.site.vertical,
-            })
-          : publicSiteOrigin({
-              slug: sampleRestaurant.slug,
-              vertical: "RESTAURANT",
-            })
-      }
-    />
+    <EditorialFontScope>
+      <Dashboard
+        initialDraft={ownerDraft?.draft ?? sampleRestaurant}
+        initialDraftRevision={ownerDraft?.revision ?? 0}
+        email={access?.ok ? access.user.email : "demo@cornershop.dev"}
+        checkoutComplete={query.checkout === "success"}
+        demo={!session}
+        brand={await resolveRequestBrand()}
+        analyticsSummary={analyticsSummary}
+        bookingInbox={bookingInbox}
+        billingAccess={billingAccess}
+        publicationHistory={publicationHistory.map((item) => ({
+          ...item,
+          publishedAt: item.publishedAt.toISOString(),
+        }))}
+        canSwitchWorkspace={workspaces.length > 1}
+        sourceMonitoring={sourceMonitoring}
+        platformUrl={
+          access?.ok
+            ? publicSiteOrigin({
+                slug: access.site.slug,
+                vertical: access.site.vertical,
+              })
+            : publicSiteOrigin({
+                slug: sampleRestaurant.slug,
+                vertical: "RESTAURANT",
+              })
+        }
+      />
+    </EditorialFontScope>
   );
 }
