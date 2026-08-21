@@ -62,6 +62,10 @@ RUN bun build scripts/preflight-outreach.ts \
   --target=bun \
   --packages=external \
   --outfile=.operator-scripts/preflight-outreach.ts
+RUN bun build scripts/preflight-platform-edge.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/preflight-platform-edge.ts
 RUN bun build scripts/preflight-stripe-billing.ts \
   --target=bun \
   --packages=external \

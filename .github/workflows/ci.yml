@@ -128,6 +128,7 @@ jobs:
           retention-days: 30
       - run: shellcheck deploy/aws/*.sh
       - run: bash deploy/aws/test-host-launcher.sh
+      - run: bash deploy/aws/test-release-bundle.sh
 
   first-customer-browser-e2e:
     runs-on: ubuntu-latest
@@ -240,13 +241,14 @@ jobs:
         run: bash deploy/aws/test-container-runtime.sh cornershopdev:runtime-contract
 
   deploy:
-    # Ships on a manual dispatch or when a stable GitHub release is published.
-    # Release events check out the release tag, so cutting a release deploys that
-    # exact commit. Prereleases (RC/beta) are excluded so only stable releases reach
-    # production. The verify gate and the Production environment protection still apply.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.event.release.prerelease == false)
+    # Production is release-only. A manual dispatch runs verification but cannot
+    # bypass a published stable tag, exact-main provenance, or release evidence.
+    if: github.event_name == 'release' && github.event.release.prerelease == false
     needs: [verify, first-customer-browser-e2e, container-runtime]
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/deploy-production.yml
+    with:
+      release_tag: ${{ github.event.release.tag_name }}
+      release_url: ${{ github.event.release.html_url }}

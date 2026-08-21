@@ -33,9 +33,3 @@ export function verifyResendWebhook(
     return { ok: false, status: 400, error: "Invalid signature" };
   }
 }
-
-export function resendInboundWebhookSecret(
-  env: Record<string, string | undefined> = process.env,
-): string | undefined {
-  return env.RESEND_INBOUND_WEBHOOK_SECRET || env.RESEND_WEBHOOK_SECRET;
-}

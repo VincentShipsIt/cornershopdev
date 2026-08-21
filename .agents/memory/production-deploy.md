@@ -5,6 +5,27 @@ status: durable
 
 # Production deploy — mechanism and gotchas
 
+## Release truth audit (2026-08-20)
+
+Production runs `feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, not current main
+`3f398556a7b849aceb222a1cca12a6663b468681`. It is 15 commits behind, exposes
+15 migrations while main contains 18, and has no outreach preflight command.
+The current production SSM set is missing the explicit delivery signing secret
+`RESEND_WEBHOOK_SECRET`, the explicit inbound signing secret
+`RESEND_INBOUND_WEBHOOK_SECRET`, and `BETTER_AUTH_SECRET`; the Restofront sender
+display name also differs from the merged outreach contract. Production has
+`SUPERADMIN_EMAILS` but lacks `FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY`; it also lacks
+the explicit photo model and `PHOTO_*` policy pins. Neither `*.restofront.com`
+nor `*.cornershop.dev` exists in Route 53. Caddy itself validates and its loaded
+on-demand TLS ask endpoint correctly targets `api-cornershop-dev`.
+
+The reviewed fix makes production stable-release-only, runs migration,
+outreach, wildcard DNS, and post-cutover TLS gates in the exact candidate, and
+records SHA-bound evidence with customer acceptance explicitly not evaluated.
+Exact blocker remediation and state definitions live in
+`docs/operations/production-release.md`. Do not describe merged main as
+production until a release artifact proves `productionDeployed: VERIFIED`.
+
 Host `i-00e74422e719396c3` (us-west-1), single container `api-cornershop-dev`
 behind `shipshit-caddy`. Single-origin: `cornershop.dev`, `restofront.com`,
 their routed storefront hostnames, and customer custom domains hit that container.

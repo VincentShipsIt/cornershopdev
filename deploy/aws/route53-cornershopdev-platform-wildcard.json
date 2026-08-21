@@ -1,0 +1,14 @@
+{
+  "Comment": "Route factory fallback site subdomains to the Cornershopdev Caddy edge",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "*.cornershop.dev.",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [{ "Value": "52.8.153.188" }]
+      }
+    }
+  ]
+}

@@ -29,6 +29,7 @@
     "operator:dispatch-alerts": "bun scripts/dispatch-operator-alerts.ts",
     "operator:monitor-public-site": "bun scripts/monitor-public-site.ts",
     "operator:preflight-outreach": "bun scripts/preflight-outreach.ts",
+    "operator:preflight-platform-edge": "bun scripts/preflight-platform-edge.ts",
     "workflow:migrate": "bun node_modules/@workflow/world-postgres/bin/setup.js",
     "postinstall": "bunx --bun prisma generate"
   },

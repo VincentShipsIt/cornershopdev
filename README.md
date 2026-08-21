@@ -367,19 +367,22 @@ instructions are in
 
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
+- `RESEND_INBOUND_WEBHOOK_SECRET` (must be present and different from the
+  delivery webhook secret)
 - `GOOGLE_PLACES_API_KEY` or an approved non-public
   `LEAD_DISCOVERY_NOMINATIM_BASE_URL` (the public OSMF endpoint is blocked)
 - `WORKFLOW_ENABLED=true`
 - the complete `WORKFLOW_POSTGRES_*` contract listed above
 
 Before release, run the read-only outreach preflight inside the reviewed
-container. It checks the committed outreach and private-contact migrations, registered Restofront sender and
-reply-to plus every other launched niche identity, Workflow/database
-configuration, verified Resend sending/receiving domains, and enabled delivery
-and inbound webhooks. It also fails closed unless a commercial or self-hosted
-lead-enumeration provider is configured. It prints only check names, booleans, public endpoints,
-niche names, and timestamps; it never prints secret values and never sends an
-email.
+container. It checks the committed outreach and private-contact migrations,
+registered Restofront sender and reply-to plus every other launched niche
+identity, Workflow/database configuration, verified Resend sending/receiving
+domains, both distinct endpoint-specific signing secrets, and the enabled
+delivery and inbound webhooks. It also fails closed unless a commercial or
+self-hosted lead-enumeration provider is configured. It prints only check
+names, booleans, public endpoints, niche names, and timestamps; it never
+prints secret values and never sends an email.
 
 ```bash
 bun run operator:preflight-outreach --environment production
@@ -400,9 +403,15 @@ and belongs to a restaurant.
 
 The app is single-origin. Caddy on the EC2 application host terminates TLS for
 every ingress the factory operates — `cornershop.dev`, `www`, `api`, `domains`,
-and each customer storefront via on-demand TLS — and reverse-proxies all of them
-to the one application container. No niche gets its own platform subdomain; a
-niche brings only the storefront domain its customers actually type.
+each claimed site's platform subdomain, and each customer storefront via
+on-demand TLS — and reverse-proxies all of them to the one application
+container. Restaurant sites use `<slug>.restofront.com`; verticals without a
+launched niche domain fall back to `<slug>.cornershop.dev`. Wildcard DNS and TLS
+are release gates, not assumptions.
+
+The production state model, exact release procedure, deployed-SHA evidence, and
+current external blockers are documented in
+[`docs/operations/production-release.md`](docs/operations/production-release.md).
 
 Leave `CORNERSHOPDEV_API_ORIGIN` empty. It exists for a future split deployment,
 where it makes `next.config.ts` proxy `/api/*` to a separate API origin. Setting

@@ -10,15 +10,15 @@ Never copy production database or AWS credentials into pull-request builds.
 CI uses non-connecting placeholders; runtime credentials are loaded from
 encrypted SSM parameters on the EC2 host.
 
-| Service         | Production isolation                                                                  | Runtime variables                                       |
-| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| PostgreSQL      | Dedicated database and login on the existing private RDS instance                     | `DATABASE_URL`                                          |
-| Workflow        | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency              | `WORKFLOW_*`                                            |
-| Redis           | Dedicated container and persistent Docker volume, not published to the host           | `REDIS_URL`                                             |
-| Images          | Private versioned S3 bucket served through CloudFront OAC                             | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL`         |
-| Billing         | Stripe Checkout, signed webhooks, and Customer Portal                                 | `STRIPE_*`, `CLAIM_TOKEN_SECRET`                        |
-| Operator alerts | Durable PostgreSQL outbox delivered through Resend                                    | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY`               |
-| Niche outreach  | Explicit operator send, Workflow follow-up, signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
+| Service | Production isolation | Runtime variables |
+| --- | --- | --- |
+| PostgreSQL | Dedicated database and login on the existing private RDS instance | `DATABASE_URL` |
+| Workflow | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency | `WORKFLOW_*` |
+| Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
+| Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
+| Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
+| Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
+| Niche outreach | Explicit operator send, Workflow follow-up, separately signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -122,9 +122,13 @@ explicit commercial/self-hosted Nominatim-compatible
 fallback. Store whichever approved provider setting is used under the matching
 `/shipshit/production/cornershopdev/` SSM path.
 
-Store `RESEND_WEBHOOK_SECRET` as a SecureString at
-`/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register
-and enable this exact endpoint:
+Resend assigns a signing secret to each webhook endpoint. Store the delivery
+endpoint's secret as `RESEND_WEBHOOK_SECRET` and the inbound reply endpoint's
+different secret as `RESEND_INBOUND_WEBHOOK_SECRET`, both as SecureStrings
+under `/shipshit/production/cornershopdev/`. Never copy one endpoint's secret
+to the other variable.
+
+In Resend, register and enable this delivery endpoint:
 
 ```text
 https://cornershop.dev/api/webhooks/resend
@@ -133,15 +137,15 @@ https://cornershop.dev/api/webhooks/resend
 Subscribe it to `email.sent`, `email.delivered`, `email.bounced`,
 `email.complained`, `email.failed`, and `email.suppressed`. Before approving a
 release, also register and enable the inbound endpoint
-`https://cornershop.dev/api/webhooks/resend/inbound` for `email.received`.
+`https://cornershop.dev/api/webhooks/resend/inbound` for `email.received` and
+store that endpoint's own signing secret in `RESEND_INBOUND_WEBHOOK_SECRET`.
 Each launched niche must have its own verified Resend sending domain and a
 verified receiving-capable reply-to domain declared by its vertical config.
 An unlaunched vertical with no niche domain/sender remains discoverable and
 previewable but cannot deliver mail.
 
 Before approving a release, run the read-only preflight inside the exact
-candidate image with its
-deployment env:
+candidate image with its deployment env:
 
 ```bash
 docker run --rm \
@@ -155,13 +159,15 @@ docker run --rm \
 The command opens read-only PostgreSQL transactions to verify the outreach
 migrations, required tables/columns/indexes (including the private
 `leadContactEmail` boundary), application database, and Workflow database;
-lists Resend delivery/inbound webhook metadata and domain
-capabilities; and validates every launched niche's configured sender and
-reply-to identity plus the approved lead-enumeration provider. It performs no database writes, configuration changes, or
-email sends. Output contains only check names, booleans, public endpoints,
-niche names, and timestamps—never database URLs, API keys, signing secrets,
-mailbox contents, or provider error bodies. A failed check is a release blocker;
-do not weaken the preflight or mark it ready from configuration screenshots.
+lists Resend delivery/inbound webhook metadata and domain capabilities;
+requires both endpoint-specific secrets to be present and unequal; and
+validates every launched niche's configured sender and reply-to identity plus
+the approved lead-enumeration provider. It performs no database writes,
+configuration changes, or email sends. Output contains only check names,
+booleans, public endpoints, niche names, and timestamps—never database URLs,
+API keys, signing secrets, mailbox contents, or provider error bodies. A
+failed check is a release blocker; do not weaken the preflight or mark it
+ready from configuration screenshots.
 
 ## Image storage round trip
 
@@ -372,13 +378,15 @@ Preview first and Production only with explicit approval.
 
 ## Deployment
 
-The manually dispatched GitHub Actions workflow builds the Docker image without
+A published stable GitHub release builds the Docker image without
 production secrets, uploads the immutable image archive to the private
 deployment bucket, and assumes the repository-scoped AWS OIDC role. Merging to
-`main` never deploys automatically. An operator dispatches production only after
-the scoped IAM policy, SSM parameters, host bootstrap, and DNS prerequisites are
-reviewed and ready. The role may upload only Cornershopdev artifacts and send only
-`AWS-RunShellScript` commands to the production instance.
+`main` and manually dispatching CI never deploy automatically. Publish the
+release only after the scoped IAM policy, SSM parameters, host bootstrap, and
+DNS prerequisites are reviewed and ready. The role may upload only
+Cornershopdev artifacts and send only `AWS-RunShellScript` commands to the
+production instance. See `production-release.md` for the complete state model
+and exact gates.
 
 The candidate image installs dependencies and runs migrations/operator commands
 with Bun 1.3.14, but both the Next.js production build and standalone web server
@@ -393,7 +401,10 @@ The host deployment script:
 2. Starts or verifies the isolated Redis container.
 3. Loads the exact image artifact and starts a candidate.
 4. Waits for `/api/health/ready`.
-5. Swaps container names, reloads Caddy, and rolls back on failure.
+5. Verifies migrations, outreach configuration, and wildcard DNS in the exact
+   candidate.
+6. Swaps container names, reloads Caddy, verifies public on-demand TLS, and
+   rolls back on failure.
 
 The authorization migration intentionally changes the signed session payload
 from an email address to the immutable database user id. Existing browser

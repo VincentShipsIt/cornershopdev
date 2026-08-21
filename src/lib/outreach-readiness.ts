@@ -31,7 +31,8 @@ export type OutreachEnvironmentReadiness = {
   checks: {
     database: boolean;
     resendApiKey: boolean;
-    resendWebhookSecret: boolean;
+    resendDeliveryWebhookSecret: boolean;
+    resendInboundWebhookSecret: boolean;
     claimTokenSecret: boolean;
     legalController: boolean;
     leadDiscoveryProvider: boolean;
@@ -63,6 +64,17 @@ export type ResendDomainSummary = {
   capabilities?: { sending?: string; receiving?: string };
 };
 
+export function isOutreachPreflightReady(checks: {
+  configurationReady: boolean;
+  migrationApplied: boolean;
+  schemaReady: boolean;
+  workflowDatabaseReachable: boolean;
+  deliveryWebhookRegistered: boolean;
+  inboundWebhookRegistered: boolean;
+}): boolean {
+  return Object.values(checks).every(Boolean);
+}
+
 export function evaluateOutreachEnvironment(
   env: Environment,
   options: { expectedAppOrigin?: string } = {},
@@ -87,7 +99,10 @@ export function evaluateOutreachEnvironment(
   const checks = {
     database: Boolean(env.DATABASE_URL),
     resendApiKey: Boolean(env.RESEND_API_KEY),
-    resendWebhookSecret: Boolean(env.RESEND_WEBHOOK_SECRET),
+    resendDeliveryWebhookSecret: Boolean(env.RESEND_WEBHOOK_SECRET),
+    resendInboundWebhookSecret:
+      Boolean(env.RESEND_INBOUND_WEBHOOK_SECRET) &&
+      env.RESEND_INBOUND_WEBHOOK_SECRET !== env.RESEND_WEBHOOK_SECRET,
     claimTokenSecret: Boolean(
       env.CLAIM_TOKEN_SECRET && env.CLAIM_TOKEN_SECRET.length >= 32,
     ),
@@ -116,7 +131,9 @@ export function evaluateOutreachEnvironment(
   const variableByCheck = {
     database: "DATABASE_URL",
     resendApiKey: "RESEND_API_KEY",
-    resendWebhookSecret: "RESEND_WEBHOOK_SECRET",
+    resendDeliveryWebhookSecret: "RESEND_WEBHOOK_SECRET",
+    resendInboundWebhookSecret:
+      "RESEND_INBOUND_WEBHOOK_SECRET (present and distinct)",
     claimTokenSecret: "CLAIM_TOKEN_SECRET",
     legalController: "OUTREACH_LEGAL_CONTROLLER",
     leadDiscoveryProvider:

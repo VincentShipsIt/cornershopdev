@@ -2,7 +2,15 @@ name: Deploy production
 
 on:
   workflow_call:
-  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable release tag being deployed
+        required: true
+        type: string
+      release_url:
+        description: Public GitHub release URL recorded in deployment evidence
+        required: true
+        type: string
 
 concurrency:
   group: cornershopdev-production
@@ -25,7 +33,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify released commit is merged to main
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Production releases require a stable vX.Y.Z tag" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+          tagged_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [[ "$tagged_sha" != "$GITHUB_SHA" ]]; then
+            echo "Release tag does not resolve to the workflow SHA" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Released commit is not merged into origin/main" >&2
+            exit 1
+          fi
+          echo "release-state code-merged sha=${GITHUB_SHA} tag=${RELEASE_TAG}"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -57,6 +87,16 @@ jobs:
           aws s3 cp \
             deploy/aws/host-launcher.sh \
             "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.host-launcher.sh" \
+            --sse AES256 \
+            --only-show-errors
+          aws s3 cp \
+            deploy/aws/bootstrap-host.sh \
+            "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.bootstrap-host.sh" \
+            --sse AES256 \
+            --only-show-errors
+          aws s3 cp \
+            deploy/aws/Caddyfile.fragment \
+            "s3://${ARTIFACT_BUCKET}/images/${GITHUB_SHA}.Caddyfile.fragment" \
             --sse AES256 \
             --only-show-errors
           echo "deploy_script_sha256=${deploy_script_sha256}" >>"$GITHUB_OUTPUT"
@@ -114,6 +154,20 @@ jobs:
             echo "Deployment host did not verify the exact deploy script" >&2
             exit 1
           fi
+          for state in \
+            configuration-loaded \
+            caddy-configured \
+            migrations-applied \
+            outreach-configured \
+            wildcard-dns-ready \
+            platform-tls-ready \
+            production-deployed; do
+            if ! grep -Fxq "release-state ${state} sha=${GITHUB_SHA}" <<<"$output"; then
+              echo "Deployment did not prove release state: ${state}" >&2
+              exit 1
+            fi
+          done
+          printf '%s\n' "$output" >"$RUNNER_TEMP/deploy-output.txt"
 
       - name: Print deployment result
         if: always() && steps.deploy.outputs.command_id
@@ -131,3 +185,51 @@ jobs:
             --retry-all-errors \
             --retry-delay 5 \
             https://api.cornershop.dev/api/health/live
+
+      - name: Record release evidence
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_URL: ${{ inputs.release_url }}
+          COMMAND_ID: ${{ steps.deploy.outputs.command_id }}
+        run: |
+          mkdir -p release-evidence
+          jq -n \
+            --arg sha "$GITHUB_SHA" \
+            --arg tag "$RELEASE_TAG" \
+            --arg releaseUrl "$RELEASE_URL" \
+            --arg workflowRun "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg commandId "$COMMAND_ID" \
+            --arg verifiedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              schemaVersion: 1,
+              release: {tag: $tag, sha: $sha, url: $releaseUrl},
+              evidence: {workflowRun: $workflowRun, systemsManagerCommandId: $commandId, verifiedAt: $verifiedAt},
+              states: {
+                codeMerged: "VERIFIED",
+                caddyConfigured: "VERIFIED",
+                productionConfigured: "VERIFIED",
+                migrationsApplied: "VERIFIED",
+                outreachConfigured: "VERIFIED",
+                platformWildcardDnsReady: "VERIFIED",
+                platformTlsReady: "VERIFIED",
+                productionDeployed: "VERIFIED",
+                customerAcceptanceProven: "NOT_EVALUATED"
+              },
+              acceptanceBoundary: "Release automation never substitutes for a real payment, owner action, published customer site, or owner-authorized custom domain."
+            }' >"release-evidence/${GITHUB_SHA}.json"
+          cp "$RUNNER_TEMP/deploy-output.txt" "release-evidence/${GITHUB_SHA}.deploy-output.txt"
+          {
+            echo "## Production release evidence"
+            echo
+            echo "- Released and deployed SHA: \`${GITHUB_SHA}\`"
+            echo "- Stable release: \`${RELEASE_TAG}\`"
+            echo "- Caddy, configuration, migrations, outreach, wildcard DNS, on-demand TLS, and exact running image: verified"
+            echo "- Customer acceptance: not evaluated by deployment automation"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release-${{ inputs.release_tag }}
+          path: release-evidence/
+          retention-days: 90

@@ -27,16 +27,22 @@ mock.module("@/lib/claim-delivery-events", () => ({
 mock.module("@/lib/operator-alerts", () => ({ captureOperatorAlert }));
 
 const previousDatabaseUrl = process.env.DATABASE_URL;
-const previousWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-const webhookSecret = `whsec_${Buffer.from(
-  "test-only-webhook-signing-key",
+const previousDeliveryWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+const previousInboundWebhookSecret =
+  process.env.RESEND_INBOUND_WEBHOOK_SECRET;
+const deliveryWebhookSecret = `whsec_${Buffer.from(
+  "test-only-delivery-webhook-signing-key",
+).toString("base64")}`;
+const inboundWebhookSecret = `whsec_${Buffer.from(
+  "test-only-inbound-webhook-signing-key",
 ).toString("base64")}`;
 const { POST } = await import("@/app/api/webhooks/resend/route");
 
 describe("Resend webhook signature and delivery status", () => {
   beforeEach(() => {
     process.env.DATABASE_URL = "postgresql://unused-by-mocked-test.invalid/db";
-    process.env.RESEND_WEBHOOK_SECRET = webhookSecret;
+    process.env.RESEND_WEBHOOK_SECRET = deliveryWebhookSecret;
+    process.env.RESEND_INBOUND_WEBHOOK_SECRET = inboundWebhookSecret;
     recordEvent.mockClear();
     recordAuthEvent.mockClear();
     recordClaimEvent.mockClear();
@@ -45,7 +51,11 @@ describe("Resend webhook signature and delivery status", () => {
 
   afterAll(() => {
     restoreEnvironment("DATABASE_URL", previousDatabaseUrl);
-    restoreEnvironment("RESEND_WEBHOOK_SECRET", previousWebhookSecret);
+    restoreEnvironment("RESEND_WEBHOOK_SECRET", previousDeliveryWebhookSecret);
+    restoreEnvironment(
+      "RESEND_INBOUND_WEBHOOK_SECRET",
+      previousInboundWebhookSecret,
+    );
   });
 
   it("rejects an invalid signature without mutating delivery state", async () => {
@@ -56,6 +66,15 @@ describe("Resend webhook signature and delivery status", () => {
     expect(response.status).toBe(400);
     expect(recordEvent).not.toHaveBeenCalled();
     expect(captureOperatorAlert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid inbound-endpoint signature", async () => {
+    const response = await POST(
+      signedRequest({ type: "email.failed" }, undefined, inboundWebhookSecret),
+    );
+
+    expect(response.status).toBe(400);
+    expect(recordEvent).not.toHaveBeenCalled();
   });
 
   it("accepts a valid signature and records a failed delivery", async () => {
@@ -151,6 +170,7 @@ function signedRequest(
     category?: "lead_outreach" | "auth_magic_link" | "claim_invitation";
   },
   signatureOverride?: string,
+  signingSecret = deliveryWebhookSecret,
 ): Request {
   const timestamp = new Date();
   const messageId = "webhook_message_1";
@@ -171,7 +191,7 @@ function signedRequest(
   });
   const signature =
     signatureOverride ??
-    new Webhook(webhookSecret).sign(messageId, timestamp, body);
+    new Webhook(signingSecret).sign(messageId, timestamp, body);
 
   return new Request("https://cornershop.dev/api/webhooks/resend", {
     method: "POST",

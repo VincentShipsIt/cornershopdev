@@ -44,7 +44,8 @@ export const outreachReadinessTestModule = {
         checks: {
           database: true,
           resendApiKey: true,
-          resendWebhookSecret: true,
+          resendDeliveryWebhookSecret: true,
+          resendInboundWebhookSecret: true,
           claimTokenSecret: true,
           workflow: true,
           appOrigin: true,
