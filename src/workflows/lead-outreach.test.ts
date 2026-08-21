@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
 const { isLeadEligibleForOutreach, isReviewedLead, unknownOutreachStepResult } =
   await import("@/workflows/lead-outreach");
@@ -219,6 +220,14 @@ describe("reviewed niche delivery eligibility", () => {
       purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
       evidence_timestamp: "2026-08-20T09:00:00+02:00",
       evidence_source: "https://public.example.test/listing",
+    },
+    {
+      ...site.attributes.leadEligibility.evidence,
+      controller: "Another Controller Ltd",
+    },
+    {
+      ...site.attributes.leadEligibility.evidence,
+      evidence_timestamp: "2099-08-20T09:00:00+02:00",
     },
   ])("stops before claim issuance for non-channel evidence", (evidence) => {
     expect(

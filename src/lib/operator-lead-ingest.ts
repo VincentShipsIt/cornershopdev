@@ -61,7 +61,9 @@ export async function ingestOperatorProspectLead(
 ): Promise<IngestOperatorProspectResult> {
   const source = input.source.trim();
   const sourceKey = normalizeImportSource(source);
-  const sourceUrl = looksLikeStoredUrl(source) ? storedImportSource(source) : null;
+  const sourceUrl = looksLikeStoredUrl(source)
+    ? storedImportSource(source)
+    : null;
   const vertical = input.vertical;
   const adapter = resolveLeadDiscoveryAdapter(vertical);
   const discovery = createLeadDiscoveryRecord({
@@ -117,7 +119,9 @@ export async function ingestOperatorProspectLead(
         const action = resolveProspectIngestAction(existing, vertical);
         if (action === "conflict") {
           throw new OperatorLeadError(
-            "This business is already claimed and cannot be reopened as a prospect.",
+            existing?.vertical !== vertical
+              ? "This source already belongs to another vertical and was not changed."
+              : "This business is already claimed and cannot be reopened as a prospect.",
             409,
           );
         }
@@ -234,7 +238,10 @@ async function reserveProspectSlug(
     });
     if (!collision) return candidate;
   }
-  throw new OperatorLeadError("A unique preview URL could not be reserved.", 409);
+  throw new OperatorLeadError(
+    "A unique preview URL could not be reserved.",
+    409,
+  );
 }
 
 function firstNonEmpty(

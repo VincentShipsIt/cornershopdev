@@ -1,10 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
-import {
-  evidenceDigest,
-  integrationUrlDigest,
-} from "@/lib/evidence-digests";
+import { evidenceDigest, integrationUrlDigest } from "@/lib/evidence-digests";
 import { LEGACY_THEME_VERSION, slugify } from "@/lib/site-draft";
 import { restaurantSiteTheme } from "@/lib/site-themes/restaurant/configuration";
 import {
@@ -89,13 +86,7 @@ export type PersistableSiteDraft = {
     }>;
   }>;
   integrations: Array<{
-    type:
-      | "booking"
-      | "ordering"
-      | "delivery"
-      | "social"
-      | "quote"
-      | "contact";
+    type: "booking" | "ordering" | "delivery" | "social" | "quote" | "contact";
     label: string;
     provider: string | null;
     url: string;
@@ -133,9 +124,7 @@ export class DraftRevisionConflictError extends Error {
   readonly currentRevision: number | null;
 
   constructor(currentRevision: number | null = null) {
-    super(
-      "This draft was updated elsewhere. Reload before saving again.",
-    );
+    super("This draft was updated elsewhere. Reload before saving again.");
     this.name = "DraftRevisionConflictError";
     this.currentRevision = currentRevision;
   }
@@ -254,7 +243,9 @@ export async function recordImportFailure(
   return message;
 }
 
-export async function persistSiteImport<TDraft extends PersistableSiteDraft>(input: {
+export async function persistSiteImport<
+  TDraft extends PersistableSiteDraft,
+>(input: {
   draft: TDraft;
   vertical: VerticalId;
   source: string;
@@ -285,6 +276,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
               sourceKey: true,
               sourceUrl: true,
               status: true,
+              vertical: true,
             },
           });
 
@@ -310,6 +302,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                   sourceKey: true,
                   sourceUrl: true,
                   status: true,
+                  vertical: true,
                 },
               });
               if (!collision) {
@@ -335,6 +328,9 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
           }
 
           if (existing && !mutableImportStatuses.has(existing.status)) {
+            throw new ImportConflictError();
+          }
+          if (existing && existing.vertical !== input.vertical) {
             throw new ImportConflictError();
           }
 
@@ -377,9 +373,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 previousStatus: existing?.status ?? null,
                 contactEmailUpdated: Boolean(input.contactEmail),
                 draftContentDigest: evidenceDigest(draft),
-                integrationUrlDigest: integrationUrlDigest(
-                  draft.integrations,
-                ),
+                integrationUrlDigest: integrationUrlDigest(draft.integrations),
               },
               siteId: site.id,
             },
@@ -490,9 +484,7 @@ export async function createOperatorSiteImport<
                 source: storedImportSource(input.source),
                 sourceKey: identity.sourceKey,
                 draftContentDigest: evidenceDigest(draft),
-                integrationUrlDigest: integrationUrlDigest(
-                  draft.integrations,
-                ),
+                integrationUrlDigest: integrationUrlDigest(draft.integrations),
               },
               siteId: site.id,
             },
@@ -512,28 +504,27 @@ export async function createOperatorSiteImport<
             itemCount,
             integrationRows,
             versionCount,
-          ] =
-            await Promise.all([
-              tx.site.findUnique({
-                where: { id: site.id },
-                select: {
-                  slug: true,
-                  eyebrow: true,
-                  status: true,
-                  sourceKey: true,
-                },
-              }),
-              tx.catalogSection.count({ where: { siteId: site.id } }),
-              tx.catalogItem.count({
-                where: { section: { siteId: site.id } },
-              }),
-              tx.integration.findMany({
-                where: { siteId: site.id },
-                orderBy: { position: "asc" },
-                select: { label: true, position: true },
-              }),
-              tx.siteVersion.count({ where: { siteId: site.id } }),
-            ]);
+          ] = await Promise.all([
+            tx.site.findUnique({
+              where: { id: site.id },
+              select: {
+                slug: true,
+                eyebrow: true,
+                status: true,
+                sourceKey: true,
+              },
+            }),
+            tx.catalogSection.count({ where: { siteId: site.id } }),
+            tx.catalogItem.count({
+              where: { section: { siteId: site.id } },
+            }),
+            tx.integration.findMany({
+              where: { siteId: site.id },
+              orderBy: { position: "asc" },
+              select: { label: true, position: true },
+            }),
+            tx.siteVersion.count({ where: { siteId: site.id } }),
+          ]);
           const expectedItemCount = draft.catalogSections.reduce(
             (sum, section) => sum + section.items.length,
             0,
@@ -645,8 +636,7 @@ export async function updateSiteDraft(
                   integrationUrlDigest: integrationUrlDigest(
                     parsed.integrations,
                   ),
-                  publishedSiteVersionIdAtSave:
-                    current.publishedSiteVersionId,
+                  publishedSiteVersionIdAtSave: current.publishedSiteVersionId,
                 },
               },
             });
@@ -734,8 +724,7 @@ export function siteDraftScalarData(
     draftTheme: (registeredTheme?.selection ?? {
       id: theme.id,
     }) as Prisma.InputJsonValue,
-    draftThemeVersion:
-      registeredTheme?.version ?? LEGACY_THEME_VERSION,
+    draftThemeVersion: registeredTheme?.version ?? LEGACY_THEME_VERSION,
     draftPalette: draft.palette as Prisma.InputJsonValue,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
@@ -788,12 +777,7 @@ function toDatabaseIntegrationType(
   value: PersistableSiteDraft["integrations"][number]["type"],
 ): "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL" | "QUOTE" | "CONTACT" {
   return value.toUpperCase() as
-    | "BOOKING"
-    | "ORDERING"
-    | "DELIVERY"
-    | "SOCIAL"
-    | "QUOTE"
-    | "CONTACT";
+    "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL" | "QUOTE" | "CONTACT";
 }
 
 function toDatabaseImageProvenance(

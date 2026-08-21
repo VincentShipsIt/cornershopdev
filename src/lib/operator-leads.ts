@@ -10,14 +10,12 @@ import {
 import { mutableLeadStatuses } from "@/lib/lead-status";
 import {
   createImportJob,
+  ImportConflictError,
   persistSiteImport,
   recordImportFailure,
   type PersistableSiteDraft,
 } from "@/lib/site-persistence";
-import {
-  crawlSiteSource,
-  generateDraftForVertical,
-} from "@/lib/site-pipeline";
+import { crawlSiteSource, generateDraftForVertical } from "@/lib/site-pipeline";
 import type { VerticalId } from "@/lib/verticals/types";
 import {
   createLeadEligibilityRecord,
@@ -57,10 +55,16 @@ export async function createOrReopenOperatorLead(input: {
   const db = getDb();
   const existing = await db.site.findUnique({
     where: { sourceKey },
-    select: { id: true, slug: true, status: true },
+    select: { id: true, slug: true, status: true, vertical: true },
   });
 
   if (existing) {
+    if (existing.vertical !== input.vertical) {
+      throw new OperatorLeadError(
+        "This source already belongs to another vertical and was not changed.",
+        409,
+      );
+    }
     if (!mutableLeadStatuses.has(existing.status)) {
       throw new OperatorLeadError(
         "This business is already claimed and cannot be reopened as a prospect.",
@@ -71,6 +75,7 @@ export async function createOrReopenOperatorLead(input: {
       const reopened = await tx.site.updateMany({
         where: {
           id: existing.id,
+          vertical: input.vertical,
           status: { in: ["PROSPECT", "PREVIEW_READY"] },
         },
         data: {
@@ -136,12 +141,17 @@ export async function createOrReopenOperatorLead(input: {
       } catch (recordError) {
         console.error("[operator-lead] failed to record import failure", {
           importJobId,
-          error:
-            recordError instanceof Error ? recordError.message : "unknown",
+          error: recordError instanceof Error ? recordError.message : "unknown",
         });
       }
     }
     if (error instanceof OperatorLeadError) throw error;
+    if (error instanceof ImportConflictError) {
+      throw new OperatorLeadError(
+        "This source changed, was claimed, or belongs to another vertical; it was not modified.",
+        409,
+      );
+    }
     throw new OperatorLeadError(importFailureMessage(error), 400);
   }
 }

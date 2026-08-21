@@ -8,6 +8,7 @@ import {
   type LocalSeoAuditResult,
 } from "@/lib/local-seo-audit";
 import {
+  configuredOutreachController,
   evaluateElectronicOutreachEligibility,
   type OutreachEligibilityReason,
 } from "@/lib/electronic-outreach-eligibility";
@@ -185,12 +186,14 @@ export function parseLeadEligibility(
 export function evaluateLeadOutreachEligibility(
   attributes: unknown,
   expectedRecipient: string | null,
+  expectedController: string | null = configuredOutreachController(),
 ): LeadOutreachEligibilityDecision {
   const record = parseLeadEligibility(attributes);
   const decision = evaluateElectronicOutreachEligibility({
     state: record?.state ?? "UNKNOWN",
     evidence: record?.evidence ?? {},
     expectedRecipient,
+    expectedController,
   });
   if (!decision.allowed) return decision;
   if (!record) throw new Error("Eligible outreach record was not parsed");

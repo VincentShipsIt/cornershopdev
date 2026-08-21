@@ -12,6 +12,7 @@ const commonEvidence = {
   evidence_timestamp: "2026-08-20T09:00:00+02:00",
   evidence_source: "consent:owner-record-1234",
 };
+const expectedController = "Corner Shop Labs Ltd";
 
 describe("electronic outreach eligibility", () => {
   it("accepts written consent bound to the exact private recipient", () => {
@@ -23,6 +24,7 @@ describe("electronic outreach eligibility", () => {
           channel_basis: "VERIFIED_WRITTEN_CONSENT",
         },
         expectedRecipient: "Owner@Example.Test",
+        expectedController,
       }),
     ).toEqual({ allowed: true });
   });
@@ -40,6 +42,7 @@ describe("electronic outreach eligibility", () => {
         state: "ELIGIBLE",
         evidence: evidence as Record<string, string>,
         expectedRecipient: "owner@example.test",
+        expectedController,
       }),
     ).toEqual({ allowed: true });
 
@@ -48,6 +51,7 @@ describe("electronic outreach eligibility", () => {
         state: "ELIGIBLE",
         evidence: { ...evidence, collection_opt_out_evidence: "" },
         expectedRecipient: "owner@example.test",
+        expectedController,
       }),
     ).toMatchObject({ allowed: false, reason: "evidence_required" });
   });
@@ -87,7 +91,38 @@ describe("electronic outreach eligibility", () => {
         state: "ELIGIBLE",
         evidence: evidence as unknown as Record<string, string>,
         expectedRecipient: "owner@example.test",
+        expectedController,
       }),
     ).toMatchObject({ allowed: false, reason });
+  });
+
+  it("rejects evidence recorded for another controller", () => {
+    expect(
+      evaluateElectronicOutreachEligibility({
+        state: "ELIGIBLE",
+        evidence: {
+          ...commonEvidence,
+          channel_basis: "VERIFIED_WRITTEN_CONSENT",
+          controller: "Another Controller Ltd",
+        },
+        expectedRecipient: "owner@example.test",
+        expectedController,
+      }),
+    ).toMatchObject({ allowed: false, reason: "controller_mismatch" });
+  });
+
+  it("rejects future-dated evidence", () => {
+    expect(
+      evaluateElectronicOutreachEligibility({
+        state: "ELIGIBLE",
+        evidence: {
+          ...commonEvidence,
+          channel_basis: "VERIFIED_WRITTEN_CONSENT",
+          evidence_timestamp: new Date(Date.now() + 60_000).toISOString(),
+        },
+        expectedRecipient: "owner@example.test",
+        expectedController,
+      }),
+    ).toMatchObject({ allowed: false, reason: "evidence_required" });
   });
 });

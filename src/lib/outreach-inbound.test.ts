@@ -57,6 +57,10 @@ mock.module("@/lib/db", () => ({
 }));
 
 const fakeDb = {
+  $queryRaw: async () => [],
+  $executeRaw: async () => 0,
+  $transaction: async (callback: (transaction: object) => unknown) =>
+    callback(fakeDb),
   outreachMessage: {
     findUnique: async (input: {
       where: { providerMessageId?: string; rfcMessageId?: string };
@@ -86,9 +90,7 @@ const fakeDb = {
                   "in" in value &&
                   Array.isArray((value as { in: unknown[] }).in)
                 ) {
-                  return (value as { in: unknown[] }).in.includes(
-                    message[key],
-                  );
+                  return (value as { in: unknown[] }).in.includes(message[key]);
                 }
                 return message[key] === value;
               }),
@@ -130,7 +132,8 @@ const fakeDb = {
           if (
             typeof input.where.vertical === "object" &&
             !input.where.vertical.in.includes(site.vertical)
-          ) return false;
+          )
+            return false;
           if (
             input.where.leadContactEmail &&
             site.leadContactEmail !== input.where.leadContactEmail
@@ -172,9 +175,7 @@ const fakeDb = {
   },
 };
 
-const { recordInboundOutreachMessage } = await import(
-  "@/lib/outreach-inbound"
-);
+const { recordInboundOutreachMessage } = await import("@/lib/outreach-inbound");
 
 describe("inbound outreach mailbox", () => {
   beforeEach(() => {

@@ -19,7 +19,11 @@ type Props = Pick<
   | "outreachDispatch"
   | "reviewedAt"
   | "eligibility"
-> & { outreachPaused: boolean; leadOutreachPaused: boolean };
+> & {
+  outreachPaused: boolean;
+  leadOutreachPaused: boolean;
+  expectedController: string | null;
+};
 
 export function OperatorOutreachPanel({
   slug,
@@ -31,6 +35,7 @@ export function OperatorOutreachPanel({
   eligibility,
   outreachPaused,
   leadOutreachPaused,
+  expectedController,
 }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -182,6 +187,7 @@ export function OperatorOutreachPanel({
     state: eligibility.state,
     evidence: eligibility.evidence,
     expectedRecipient: contactEmail,
+    expectedController,
   });
   const eligibilityReady = eligibilityDecision.allowed;
   const disabled =

@@ -26,7 +26,8 @@ export type OutreachEligibilityReason =
   | "ineligible"
   | "channel_basis_required"
   | "evidence_required"
-  | "recipient_mismatch";
+  | "recipient_mismatch"
+  | "controller_mismatch";
 
 export type ElectronicOutreachEligibilityDecision =
   | { allowed: true }
@@ -43,6 +44,7 @@ export function evaluateElectronicOutreachEligibility(input: {
   state: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE";
   evidence: Record<string, string>;
   expectedRecipient: string | null;
+  expectedController: string | null;
 }): ElectronicOutreachEligibilityDecision {
   if (input.state === "UNKNOWN") {
     return {
@@ -98,6 +100,19 @@ export function evaluateElectronicOutreachEligibility(input: {
     };
   }
 
+  if (
+    !input.expectedController ||
+    normalizeController(input.evidence.controller) !==
+      normalizeController(input.expectedController)
+  ) {
+    return {
+      allowed: false,
+      reason: "controller_mismatch",
+      message:
+        "The recorded consent or soft-opt-in controller does not match the configured legal sender controller.",
+    };
+  }
+
   const invalidFields: string[] = [];
   if (input.evidence.channel !== OUTREACH_CHANNEL) {
     invalidFields.push("channel=EMAIL");
@@ -105,11 +120,8 @@ export function evaluateElectronicOutreachEligibility(input: {
   if (input.evidence.purpose !== OUTREACH_PURPOSE) {
     invalidFields.push(`purpose=${OUTREACH_PURPOSE}`);
   }
-  if (!isTimestampWithOffset(input.evidence.evidence_timestamp)) {
+  if (!isPastOrPresentTimestampWithOffset(input.evidence.evidence_timestamp)) {
     invalidFields.push("evidence_timestamp");
-  }
-  if (!isSpecificController(input.evidence.controller)) {
-    invalidFields.push("controller");
   }
   if (!isEvidenceReference(input.evidence.evidence_source)) {
     invalidFields.push("evidence_source");
@@ -141,26 +153,39 @@ function normalizeEmail(value: string | undefined): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function isTimestampWithOffset(value: string | undefined): boolean {
+function normalizeController(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ").toLowerCase() ?? "";
+}
+
+function isPastOrPresentTimestampWithOffset(
+  value: string | undefined,
+): boolean {
   if (!value || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false;
-  return Number.isFinite(Date.parse(value));
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp <= Date.now();
 }
 
 function isEvidenceReference(value: string | undefined): boolean {
   return Boolean(value && evidenceReferencePattern.test(value));
 }
 
-function isSpecificController(value: string | undefined): boolean {
-  const normalized = value?.trim().toLowerCase() ?? "";
-  return (
-    normalized.length >= 3 &&
-    !new Set([
+export function configuredOutreachController(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const controller = env.OUTREACH_LEGAL_CONTROLLER?.trim().replace(/\s+/g, " ");
+  if (
+    !controller ||
+    controller.length < 3 ||
+    new Set([
       "company",
       "corporate",
       "generic corporate",
       "operator",
       "unknown",
       "n/a",
-    ]).has(normalized)
-  );
+    ]).has(controller.toLowerCase())
+  ) {
+    return null;
+  }
+  return controller;
 }

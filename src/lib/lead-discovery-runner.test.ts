@@ -68,7 +68,7 @@ describe("lead discovery command", () => {
       preflight: "dry-run",
       vertical: "BEAUTY",
       adapterId: "beauty-local-v1",
-      query: "beauty salons and barbers in Valletta",
+      query: "beauty businesses in Valletta",
       candidateCount: 1,
     });
     expect(result.candidates[0]).toMatchObject({

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 
 const enabled = process.env.CLAIM_INVITATIONS_POSTGRES_TEST === "1";
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 if (enabled) mock.module("server-only", () => ({}));
 const suffix = randomUUID();
 const siteId = `claim-retry-site-${suffix}`;

@@ -5,6 +5,7 @@ import {
 } from "@/lib/complete-test-module-mocks";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
 const outreachActual = await import("@/lib/outreach");
 const outreachTestModule = {
@@ -256,6 +257,7 @@ mock.module("@/lib/db", () => ({
         | Array<Promise<unknown>>
         | ((transaction: {
             $queryRaw: () => Promise<Array<{ acquired: boolean }>>;
+            $executeRaw: () => Promise<number>;
             site: {
               findUnique: () => Promise<ReturnType<typeof siteRecord>>;
             };
@@ -283,6 +285,7 @@ mock.module("@/lib/db", () => ({
         if (Array.isArray(operation)) return Promise.all(operation);
         return operation({
           $queryRaw: async () => [{ acquired: true }],
+          $executeRaw: async () => 0,
           site: { findUnique: async () => siteRecord() },
           outreachDispatch: outreachDispatchApi,
           auditEvent: {
@@ -535,6 +538,22 @@ describe("explicit operator outreach action", () => {
         evidence_timestamp: "2026-08-20T09:00:00+02:00",
         evidence_source: "crm:soft-opt-in-1234",
         customer_or_sale_evidence: "crm:sale-1234",
+      },
+      reason: "evidence_required",
+    },
+    {
+      label: "evidence for another controller",
+      evidence: {
+        ...eligibilityEvidence,
+        controller: "Another Controller Ltd",
+      },
+      reason: "controller_mismatch",
+    },
+    {
+      label: "future-dated evidence",
+      evidence: {
+        ...eligibilityEvidence,
+        evidence_timestamp: "2099-08-20T09:00:00+02:00",
       },
       reason: "evidence_required",
     },

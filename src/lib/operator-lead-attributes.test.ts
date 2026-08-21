@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 import {
   compareOperatorSitesByDiscoveryScore,
   createLeadDiscoveryRecord,

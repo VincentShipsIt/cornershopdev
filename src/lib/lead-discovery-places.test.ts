@@ -17,7 +17,10 @@ describe("place discovery", () => {
             userRatingCount: 88,
             types: ["restaurant", "french_restaurant", "point_of_interest"],
             regularOpeningHours: {
-              weekdayDescriptions: ["Monday: Closed", "Tuesday: 7:00 PM – 10:00 PM"],
+              weekdayDescriptions: [
+                "Monday: Closed",
+                "Tuesday: 7:00 PM – 10:00 PM",
+              ],
             },
             photos: [{ name: "places/ChIJ123/photos/1" }],
             editorialSummary: { overview: "A small Lyonnais dining room." },
@@ -61,7 +64,10 @@ describe("place discovery", () => {
           osm_id: 42,
           type: "restaurant",
           address: { city: "Valletta" },
-          extratags: { website: "https://due.example", phone: "+356 2100 0000" },
+          extratags: {
+            website: "https://due.example",
+            phone: "+356 2100 0000",
+          },
         },
       ]);
     };
@@ -82,13 +88,12 @@ describe("place discovery", () => {
   });
 
   it("uses the beauty adapter instead of restaurant search heuristics", async () => {
+    const queries: string[] = [];
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toContain("places.googleapis.com");
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      expect(body).toMatchObject({
-        textQuery: "beauty salons and barbers in Valletta",
-        includedType: "beauty_salon",
-      });
+      queries.push(String(body.textQuery));
+      expect(body).not.toHaveProperty("includedType");
       return Response.json({
         places: [
           {
@@ -113,6 +118,66 @@ describe("place discovery", () => {
       name: "Studio Iris",
       categories: ["beauty_salon"],
     });
+    expect(queries).toEqual([
+      "beauty salons in Valletta",
+      "hair salons in Valletta",
+      "barber shops in Valletta",
+      "nail salons in Valletta",
+      "spas in Valletta",
+    ]);
+    expect(result.places).toHaveLength(1);
+  });
+
+  it("queries every declared beauty subtype through Nominatim and deduplicates", async () => {
+    const queries: string[] = [];
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      queries.push(url.searchParams.get("q") ?? "");
+      const query = url.searchParams.get("q") ?? "";
+      const type = query.startsWith("hair")
+        ? "hair_salon"
+        : query.startsWith("barber")
+          ? "barber"
+          : query.startsWith("nail")
+            ? "nail_salon"
+            : query.startsWith("spa")
+              ? "spa"
+              : "beauty_salon";
+      return Response.json([
+        {
+          name: "Studio Iris",
+          display_name: "Studio Iris, Valletta, Malta",
+          osm_type: "node",
+          osm_id: 42,
+          type,
+          address: { city: "Valletta" },
+          extratags: { website: "https://studio-iris.example" },
+        },
+      ]);
+    };
+
+    const result = await discoverLocalPlaces({
+      vertical: "BEAUTY",
+      city: "Valletta",
+      limit: 10,
+      fetchImpl,
+    });
+
+    expect(queries).toEqual([
+      "beauty salon in Valletta",
+      "hair salon in Valletta",
+      "barber shop in Valletta",
+      "nail salon in Valletta",
+      "spa in Valletta",
+    ]);
+    expect(result.places).toHaveLength(1);
+    expect(result.places[0]?.categories).toEqual([
+      "beauty_salon",
+      "hair_salon",
+      "barber",
+      "nail_salon",
+      "spa",
+    ]);
   });
 
   it.each([
@@ -131,7 +196,10 @@ describe("place discovery", () => {
   ])(
     "uses the bounded %s taxonomy without a misleading Google includedType",
     async (vertical, textQuery, name, category) => {
-      const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const fetchImpl = async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) => {
         expect(String(input)).toContain("places.googleapis.com");
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         expect(body.textQuery).toBe(textQuery);

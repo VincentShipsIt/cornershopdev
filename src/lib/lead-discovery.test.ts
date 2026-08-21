@@ -1,9 +1,41 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildProspectIdentity,
+  fetchHomepageSignals,
   parseHomepageSignals,
   scoreWebsiteQuality,
 } from "@/lib/lead-discovery";
+
+describe("discovery homepage fetch boundary", () => {
+  it("rejects private IPv6 through the real DNS-pinned importer boundary", async () => {
+    await expect(
+      fetchHomepageSignals("http://[::1]/admin"),
+    ).resolves.toMatchObject({
+      isFetched: false,
+      finalUrl: null,
+    });
+  });
+
+  it.each([
+    "DNS answer changed to a private address before connect",
+    "Private network addresses are not supported after redirect",
+  ])("fails closed when the hardened boundary reports %s", async (reason) => {
+    let calls = 0;
+    const rejectedPublicFetch = async () => {
+      calls += 1;
+      throw new Error(reason);
+    };
+
+    await expect(
+      fetchHomepageSignals(
+        "https://listing-controlled.example/",
+        "RESTAURANT",
+        rejectedPublicFetch,
+      ),
+    ).resolves.toMatchObject({ isFetched: false, finalUrl: null });
+    expect(calls).toBe(1);
+  });
+});
 
 describe("prospect identity", () => {
   it("dedupes equivalent websites onto one sourceKey", () => {
@@ -42,9 +74,7 @@ describe("prospect identity", () => {
 
 describe("website quality scoring", () => {
   it("explains a missing website without claiming a fetch", () => {
-    expect(
-      scoreWebsiteQuality({ hasWebsite: false, homepage: null }),
-    ).toEqual({
+    expect(scoreWebsiteQuality({ hasWebsite: false, homepage: null })).toEqual({
       score: 60,
       reasons: ["No public website listed"],
     });

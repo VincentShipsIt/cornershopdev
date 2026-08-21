@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
 type StoredMessage = {
   id: string;
@@ -20,7 +21,14 @@ type StoredMessage = {
   inReplyTo?: string | null;
   threadKey?: string | null;
   createdByActor?: string | null;
-  status: "QUEUED" | "SENT" | "FAILED" | "RECEIVED";
+  status:
+    | "QUEUED"
+    | "SENT"
+    | "DELIVERED"
+    | "BOUNCED"
+    | "COMPLAINED"
+    | "FAILED"
+    | "RECEIVED";
   error: string | null;
   sentAt: Date | null;
   deliveredAt: Date | null;
@@ -81,6 +89,7 @@ mock.module("@/lib/resend", () => ({
 
 const fakeDb = {
   $queryRaw: async () => [{ acquired: true }],
+  $executeRaw: async () => 0,
   site: {
     findUnique: async () => ({
       slug: "chez-lea",
@@ -198,7 +207,15 @@ const fakeDb = {
     },
     findMany: async () => [...messages.values()],
     findFirst: async (input: {
-      where: { id?: string; siteId?: string; direction?: string };
+      where: {
+        id?: string;
+        siteId?: string;
+        direction?: string;
+        OR?: Array<
+          | { status: { in: string[] } }
+          | { status: string; error: { contains: string; mode: string } }
+        >;
+      };
     }) => {
       return (
         [...messages.values()].find((message) => {
@@ -209,6 +226,22 @@ const fakeDb = {
           if (
             input.where.direction &&
             message.direction !== input.where.direction
+          ) {
+            return false;
+          }
+          if (
+            input.where.OR &&
+            !input.where.OR.some((condition) => {
+              if (!("error" in condition)) {
+                return condition.status.in.includes(message.status);
+              }
+              return (
+                message.status === condition.status &&
+                message.error
+                  ?.toLowerCase()
+                  .includes(condition.error.contains.toLowerCase()) === true
+              );
+            })
           ) {
             return false;
           }
@@ -401,6 +434,75 @@ describe("outreach delivery idempotency", () => {
     );
   });
 
+  it("blocks an operator reply when channel authorization is revoked", async () => {
+    await sendLeadEmail({
+      siteId: "site_1",
+      template: "preview_ready",
+      claimUrl: "https://cornershop.dev/claim/chez-lea#claim_token=initial",
+      actor: "operator:one",
+      expectedReviewedAt: reviewedAt,
+      claimInvitationId: "invitation_preview",
+      dispatchAuthorization: { dispatchId: "dispatch_1", attempt: 1 },
+    });
+    providerSend.mockClear();
+    leadEligibilityEvidence = { contact_basis: "generic corporate" };
+
+    await expect(
+      sendLeadEmail({
+        siteId: "site_1",
+        template: "operator_reply",
+        body: "This must remain unsent.",
+        actor: "operator:one",
+      }),
+    ).rejects.toThrow("Electronic outreach requires");
+
+    expect(providerSend).not.toHaveBeenCalled();
+    expect(
+      [...messages.values()].find(
+        (candidate) => candidate.template === "operator_reply",
+      ),
+    ).toMatchObject({ status: "FAILED", providerAttemptedAt: null });
+  });
+
+  it.each([
+    { status: "BOUNCED" as const, error: "Recipient address bounced." },
+    {
+      status: "COMPLAINED" as const,
+      error: "Recipient reported this email as spam.",
+    },
+    {
+      status: "FAILED" as const,
+      error: "Provider suppressed delivery to this recipient.",
+    },
+  ])(
+    "blocks an operator reply after $status suppression",
+    async ({ status, error }) => {
+      await sendLeadEmail({
+        siteId: "site_1",
+        template: "preview_ready",
+        claimUrl: "https://cornershop.dev/claim/chez-lea#claim_token=initial",
+        actor: "operator:one",
+        expectedReviewedAt: reviewedAt,
+        claimInvitationId: "invitation_preview",
+        dispatchAuthorization: { dispatchId: "dispatch_1", attempt: 1 },
+      });
+      const initial = [...messages.values()][0]!;
+      initial.status = status;
+      initial.error = error;
+      providerSend.mockClear();
+
+      await expect(
+        sendLeadEmail({
+          siteId: "site_1",
+          template: "operator_reply",
+          body: "This must remain suppressed.",
+          actor: "operator:one",
+        }),
+      ).rejects.toThrow("recipient is suppressed");
+      expect(providerSend).not.toHaveBeenCalled();
+    },
+  );
+
   it("converges duplicate initial sends on one persisted message and provider call", async () => {
     const first = await sendLeadEmail({
       siteId: "site_1",
@@ -508,6 +610,24 @@ describe("outreach delivery idempotency", () => {
       evidence_timestamp: "2026-08-20T09:00:00+02:00",
       evidence_source: "https://public.example.test/listing",
     },
+    {
+      channel_basis: "VERIFIED_WRITTEN_CONSENT",
+      recipient: "owner@chez-lea.test",
+      controller: "Another Controller Ltd",
+      channel: "EMAIL",
+      purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+      evidence_timestamp: "2026-08-20T09:00:00+02:00",
+      evidence_source: "consent:other-controller-1234",
+    },
+    {
+      channel_basis: "VERIFIED_WRITTEN_CONSENT",
+      recipient: "owner@chez-lea.test",
+      controller: "Corner Shop Labs Ltd",
+      channel: "EMAIL",
+      purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+      evidence_timestamp: "2099-08-20T09:00:00+02:00",
+      evidence_source: "consent:future-evidence-1234",
+    },
   ])(
     "does not call the provider for non-channel evidence",
     async (evidence) => {
@@ -525,7 +645,7 @@ describe("outreach delivery idempotency", () => {
           claimInvitationId: "invitation_preview",
           dispatchAuthorization: { dispatchId: "dispatch_1", attempt: 1 },
         }),
-      ).rejects.toThrow("Electronic outreach");
+      ).rejects.toThrow(/Electronic outreach|configured legal sender controller/);
 
       expect(providerSend).not.toHaveBeenCalled();
       expect([...messages.values()][0]).toMatchObject({

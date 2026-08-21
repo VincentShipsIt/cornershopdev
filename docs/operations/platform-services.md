@@ -93,11 +93,24 @@ fail-closed unless `channel_basis` is `VERIFIED_WRITTEN_CONSENT` or
 `VERIFIED_SOFT_OPT_IN` and the record binds the exact private recipient,
 controller, `EMAIL` channel, `CLAIM_INVITATION_AND_FOLLOW_UP` purpose,
 offset-aware timestamp, and a private `crm:`, `consent:`, `ticket:`, or `dms:`
-evidence reference. Soft opt-in also requires customer/sale evidence and proof
-that an opt-out was offered at collection. Public listings, generic corporate
-or value-first rationales, and a bare `ELIGIBLE` flag do not authorize email.
+evidence reference. `controller` must match the exact legal identity configured
+as `OUTREACH_LEGAL_CONTROLLER`; missing, mismatched, or future-dated evidence is
+blocked. Soft opt-in also requires customer/sale evidence and proof that an
+opt-out was offered at collection. Public listings, generic corporate or
+value-first rationales, and a bare `ELIGIBLE` flag do not authorize email.
 The operator can edit the record and must still review the current preview
 before delivery.
+
+Store the exact legal controller at
+`/shipshit/production/cornershopdev/OUTREACH_LEGAL_CONTROLLER`. Deployment
+requires the parameter and the no-send outreach preflight reports only its
+boolean readiness, never the configured identity.
+
+Discovery homepage signals use the same DNS-resolved, connect-pinned,
+redirect-revalidated public fetch boundary as imports. Provider-controlled
+private IPv4/IPv6 literals, private DNS answers, rebinding, and redirects fail
+closed. One normalized source belongs to exactly one vertical; manual and
+automated ingest reject cross-vertical reuse before changing a lead.
 
 Store `RESEND_WEBHOOK_SECRET` as a SecureString at
 `/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register

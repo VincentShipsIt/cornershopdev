@@ -5,9 +5,17 @@ export type LeadDiscoveryAdapter = {
   adapterId: string;
   placeSearch: {
     googleQuery: (city: string) => string;
+    googleQueries?: (city: string) => Array<{
+      query: string;
+      includedType: string | null;
+    }>;
     /** Omit for verticals that deliberately span several incompatible place types. */
     googleIncludedType: string | null;
     nominatimQuery: (city: string) => string;
+    nominatimQueries?: (city: string) => Array<{
+      query: string;
+      fallbackCategory: string;
+    }>;
     fallbackCategory: string;
   };
   eligibility: {

@@ -14,6 +14,7 @@ const configuredEnvironment = {
   RESEND_API_KEY: "re_private_value",
   RESEND_WEBHOOK_SECRET: "whsec_private_value",
   CLAIM_TOKEN_SECRET: "a-private-value-that-is-at-least-32-characters",
+  OUTREACH_LEGAL_CONTROLLER: "Corner Shop Labs Ltd",
   NEXT_PUBLIC_APP_URL: "https://cornershop.dev",
   WORKFLOW_ENABLED: "true",
   WORKFLOW_TARGET_WORLD: "@workflow/world-postgres",
@@ -39,6 +40,7 @@ describe("outreach environment readiness", () => {
         resendApiKey: true,
         resendWebhookSecret: true,
         claimTokenSecret: true,
+        legalController: true,
         workflow: true,
         appOrigin: true,
         sender: true,
@@ -77,6 +79,7 @@ describe("outreach environment readiness", () => {
       configuredEnvironment.RESEND_API_KEY,
       configuredEnvironment.RESEND_WEBHOOK_SECRET,
       configuredEnvironment.CLAIM_TOKEN_SECRET,
+      configuredEnvironment.OUTREACH_LEGAL_CONTROLLER,
       configuredEnvironment.WORKFLOW_POSTGRES_URL,
     ]) {
       expect(serialized).not.toContain(value);
@@ -125,6 +128,18 @@ describe("outreach environment readiness", () => {
       });
       expect(readiness.ready).toBe(false);
       expect(readiness.checks.workflow).toBe(false);
+    }
+  });
+
+  it("requires a specific configured legal outreach controller", () => {
+    for (const controller of [undefined, "generic corporate"]) {
+      const readiness = evaluateOutreachEnvironment({
+        ...configuredEnvironment,
+        OUTREACH_LEGAL_CONTROLLER: controller,
+      });
+      expect(readiness.ready).toBe(false);
+      expect(readiness.checks.legalController).toBe(false);
+      expect(readiness.missingOrInvalid).toContain("OUTREACH_LEGAL_CONTROLLER");
     }
   });
 });

@@ -41,11 +41,14 @@ the persisted preview, record a verified written-consent or soft-opt-in channel
 basis with exact recipient, controller, email channel, claim/follow-up purpose,
 timestamp, and private evidence reference, and confirm the exact niche-branded
 recipient. Soft opt-in additionally requires customer/sale and collection
-opt-out proof. A public listing, generic corporate rationale, value-first offer,
-or bare `ELIGIBLE` flag never authorizes electronic outreach. Operators can pause all outreach
-or one lead before its next send. Bounce, complaint, inbound-reply,
-recipient-change, eligibility-change, and stale-review suppression are rechecked
-at the durable delivery boundary.
+opt-out proof. The controller must exactly match `OUTREACH_LEGAL_CONTROLLER`,
+and future-dated evidence is rejected. A public listing, generic corporate
+rationale, value-first offer, or bare `ELIGIBLE` flag never authorizes
+electronic outreach. Operators can pause all outreach or one lead before its
+next send. Initials, follow-ups, and operator replies recheck current evidence,
+mutable/unclaimed state, and bounce/complaint/provider suppression immediately
+before provider delivery. Inbound replies and suppression webhooks use the same
+transactional delivery fence, so they cannot commit in a post-check send gap.
 
 ## First-party analytics
 

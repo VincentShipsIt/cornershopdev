@@ -5,6 +5,7 @@ import {
 } from "@/lib/complete-test-module-mocks";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
 type AuditEvent = {
   id: string;
@@ -161,6 +162,7 @@ function matchesStatus(
 
 const fakeModels = {
   $queryRaw: async () => [],
+  $executeRaw: async () => 0,
   site: {
     findUnique: async (input: {
       where: { id?: string; slug?: string; sourceKey?: string };
@@ -172,7 +174,7 @@ const fakeModels = {
       return siteRecord();
     },
     updateMany: async (input: {
-      where: { id: string; status?: { in: string[] } };
+      where: { id: string; vertical?: string; status?: { in: string[] } };
       data: {
         status?: typeof site.status;
         leadContactEmail?: string;
@@ -180,6 +182,7 @@ const fakeModels = {
     }) => {
       if (
         input.where.id !== site.id ||
+        (input.where.vertical && input.where.vertical !== site.vertical) ||
         (input.where.status && !input.where.status.in.includes(site.status))
       ) {
         return { count: 0 };
@@ -388,9 +391,18 @@ const fakeModels = {
     },
     findMany: async () => (message ? [message] : []),
     findFirst: async (input: {
-      where: { id?: string; siteId?: string; direction?: string };
+      where: {
+        id?: string;
+        siteId?: string;
+        direction?: string;
+        OR?: Array<
+          | { status: { in: string[] } }
+          | { status: string; error: { contains: string; mode: string } }
+        >;
+      };
     }) => {
       if (!message) return null;
+      const currentMessage = message;
       if (input.where.id && input.where.id !== message.id) return null;
       if (input.where.siteId && input.where.siteId !== message.siteId) {
         return null;
@@ -398,6 +410,19 @@ const fakeModels = {
       if (
         input.where.direction &&
         input.where.direction !== message.direction
+      ) {
+        return null;
+      }
+      if (
+        input.where.OR &&
+        !input.where.OR.some((condition) =>
+          !("error" in condition)
+            ? condition.status.in.includes(currentMessage.status)
+            : currentMessage.status === condition.status &&
+              currentMessage.error
+                ?.toLowerCase()
+                .includes(condition.error.contains.toLowerCase()) === true,
+        )
       ) {
         return null;
       }
@@ -582,6 +607,8 @@ const { issueClaimInvitation } = await import("@/lib/claim-invitations");
 const { recordResendOutreachEvent } =
   await import("@/lib/outreach-event-recorder");
 const { listOutreachMessages, sendLeadEmail } = await import("@/lib/outreach");
+const { ingestOperatorProspectLead } =
+  await import("@/lib/operator-lead-ingest");
 
 describe("mocked Restofront operator delivery flow", () => {
   beforeEach(() => {
@@ -608,6 +635,47 @@ describe("mocked Restofront operator delivery flow", () => {
     ).toString("base64")}`;
     process.env.CLAIM_TOKEN_SECRET =
       "mocked-claim-token-secret-with-more-than-32-characters";
+  });
+
+  it("rejects manual and discovery cross-vertical source reuse without mutation", async () => {
+    const originalContact = site.leadContactEmail;
+    const manualResponse = await createOrReopenLead(
+      sameOriginRequest("/api/admin/leads/batch", {
+        leads: [
+          {
+            source: "https://chez-lea.test",
+            contactEmail: "beauty-owner@example.test",
+            vertical: "BEAUTY",
+          },
+        ],
+        sendEmail: false,
+      }),
+    );
+    const manual = (await manualResponse.json()) as {
+      results: Array<{ error?: string }>;
+    };
+
+    expect(manual.results[0]?.error).toContain("another vertical");
+    expect(site.status).toBe("PROSPECT");
+    expect(site.leadContactEmail).toBe(originalContact);
+    expect(auditEvents).toHaveLength(0);
+
+    await expect(
+      ingestOperatorProspectLead({
+        source: "https://chez-lea.test/",
+        websiteUrl: "https://chez-lea.test/",
+        vertical: "BEAUTY",
+        name: "Chez Léa Beauty",
+        city: "Valletta",
+        score: 20,
+        reasons: ["Cross-vertical regression"],
+        generatePreview: true,
+      }),
+    ).rejects.toThrow("another vertical");
+    expect(site.status).toBe("PROSPECT");
+    expect(site.name).toBe("Chez Léa");
+    expect(site.leadContactEmail).toBe(originalContact);
+    expect(auditEvents).toHaveLength(0);
   });
 
   it("reopens and reviews a persisted preview, explicitly sends, refreshes status, then pauses", async () => {

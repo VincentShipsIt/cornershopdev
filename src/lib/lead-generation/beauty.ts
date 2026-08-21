@@ -5,9 +5,27 @@ export const beautyLeadDiscovery = {
   vertical: Vertical.BEAUTY,
   adapterId: "beauty-local-v1",
   placeSearch: {
-    googleQuery: (city) => `beauty salons and barbers in ${city}`,
-    googleIncludedType: "beauty_salon",
-    nominatimQuery: (city) => `beauty salon in ${city}`,
+    googleQuery: (city) => `beauty businesses in ${city}`,
+    googleQueries: (city) =>
+      [
+        "beauty salons",
+        "hair salons",
+        "barber shops",
+        "nail salons",
+        "spas",
+      ].map((subtype) => ({
+        query: `${subtype} in ${city}`,
+        includedType: null,
+      })),
+    googleIncludedType: null,
+    nominatimQuery: (city) => `beauty businesses in ${city}`,
+    nominatimQueries: (city) => [
+      { query: `beauty salon in ${city}`, fallbackCategory: "beauty_salon" },
+      { query: `hair salon in ${city}`, fallbackCategory: "hair_salon" },
+      { query: `barber shop in ${city}`, fallbackCategory: "barber" },
+      { query: `nail salon in ${city}`, fallbackCategory: "nail_salon" },
+      { query: `spa in ${city}`, fallbackCategory: "spa" },
+    ],
     fallbackCategory: "beauty_salon",
   },
   eligibility: {

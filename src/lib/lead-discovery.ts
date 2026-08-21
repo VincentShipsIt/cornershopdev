@@ -8,6 +8,7 @@ import {
   resolveLeadDiscoveryAdapter,
 } from "@/lib/lead-generation/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+import { fetchPublicHtml } from "@/lib/importer";
 
 /**
  * Cheap homepage signals only. A local runner cannot afford Lighthouse or a
@@ -70,8 +71,6 @@ export type ProspectIdentity = {
   sourceUrl: string | null;
 };
 
-const MAX_HTML_BYTES = 1_500_000;
-const MAX_REDIRECTS = 3;
 const MAX_PAGE_TEXT_CHARS = 8_000;
 
 export function buildProspectIdentity(input: {
@@ -108,7 +107,9 @@ export function scoreWebsiteQuality(input: {
   const adapter = resolveLeadDiscoveryAdapter(vertical);
   const reasons: string[] = [];
   let score = 100;
-  if (evaluateLeadCategoryFit(vertical, input.categories ?? []) === "mismatch") {
+  if (
+    evaluateLeadCategoryFit(vertical, input.categories ?? []) === "mismatch"
+  ) {
     score -= 12;
     reasons.push(
       `Listing categories do not confirm a ${adapter.eligibility.categoryLabel}`,
@@ -144,7 +145,9 @@ export function scoreWebsiteQuality(input: {
   }
   if (!homepage.hasCatalogHint) {
     score -= 8;
-    reasons.push(`No ${adapter.homepage.catalogLabel} link found on the homepage`);
+    reasons.push(
+      `No ${adapter.homepage.catalogLabel} link found on the homepage`,
+    );
   }
   if (!homepage.hasConversionHint) {
     score -= 8;
@@ -178,54 +181,30 @@ export type DiscoveryFetch = (
 export async function fetchHomepageSignals(
   rawUrl: string,
   vertical: VerticalId = Vertical.RESTAURANT,
-  fetchImpl: DiscoveryFetch = fetch,
+  fetchHtml: typeof fetchPublicHtml = fetchPublicHtml,
 ): Promise<HomepageSignals> {
   const empty = emptyHomepageSignals();
-  let url: URL;
   try {
-    url = new URL(rawUrl);
-  } catch {
-    return empty;
-  }
-  if (!isPublicHttpUrl(url)) return empty;
-
-  try {
-    for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
-      const response = await fetchImpl(url, {
-        headers: {
-          Accept: "text/html,application/xhtml+xml",
-          "User-Agent": LEAD_DISCOVERY_USER_AGENT,
-        },
-        redirect: "manual",
-        signal: AbortSignal.timeout(8_000),
-      });
-
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get("location");
-        if (!location) return empty;
-        const next = new URL(location, url);
-        if (!isPublicHttpUrl(next)) return empty;
-        url = next;
-        continue;
-      }
-
-      if (!response.ok) return empty;
-      const contentType = response.headers.get("content-type") ?? "";
-      if (!contentType.includes("text/html")) return empty;
-
-      const html = await readLimitedBody(response);
-      return parseHomepageSignals(
-        html,
-        url,
-        response.headers.get("last-modified"),
-        vertical,
-      );
-    }
+    const url = new URL(rawUrl);
+    if (!isHttpUrl(url)) return empty;
   } catch {
     return empty;
   }
 
-  return empty;
+  try {
+    const result = await fetchHtml(rawUrl, {
+      userAgent: LEAD_DISCOVERY_USER_AGENT,
+      timeoutMs: 8_000,
+    });
+    return parseHomepageSignals(
+      result.html,
+      result.finalUrl,
+      result.lastModifiedAt,
+      vertical,
+    );
+  } catch {
+    return empty;
+  }
 }
 
 export function parseHomepageSignals(
@@ -260,7 +239,8 @@ export function parseHomepageSignals(
     hasViewport: viewport.length > 0,
     isDesktopOnlyViewport: isDesktopOnlyViewport(viewport),
     hasDesktopOnlyMarkup:
-      /<frameset\b/i.test(html) || /shockwave-flash|application\/x-shockwave-flash/i.test(html),
+      /<frameset\b/i.test(html) ||
+      /shockwave-flash|application\/x-shockwave-flash/i.test(html),
     hasCatalogHint,
     hasConversionHint,
     hasBusinessJsonLd,
@@ -311,30 +291,17 @@ function normalizeOptionalWebsite(value: string | null): string | null {
     const url = new URL(
       /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
     );
-    if (!isPublicHttpUrl(url)) return null;
+    if (!isHttpUrl(url)) return null;
     return url.toString();
   } catch {
     return null;
   }
 }
 
-function isPublicHttpUrl(url: URL): boolean {
-  if (!["http:", "https:"].includes(url.protocol)) return false;
-  const hostname = url.hostname.toLowerCase();
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
-  ) {
-    return false;
-  }
-  if (
-    /^(127\.|10\.|192\.168\.|169\.254\.)/.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-  ) {
-    return false;
-  }
-  return true;
+function isHttpUrl(url: URL): boolean {
+  return (
+    ["http:", "https:"].includes(url.protocol) && !url.username && !url.password
+  );
 }
 
 function isDesktopOnlyViewport(content: string): boolean {
@@ -369,9 +336,7 @@ function jsonLdHasBusinessType(value: unknown, typePattern: RegExp): boolean {
   const type = record["@type"];
   const types = Array.isArray(type) ? type : [type];
   return types.some(
-    (entry) =>
-      typeof entry === "string" &&
-      typePattern.test(entry),
+    (entry) => typeof entry === "string" && typePattern.test(entry),
   );
 }
 
@@ -426,23 +391,4 @@ function stripMarkup(html: string): string {
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]+>/g, " "),
   );
-}
-
-async function readLimitedBody(response: Response): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let html = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > MAX_HTML_BYTES) {
-      await reader.cancel();
-      break;
-    }
-    html += decoder.decode(value, { stream: true });
-  }
-  return html + decoder.decode();
 }
