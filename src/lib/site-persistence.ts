@@ -374,7 +374,14 @@ export async function persistSiteImport<
             ? await tx.site.update({
                 where: { id: existing.id },
                 data: {
-                  ...siteScalarData(draft, input.vertical, sourceKey),
+                  ...siteScalarData(
+                    draft,
+                    input.vertical,
+                    sourceKey,
+                    input.leadIngest
+                      ? (draft.attributes as Prisma.InputJsonValue)
+                      : undefined,
+                  ),
                   ...(input.contactEmail
                     ? { leadContactEmail: input.contactEmail }
                     : {}),
@@ -385,7 +392,14 @@ export async function persistSiteImport<
             : await tx.site.create({
                 data: {
                   slug,
-                  ...siteScalarData(draft, input.vertical, sourceKey),
+                  ...siteScalarData(
+                    draft,
+                    input.vertical,
+                    sourceKey,
+                    input.leadIngest
+                      ? (draft.attributes as Prisma.InputJsonValue)
+                      : undefined,
+                  ),
                   ...(input.contactEmail
                     ? { leadContactEmail: input.contactEmail }
                     : {}),
@@ -738,9 +752,13 @@ function siteScalarData(
   draft: PersistableSiteDraft,
   vertical: VerticalId,
   sourceKey: string | null,
+  trustedOperationalAttributes?: Prisma.InputJsonValue,
 ) {
   return {
     ...siteDraftScalarData(draft, vertical),
+    ...(trustedOperationalAttributes
+      ? { attributes: trustedOperationalAttributes }
+      : {}),
     // Identity and lifecycle columns: only the import path owns these. An owner
     // editing copy must never move a site between verticals, re-point its import
     // identity, or resurrect it into PREVIEW_READY after it has been claimed.
