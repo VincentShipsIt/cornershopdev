@@ -18,7 +18,7 @@ encrypted SSM parameters on the EC2 host.
 | Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
 | Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
 | Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
-| Restofront outreach | Explicit operator send, Workflow follow-up, separately signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`, `WORKFLOW_*` |
+| Niche outreach | Explicit operator send, Workflow follow-up, separately signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -65,12 +65,62 @@ Readiness also checks the operator-alert configuration and durable queue. An
 exhausted alert or a due failed delivery returns `503` with instructions to run
 the dispatcher; recipients and provider errors are never returned.
 
-## Restofront outreach preflight
+## Multi-vertical lead discovery and outreach preflight
 
 Outreach remains disabled until the operator has reviewed the private preview
 and explicitly confirms the initial send. Creating or reopening a lead never
-sends an email. The global pause in `/admin` is checked before every Workflow
-send and every pause/resume change is written to the operator audit log.
+sends an email. The global pause and each lead's own pause in `/admin` are
+checked inside the same delivery fence before every Workflow send; every
+pause/resume change is written to the operator audit log.
+
+Discovery requires a dedicated adapter for every `Vertical` enum entry. It does
+not reuse restaurant category, menu, booking, or structured-data heuristics for
+another niche. Preview the query, score, evidence, and preview action without
+writes first:
+
+```bash
+bun run leads:discover -- --vertical restaurant --city Valletta
+bun run leads:discover -- --vertical beauty --city Valletta
+```
+
+`--execute` requires `OPERATOR_LEAD_INGEST_TOKEN`. Web-backed candidates run
+through the vertical's real import/generation pipeline and persist a private
+preview; place-only candidates remain prospects until an operator supplies a
+source. Redirected sources, preview content, discovery/audit metadata, and
+eligibility are committed to one canonical site in one serializable
+transaction. Execute never sends outreach. It records the adapter, every
+provider/query pair actually executed, and listing categories,
+an operator-owned `UNKNOWN | ELIGIBLE | INELIGIBLE` field and evidence fields.
+These are operational evidence, not legal conclusions. Electronic outreach is
+fail-closed unless `channel_basis` is `VERIFIED_WRITTEN_CONSENT` or
+`VERIFIED_SOFT_OPT_IN` and the record binds the exact private recipient,
+controller, `EMAIL` channel, `CLAIM_INVITATION_AND_FOLLOW_UP` purpose,
+offset-aware timestamp, and a private `crm:`, `consent:`, `ticket:`, or `dms:`
+evidence reference. `controller` must match the exact legal identity configured
+as `OUTREACH_LEGAL_CONTROLLER`; missing, mismatched, or future-dated evidence is
+blocked. Soft opt-in also requires customer/sale evidence and proof that an
+opt-out was offered at collection. Public listings, generic corporate or
+value-first rationales, and a bare `ELIGIBLE` flag do not authorize email.
+The operator can edit the record and must still review the current preview
+before delivery.
+
+Store the exact legal controller at
+`/shipshit/production/cornershopdev/OUTREACH_LEGAL_CONTROLLER`. Deployment
+requires the parameter and the no-send outreach preflight reports only its
+boolean readiness, never the configured identity.
+
+Discovery homepage signals use the same DNS-resolved, connect-pinned,
+redirect-revalidated public fetch boundary as imports. Provider-controlled
+private IPv4/IPv6 literals, private DNS answers, rebinding, and redirects fail
+closed. One normalized source belongs to exactly one vertical; manual and
+automated ingest reject cross-vertical reuse before changing a lead.
+
+Systematic discovery also fails closed unless `GOOGLE_PLACES_API_KEY` or an
+explicit commercial/self-hosted Nominatim-compatible
+`LEAD_DISCOVERY_NOMINATIM_BASE_URL` is configured. The public OSMF
+`nominatim.openstreetmap.org` endpoint is hard-blocked and is never an implicit
+fallback. Store whichever approved provider setting is used under the matching
+`/shipshit/production/cornershopdev/` SSM path.
 
 Resend assigns a signing secret to each webhook endpoint. Store the delivery
 endpoint's secret as `RESEND_WEBHOOK_SECRET` and the inbound reply endpoint's
@@ -85,9 +135,15 @@ https://cornershop.dev/api/webhooks/resend
 ```
 
 Subscribe it to `email.sent`, `email.delivered`, `email.bounced`,
-`email.complained`, `email.failed`, and `email.suppressed`. Also register
+`email.complained`, `email.failed`, and `email.suppressed`. Before approving a
+release, also register and enable the inbound endpoint
 `https://cornershop.dev/api/webhooks/resend/inbound` for `email.received` and
 store that endpoint's own signing secret in `RESEND_INBOUND_WEBHOOK_SECRET`.
+Each launched niche must have its own verified Resend sending domain and a
+verified receiving-capable reply-to domain declared by its vertical config.
+An unlaunched vertical with no niche domain/sender remains discoverable and
+previewable but cannot deliver mail.
+
 Before approving a release, run the read-only preflight inside the exact
 candidate image with its deployment env:
 
@@ -100,19 +156,18 @@ docker run --rm \
   run operator:preflight-outreach --environment production
 ```
 
-The command opens read-only PostgreSQL transactions to verify
-`20260819120000_outreach_inbound_mailbox`, its required tables/columns/index,
-and Workflow database reachability; lists Resend webhook metadata for both
-endpoints; requires both endpoint-specific secrets to be present and unequal;
-and validates the registered Restofront identity (`Vincent from Restofrontapp`
-with replies to `vincent@restofront.com`). Resend's webhook-list API does not
-return signing secrets, so metadata proves endpoint/event registration while
-the runtime contract and route tests prove key separation. It performs no
-database writes, configuration changes, or email sends. Output contains only
-check names, booleans, the public webhook endpoint, and timestamps—never
-database URLs, API keys, signing secrets, or provider error bodies. A failed
-check is a release blocker; do not weaken the preflight or mark it ready from
-configuration screenshots.
+The command opens read-only PostgreSQL transactions to verify the outreach
+migrations, required tables/columns/indexes (including the private
+`leadContactEmail` boundary), application database, and Workflow database;
+lists Resend delivery/inbound webhook metadata and domain capabilities;
+requires both endpoint-specific secrets to be present and unequal; and
+validates every launched niche's configured sender and reply-to identity plus
+the approved lead-enumeration provider. It performs no database writes,
+configuration changes, or email sends. Output contains only check names,
+booleans, public endpoints, niche names, and timestamps—never database URLs,
+API keys, signing secrets, mailbox contents, or provider error bodies. A
+failed check is a release blocker; do not weaken the preflight or mark it
+ready from configuration screenshots.
 
 ## Image storage round trip
 
@@ -124,15 +179,22 @@ docker exec api-cornershop-dev \
   bun run operator:verify-image-storage --environment production --execute
 ```
 
-The command writes separate `original-hero` and enhanced `hero` fixtures through
-`storeSiteImage`, retrieves both with the configured S3 client, verifies their
-exact SHA-256 content, and deletes both in a `finally` cleanup. Output contains
+The command writes a content-addressed immutable original and its config-addressed
+enhanced derivative through the production photo storage path, retrieves both
+with the configured S3 client, verifies their exact SHA-256 content, proves the
+keys are distinct, and deletes every exact object version and delete marker in a
+`finally` cleanup. It then lists the keys again and refuses to report success if
+any version remains. The scoped runtime role must allow `s3:ListBucketVersions`
+and `s3:DeleteObjectVersion` in addition to `s3:PutObject`, `s3:GetObject`, and
+`s3:DeleteObject`. Output contains
 only fixture labels, digests, cleanup status, environment, and timestamp—never
 bucket names, keys, URLs, credentials, or provider error bodies. A run without
 `--execute` performs no write. When verification and cleanup both fail, the
 output retains the primary write/read or content-mismatch failure and reports
 `cleanup: failed` separately. Do not claim the production round trip until the
-real command succeeds and cleanup is recorded as `completed`.
+real command succeeds and cleanup is recorded as `completed`. Issue #10 remains
+the evidence gate; after an observed role denial, repair and review IAM before an
+authorized retry rather than probing production from a feature branch.
 
 ## Runtime operator alerts
 
@@ -204,6 +266,7 @@ Production.
 
    Resolve any returned rows before deploying; the migration itself also fails
    closed on this condition.
+
 4. Check migration state with `bun run db:migrate:status`.
 5. Apply pending migrations with `bun run db:migrate:deploy`.
 6. Redeploy the application and confirm `/api/health/ready` returns `200`.

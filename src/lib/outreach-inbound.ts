@@ -1,9 +1,7 @@
 import "server-only";
-import { Vertical } from "@/generated/prisma/enums";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { getDb } from "@/lib/db";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
-import { RESTOFRONT_OUTREACH_REPLY_TO } from "@/lib/outreach-readiness";
 import {
   extractEmailAddress,
   extractEmailAddresses,
@@ -15,6 +13,10 @@ import {
   type InboundAddressFields,
 } from "@/lib/outreach-thread";
 import { fetchReceivedResendEmail } from "@/lib/resend-receiving";
+import { emailReplyTo } from "@/lib/resend";
+import { listOutreachVerticals } from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
+import { lockOutreachDelivery, lockOutreachSite } from "@/lib/outreach-lock";
 
 export type RecordInboundOutreachResult = {
   handled: boolean;
@@ -83,7 +85,7 @@ export async function recordInboundOutreachMessage(input: {
       dedupKey: `inbound-unmatched:${input.metadata.emailId}`,
       title: "Inbound outreach reply could not be matched",
       message:
-        "A signed inbound email did not match a Restofront outreach thread. Inspect the From/To headers and mailbox.",
+        "A signed inbound email did not match a configured outreach thread. Inspect the From/To headers and mailbox.",
       context: {
         emailId: input.metadata.emailId,
         from: fields.from,
@@ -114,54 +116,77 @@ export async function recordInboundOutreachMessage(input: {
   const toAddress =
     extractEmailAddresses(fields.to)[0] ??
     extractEmailAddresses(fields.receivedFor ?? [])[0] ??
-    RESTOFRONT_OUTREACH_REPLY_TO;
+    "unmatched@cornershop.dev";
 
   try {
-    const created = await db.outreachMessage.create({
-      data: {
-        idempotencyKey: `resend-inbound:${input.metadata.emailId}`,
-        siteId: matched.siteId,
-        direction: "INBOUND",
-        provider: "resend",
-        providerMessageId: input.metadata.emailId,
-        rfcMessageId,
-        fromAddress,
-        replyToAddress: null,
-        toAddress,
-        subject: received.subject || input.metadata.subject || "(no subject)",
-        textBody,
-        htmlBody: received.html,
-        template: null,
-        inReplyTo: fields.inReplyTo,
-        threadKey: matched.threadKey,
-        createdByActor: `lead:${fromAddress}`,
-        status: "RECEIVED",
-        receivedAt,
-      },
-      select: { id: true },
-    });
-    await db.auditEvent.create({
-      data: {
-        type: "outreach.inbound.received",
-        actor: `lead:${fromAddress}`,
-        siteId: matched.siteId,
-        metadata: {
-          outreachMessageId: created.id,
-          threadKey: matched.threadKey,
+    const persisted = await db.$transaction(async (tx) => {
+      // Match the delivery lock order: global fence, then Site row. A reply
+      // now commits wholly before a follow-up's final check or after its
+      // already-started provider attempt, with no suppression gap.
+      await lockOutreachDelivery(tx);
+      await lockOutreachSite(tx, matched.siteId);
+      const duplicate = await tx.outreachMessage.findUnique({
+        where: { providerMessageId: input.metadata.emailId },
+        select: { id: true, siteId: true },
+      });
+      if (duplicate) return { created: false as const, message: duplicate };
+
+      const created = await tx.outreachMessage.create({
+        data: {
+          idempotencyKey: `resend-inbound:${input.metadata.emailId}`,
+          siteId: matched.siteId,
+          direction: "INBOUND",
+          provider: "resend",
           providerMessageId: input.metadata.emailId,
+          rfcMessageId,
+          fromAddress,
+          replyToAddress: null,
+          toAddress,
+          subject: received.subject || input.metadata.subject || "(no subject)",
+          textBody,
+          htmlBody: received.html,
+          template: null,
+          inReplyTo: fields.inReplyTo,
+          threadKey: matched.threadKey,
+          createdByActor: `lead:${fromAddress}`,
+          status: "RECEIVED",
+          receivedAt,
         },
-        createdAt: receivedAt,
-      },
+        select: { id: true, siteId: true },
+      });
+      await tx.auditEvent.create({
+        data: {
+          type: "outreach.inbound.received",
+          actor: `lead:${fromAddress}`,
+          siteId: matched.siteId,
+          metadata: {
+            outreachMessageId: created.id,
+            threadKey: matched.threadKey,
+            providerMessageId: input.metadata.emailId,
+          },
+          createdAt: receivedAt,
+        },
+      });
+      return { created: true as const, message: created };
     });
+    if (!persisted.created) {
+      return {
+        handled: true,
+        created: false,
+        retry: false,
+        siteId: persisted.message.siteId,
+        messageId: persisted.message.id,
+      };
+    }
     await captureOperatorAlert({
       kind: "OUTREACH_REPLY",
       dedupKey: `inbound:${input.metadata.emailId}`,
-      title: "A Restofront lead replied",
+      title: "A lead replied",
       message:
         "An inbound reply was stored on the lead thread. Follow-up campaign sends are stopped; reply from /admin.",
       context: {
         siteId: matched.siteId,
-        outreachMessageId: created.id,
+        outreachMessageId: persisted.message.id,
       },
       occurredAt: receivedAt,
     });
@@ -170,7 +195,7 @@ export async function recordInboundOutreachMessage(input: {
       created: true,
       retry: false,
       siteId: matched.siteId,
-      messageId: created.id,
+      messageId: persisted.message.id,
     };
   } catch (error) {
     const duplicate = await db.outreachMessage.findUnique({
@@ -202,9 +227,13 @@ export async function matchInboundOutreachThread(
           { rfcMessageId: { in: tokens } },
           { id: { in: tokens } },
           { providerMessageId: { in: tokens } },
-          { threadKey: { in: tokens.map((token) =>
-              token.startsWith("lead:") ? token : `lead:${token}`,
-            ) } },
+          {
+            threadKey: {
+              in: tokens.map((token) =>
+                token.startsWith("lead:") ? token : `lead:${token}`,
+              ),
+            },
+          },
         ],
       },
       orderBy: { createdAt: "desc" },
@@ -218,10 +247,11 @@ export async function matchInboundOutreachThread(
     }
 
     const plusTags = tokens.filter((token) => !token.includes("@"));
-    if (plusTags.length > 0) {
+    const recipientVerticals = inboundRecipientVerticals(fields);
+    if (plusTags.length > 0 && recipientVerticals.length > 0) {
       const byPlus = await db.site.findFirst({
         where: {
-          vertical: Vertical.RESTAURANT,
+          vertical: { in: recipientVerticals },
           OR: [{ slug: { in: plusTags } }, { id: { in: plusTags } }],
         },
         orderBy: { updatedAt: "desc" },
@@ -237,37 +267,54 @@ export async function matchInboundOutreachThread(
   }
 
   const from = safeEmail(fields.from);
-  if (!from || !isRestofrontInboundRecipient(fields)) return null;
-  const byContact = await db.site.findFirst({
+  const recipientVerticals = inboundRecipientVerticals(fields);
+  if (!from || recipientVerticals.length === 0) return null;
+  const byContact = await db.site.findMany({
     where: {
-      vertical: Vertical.RESTAURANT,
+      vertical: { in: recipientVerticals },
       leadContactEmail: from,
     },
     orderBy: { updatedAt: "desc" },
+    take: 2,
     select: { id: true },
   });
-  if (!byContact) return null;
+  if (byContact.length !== 1) return null;
   return {
-    siteId: byContact.id,
-    threadKey: outreachThreadKey(byContact.id),
+    siteId: byContact[0]!.id,
+    threadKey: outreachThreadKey(byContact[0]!.id),
   };
 }
 
-export function isRestofrontInboundRecipient(fields: InboundAddressFields): boolean {
+export function inboundRecipientVerticals(
+  fields: InboundAddressFields,
+): VerticalId[] {
   const recipients = extractEmailAddresses([
     ...fields.to,
     ...(fields.receivedFor ?? []),
   ]);
-  const replyTo = RESTOFRONT_OUTREACH_REPLY_TO.toLowerCase();
-  const replyDomain = replyTo.slice(replyTo.indexOf("@"));
-  return recipients.some((address) => {
-    if (address === replyTo) return true;
-    const at = address.indexOf("@");
-    if (at < 0) return false;
-    const local = address.slice(0, at);
-    const domain = address.slice(at);
-    return domain === replyDomain && (local === "vincent" || local.startsWith("vincent+"));
+  return listOutreachVerticals().filter((vertical) => {
+    const replyTo = emailReplyTo(vertical)?.toLowerCase();
+    if (!replyTo) return false;
+    return recipients.some((address) => matchesReplyTo(address, replyTo));
   });
+}
+
+function matchesReplyTo(address: string, replyTo: string): boolean {
+  const replyDomain = replyTo.slice(replyTo.indexOf("@"));
+  const replyLocal = replyTo.slice(0, replyTo.indexOf("@"));
+  if (address === replyTo) return true;
+  const at = address.indexOf("@");
+  if (at < 0) return false;
+  const local = address.slice(0, at);
+  const domain = address.slice(at);
+  return domain === replyDomain && local.startsWith(`${replyLocal}+`);
+}
+
+/** @deprecated Use `inboundRecipientVerticals`. */
+export function isRestofrontInboundRecipient(
+  fields: InboundAddressFields,
+): boolean {
+  return inboundRecipientVerticals(fields).includes("RESTAURANT");
 }
 
 function safeEmail(value: string): string | null {
@@ -280,7 +327,9 @@ function safeEmail(value: string): string | null {
   }
 }
 
-export function inboundHeaderMessageIds(headers: Record<string, string>): string[] {
+export function inboundHeaderMessageIds(
+  headers: Record<string, string>,
+): string[] {
   return [
     ...parseRfcMessageIds(headers["in-reply-to"]),
     ...parseRfcMessageIds(headers.references),

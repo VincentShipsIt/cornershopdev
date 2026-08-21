@@ -7,10 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function OperatorLeadForm() {
+export function OperatorLeadForm({
+  verticalOptions,
+}: {
+  verticalOptions: Array<{ id: string; label: string; audience: string }>;
+}) {
   const router = useRouter();
   const [source, setSource] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [vertical, setVertical] = useState(verticalOptions[0]?.id ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{
     preview: string;
@@ -28,7 +33,7 @@ export function OperatorLeadForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leads: [{ source, contactEmail, vertical: "RESTAURANT" }],
+          leads: [{ source, contactEmail, vertical }],
           sendEmail: false,
         }),
       });
@@ -67,7 +72,7 @@ export function OperatorLeadForm() {
 
   return (
     <form
-      className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.7fr)_auto] lg:items-end"
+      className="grid gap-3 lg:grid-cols-[minmax(10rem,0.4fr)_minmax(0,1fr)_minmax(16rem,0.7fr)_auto] lg:items-end"
       aria-busy={submitting}
       onSubmit={(event) => {
         event.preventDefault();
@@ -75,12 +80,28 @@ export function OperatorLeadForm() {
       }}
     >
       <div className="space-y-2">
+        <Label htmlFor="operator-lead-vertical">Niche</Label>
+        <select
+          id="operator-lead-vertical"
+          value={vertical}
+          onChange={(event) => setVertical(event.target.value)}
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          required
+        >
+          {verticalOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label} · {option.audience}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="space-y-2">
         <Label htmlFor="operator-lead-source">Business URL or name</Label>
         <Input
           id="operator-lead-source"
           value={source}
           onChange={(event) => setSource(event.target.value)}
-          placeholder="https://restaurant.example or Restaurant name"
+          placeholder="https://business.example or Business name"
           minLength={2}
           maxLength={500}
           required
@@ -93,7 +114,7 @@ export function OperatorLeadForm() {
           type="email"
           value={contactEmail}
           onChange={(event) => setContactEmail(event.target.value)}
-          placeholder="owner@restaurant.com"
+          placeholder="owner@business.com"
           maxLength={320}
           required
         />
@@ -103,6 +124,7 @@ export function OperatorLeadForm() {
         disabled={
           source.trim().length < 2 ||
           !contactEmail.includes("@") ||
+          !vertical ||
           submitting
         }
       >
@@ -113,7 +135,7 @@ export function OperatorLeadForm() {
         )}
         {submitting ? "Creating preview…" : "Create preview"}
       </Button>
-      <div className="lg:col-span-3" aria-live="polite">
+      <div className="lg:col-span-4" aria-live="polite">
         {error ? (
           <p className="text-xs text-destructive">{error}</p>
         ) : result ? (

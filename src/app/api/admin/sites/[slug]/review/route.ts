@@ -6,11 +6,23 @@ import {
   recordOperatorLeadAction,
 } from "@/lib/operator-leads";
 import { isSameOriginMutation } from "@/lib/request-origin";
+import {
+  leadEligibilityEvidenceSchema,
+  leadEligibilityStateSchema,
+} from "@/lib/operator-lead-attributes";
 
-const requestSchema = z.object({
-  action: z.enum(["add_note", "complete_review"]),
-  note: z.string().trim().max(2_000).nullable().default(null),
-});
+const requestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.enum(["add_note", "complete_review"]),
+    note: z.string().trim().max(2_000).nullable().default(null),
+  }),
+  z.object({
+    action: z.literal("set_eligibility"),
+    eligibility: leadEligibilityStateSchema,
+    eligibilityEvidence: leadEligibilityEvidenceSchema,
+    note: z.null().default(null),
+  }),
+]);
 
 export async function POST(
   request: Request,
@@ -31,6 +43,12 @@ export async function POST(
       action: input.action,
       note: input.note,
       actor: `operator:${operator.id}`,
+      eligibility:
+        input.action === "set_eligibility" ? input.eligibility : undefined,
+      eligibilityEvidence:
+        input.action === "set_eligibility"
+          ? input.eligibilityEvidence
+          : undefined,
     });
     return NextResponse.json(
       { ok: true, createdAt: result.createdAt.toISOString() },

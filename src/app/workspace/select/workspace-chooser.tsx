@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +12,7 @@ export function WorkspaceChooser({
 }: {
   workspaces: AccountWorkspace[];
 }) {
+  const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +26,8 @@ export function WorkspaceChooser({
         body: JSON.stringify({ siteId }),
       });
       if (!response.ok) throw new Error("Workspace access is unavailable.");
-      window.location.assign("/dashboard");
+      router.push("/dashboard");
+      router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not switch workspace.");
       setPendingId(null);

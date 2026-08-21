@@ -1,6 +1,10 @@
 # Cornershopdev
 
-Cornershopdev turns an existing local-business website—or just a business name—into a private, prefilled, mobile-first website preview. The registered vertical supplies the schema, prompts, providers, templates and language for its trade while the business keeps the ordering, delivery or booking tools it already uses.
+Cornershopdev is a multi-vertical local-business website factory. Each
+configured niche supplies its own discovery queries, catalog/conversion
+signals, content schema, preview generator, storefront identity, and provider
+adapters. A business keeps the operational tools it already uses, reviews a
+private prefilled preview, claims it, subscribes, then connects its domain.
 
 ## Product flow
 
@@ -32,9 +36,19 @@ after the session is revalidated against that site's organization membership.
 subscriptions, request totals, portfolio traffic and conversion summaries, and
 bounded per-site operational rows. The private owner/outreach recipient is
 stored separately from the sourced public business email and is visible only in
-this dual-gated console. Lead creation never sends mail: an
-operator must review the persisted preview, confirm the initial Restofront
-email, and can pause every workflow before its next send.
+this dual-gated console. Lead creation never sends mail: an operator must review
+the persisted preview, record a verified written-consent or soft-opt-in channel
+basis with exact recipient, controller, email channel, claim/follow-up purpose,
+timestamp, and private evidence reference, and confirm the exact niche-branded
+recipient. Soft opt-in additionally requires customer/sale and collection
+opt-out proof. The controller must exactly match `OUTREACH_LEGAL_CONTROLLER`,
+and future-dated evidence is rejected. A public listing, generic corporate
+rationale, value-first offer, or bare `ELIGIBLE` flag never authorizes
+electronic outreach. Operators can pause all outreach or one lead before its
+next send. Initials, follow-ups, and operator replies recheck current evidence,
+mutable/unclaimed state, and bounce/complaint/provider suppression immediately
+before provider delivery. Inbound replies and suppression webhooks use the same
+transactional delivery fence, so they cannot commit in a post-check send gap.
 
 ## First-party analytics
 
@@ -241,9 +255,18 @@ OpenRouter Auto selects a compatible language model per import. Structured outpu
 is schema validated before it is persisted.
 
 Optional image enhancement runs through the same key and the same provider. The
-model must expose `image` output; the default does.
+model must expose `image` output and pass the photo policy's economical-model
+allow-list; the default does.
 
 - `OPENROUTER_IMAGE_MODEL` defaults to `google/gemini-3.1-flash-image`
+- `PHOTO_ENHANCEMENT_MODEL` pins the validated batch model
+- `PHOTO_ENHANCEMENT_ESTIMATED_COST_MICROS`,
+  `PHOTO_ENHANCEMENT_PER_IMAGE_CEILING_MICROS`, and
+  `PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS` reserve the full per-image ceiling
+  before provider work; reported overruns fail closed and disable more enhancement
+- `PHOTO_DISCOVERY_MAX_IMAGES`, `PHOTO_INGEST_CONCURRENCY`,
+  `PHOTO_ENHANCEMENT_CONCURRENCY`, and `PHOTO_ENHANCEMENT_BATCH_MAX_IMAGES`
+  bound crawl/storage/provider fan-out
 
 Without `OPENROUTER_API_KEY` an import still completes with the reconstructed
 business identity, branding, contact details, hours, integrations, and any
@@ -269,17 +292,25 @@ Configure the private production S3 bucket and its CloudFront public origin:
 - `S3_BUCKET`
 - `S3_PUBLIC_BASE_URL`
 
-Cornershopdev never creates a dish photograph from menu text. Enhancement requires
-an existing HTTPS source image from the restaurant, an owner upload, or customer
-UGC with explicit reuse permission. The immutable original URL and its
-provenance are stored alongside the enhanced S3 derivative.
+Cornershopdev never creates a photograph from text. The crawler deterministically
+discovers a bounded set of photo references on the business's own pages, filters
+logos and decorative assets, copies validated bytes to content-addressed immutable
+storage, and deduplicates them by SHA-256. Owners may also upload a file or add an
+HTTPS reference. Source page, provenance, candidate classification, review state,
+selection, original, and enhanced derivative remain durable records.
+Approved gallery selections are projected into the private draft and copied into
+an immutable published version; restoring an original updates preview first and
+reaches the live site only after the owner publishes again.
 
 Allowed edits are exposure, white balance, highlight and shadow recovery,
 denoising, sharpness, resolution, straightening, subtle cropping, and removal of
 transient non-material distractions such as sensor dust. Ingredients, garnishes,
 portions, plating, tableware, people, architecture, and material scene elements
-must not be added, removed, replaced, moved, or regenerated. Owners can disable
-automatic enhancement and must review the derivative before publishing.
+must not be added, removed, replaced, moved, or regenerated. Only approved
+originals enter a rate- and concurrency-limited batch. Originals remain active
+until the owner approves the before/after derivative, and every approve, reject,
+selection, restore, failure, and cost result is audited. See
+`docs/operations/photo-ingestion.md` for the full safety and recovery contract.
 
 ### Preview abuse protection
 
@@ -332,20 +363,25 @@ deduplicated outbox with bounded delivery retries. Deployment and exercise
 instructions are in
 [`docs/operations/platform-services.md`](docs/operations/platform-services.md).
 
-### Restofront outreach
+### Niche outreach
 
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
 - `RESEND_INBOUND_WEBHOOK_SECRET` (must be present and different from the
   delivery webhook secret)
+- `GOOGLE_PLACES_API_KEY` or an approved non-public
+  `LEAD_DISCOVERY_NOMINATIM_BASE_URL` (the public OSMF endpoint is blocked)
 - `WORKFLOW_ENABLED=true`
 - the complete `WORKFLOW_POSTGRES_*` contract listed above
 
 Before release, run the read-only outreach preflight inside the reviewed
-container. It checks the committed migration, registered Restofront sender and
-reply-to, Workflow configuration, both distinct endpoint-specific signing
-secrets, and the enabled Resend delivery and inbound webhooks. It prints only
-check names, booleans, the public webhook endpoint, and timestamps; it never
+container. It checks the committed outreach and private-contact migrations,
+registered Restofront sender and reply-to plus every other launched niche
+identity, Workflow/database configuration, verified Resend sending/receiving
+domains, both distinct endpoint-specific signing secrets, and the enabled
+delivery and inbound webhooks. It also fails closed unless a commercial or
+self-hosted lead-enumeration provider is configured. It prints only check
+names, booleans, public endpoints, niche names, and timestamps; it never
 prints secret values and never sends an email.
 
 ```bash

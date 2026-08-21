@@ -67,6 +67,38 @@ enum ImageProvenance {
   PERMISSIONED_UGC
 }
 
+enum PhotoSourceKind {
+  FIRST_PARTY
+  OWNER_REFERENCE
+  OWNER_UPLOAD
+}
+
+enum PhotoReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PhotoUsage {
+  HERO
+  GALLERY
+  CATALOG
+}
+
+enum PhotoActiveVariant {
+  ORIGINAL
+  ENHANCED
+}
+
+enum PhotoEnhancementStatus {
+  NOT_REQUESTED
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
 enum PlatformRole {
   USER
   SUPERADMIN
@@ -257,6 +289,72 @@ model Site {
   sourceMonitorState       SourceMonitorState?
   sourceMonitorRuns        SourceMonitorRun[]
   sourceMonitorSuggestions SourceMonitorSuggestion[]
+  photos                   PhotoAsset[]
+  photoEnhancementRuns     PhotoEnhancementRun[]
+}
+
+model PhotoAsset {
+  id                       String                 @id @default(cuid())
+  siteId                   String
+  site                     Site                   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  sourceUrl                String
+  sourcePageUrl            String?
+  provenance               ImageProvenance
+  sourceKind               PhotoSourceKind
+  contentSha256            String
+  originalStorageKey       String
+  originalUrl              String
+  mediaType                String
+  byteLength               Int
+  width                    Int?
+  height                   Int?
+  candidateUsages          PhotoUsage[]
+  reviewStatus             PhotoReviewStatus      @default(PENDING)
+  /// A partial unique index in 20260820230000_photo_selection_invariants
+  /// permits at most one selected HERO per site.
+  selectedUsage            PhotoUsage?
+  selectedCatalogItemId    String?                @unique
+  selectedCatalogItem      CatalogItem?           @relation(fields: [selectedCatalogItemId], references: [id], onDelete: SetNull)
+  activeVariant            PhotoActiveVariant     @default(ORIGINAL)
+  enhancedUrl              String?
+  enhancedStorageKey       String?
+  enhancedReviewStatus     PhotoReviewStatus?
+  enhancementStatus        PhotoEnhancementStatus @default(NOT_REQUESTED)
+  enhancementModel         String?
+  enhancementConfigVersion String?
+  enhancementCostMicros    Int?
+  reviewedAt               DateTime?
+  reviewedBy               String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  enhancementRuns          PhotoEnhancementRun[]
+
+  @@unique([siteId, contentSha256])
+  @@index([siteId, reviewStatus, createdAt])
+  @@index([siteId, selectedUsage])
+}
+
+model PhotoEnhancementRun {
+  id                  String                 @id @default(cuid())
+  siteId              String
+  site                Site                   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  photoId             String
+  photo               PhotoAsset             @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  idempotencyKey      String                 @unique
+  status              PhotoEnhancementStatus @default(QUEUED)
+  model               String
+  configVersion       String
+  estimatedCostMicros Int
+  actualCostMicros    Int?
+  requestedBy         String
+  errorCode           String?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@index([siteId, status, createdAt])
+  @@index([photoId, createdAt])
 }
 
 model AuthMagicLink {
@@ -413,6 +511,7 @@ model CatalogItem {
   position         Int              @default(0)
   sectionId        String
   section          CatalogSection   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  selectedPhoto    PhotoAsset?
 }
 
 model Integration {

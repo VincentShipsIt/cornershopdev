@@ -1,5 +1,5 @@
 import { getWritable } from "workflow";
-import { fetchPublicImage, type ExtractedSite } from "@/lib/importer";
+import type { ExtractedSite } from "@/lib/importer";
 import { importFailureMessage } from "@/lib/import-identity";
 import {
   persistSiteImport,
@@ -8,13 +8,8 @@ import {
   type PersistableSiteDraft,
   type PersistedSiteImport,
 } from "@/lib/site-persistence";
-import {
-  aiIsConfigured,
-  crawlSiteSource,
-  enhanceSiteHeroImage,
-  generateDraftForVertical,
-} from "@/lib/site-pipeline";
-import { imageStorageIsConfigured, storeSiteImage } from "@/lib/storage/images";
+import { crawlSiteSource, generateDraftForVertical } from "@/lib/site-pipeline";
+import { ingestDiscoveredSitePhotos } from "@/lib/photo-library";
 import type { VerticalId } from "@/lib/verticals/types";
 
 type PersistedImport = PersistedSiteImport<PersistableSiteDraft>;
@@ -73,7 +68,6 @@ export async function siteImportWorkflow(
       message: "Composing the mobile-first preview",
     });
     const draft = await composeDraft(extracted, vertical);
-    const enhancedDraft = await enhanceDraftImages(draft, vertical);
     await emit({
       type: "progress",
       stage: "compose",
@@ -87,11 +81,12 @@ export async function siteImportWorkflow(
       message: "Saving the private preview",
     });
     const persisted = await persistDraft(
-      enhancedDraft,
+      draft,
       source,
       importJobId,
       vertical,
     );
+    await ingestPhotos(persisted, extracted.photos ?? [], vertical);
     await emitComplete(persisted, vertical);
     console.log(`[site-import] DONE slug=${persisted.draft.slug}`);
     return persisted.draft;
@@ -170,60 +165,26 @@ async function failImport(importJobId: string, message: string): Promise<void> {
   await recordImportFailure(importJobId, message);
 }
 
-async function enhanceDraftImages(
-  draft: PersistableSiteDraft,
+async function ingestPhotos(
+  persisted: PersistedImport,
+  photos: ExtractedSite["photos"] = [],
   vertical: VerticalId,
-): Promise<PersistableSiteDraft> {
+): Promise<void> {
   "use step";
-  console.log(`[site-import:enhance] START slug=${draft.slug}`);
-  if (
-    !draft.autoEnhanceImages ||
-    !draft.heroImageUrl?.startsWith("https://") ||
-    !imageStorageIsConfigured() ||
-    !aiIsConfigured()
-  ) {
-    console.log(`[site-import:enhance] SKIP slug=${draft.slug}`);
-    return draft;
-  }
-
-  const originalUrl = draft.heroOriginalImageUrl ?? draft.heroImageUrl;
   try {
-    const originalImage = await fetchPublicImage(originalUrl);
-    const storedOriginalUrl = await storeSiteImage({
-      siteSlug: draft.slug,
+    const summary = await ingestDiscoveredSitePhotos({
+      siteId: persisted.siteId,
+      siteSlug: persisted.draft.slug,
       vertical,
-      data: originalImage.data,
-      mediaType: originalImage.mediaType,
-      purpose: "original-hero",
+      photos,
     });
-    const image = await enhanceSiteHeroImage(
-      {
-        sourceImageUrl: storedOriginalUrl,
-        siteName: draft.name,
-      },
-      vertical,
+    console.log(
+      `site-import photos DONE slug=${persisted.draft.slug} ingested=${summary.ingested} deduplicated=${summary.deduplicated} failed=${summary.failed}`,
     );
-    const heroImageUrl = await storeSiteImage({
-      siteSlug: draft.slug,
-      vertical,
-      data: image.data,
-      mediaType: image.mediaType,
-      purpose: "hero",
-    });
-    console.log(`[site-import:enhance] DONE slug=${draft.slug}`);
-    return {
-      ...draft,
-      heroImageUrl,
-      heroOriginalImageUrl: storedOriginalUrl,
-      heroImageProvenance: draft.heroImageProvenance ?? "official",
-    };
-  } catch (error) {
+  } catch {
     console.warn(
-      `[site-import:enhance] FALLBACK slug=${draft.slug} error=${
-        error instanceof Error ? error.message : "unknown"
-      }`,
+      `site-import photos FALLBACK slug=${persisted.draft.slug}`,
     );
-    return draft;
   }
 }
 

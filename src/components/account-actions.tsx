@@ -2,17 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function AccountActions({ canSwitch }: { canSwitch: boolean }) {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
 
   async function logout() {
     setPending(true);
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
-      if (response.ok) window.location.assign("/sign-in");
+      if (response.ok) {
+        router.push("/sign-in");
+        router.refresh();
+      }
     } finally {
       setPending(false);
     }

@@ -1,5 +1,4 @@
 import { getWritable, sleep } from "workflow";
-import { Vertical } from "@/generated/prisma/enums";
 import { appOrigin } from "@/lib/app-origin";
 import {
   issueClaimInvitation,
@@ -9,8 +8,15 @@ import {
 import { getDb } from "@/lib/db";
 import { mutableLeadStatuses } from "@/lib/lead-status";
 import { captureOperatorAlert } from "@/lib/operator-alerts";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import type { OutreachTemplateId } from "@/lib/outreach-templates";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 
 /**
  * `recordOperatorLeadAction` (from `@/lib/operator-leads`) and `sendLeadEmail`
@@ -53,9 +59,10 @@ export function unknownOutreachStepResult(
  * one site: a `preview_ready` email with a stage-stable claim invitation, a
  * wait, then a `follow_up_1` email with its own invitation if the lead is
  * still eligible. Eligibility (mutable lead status, a contact email on file,
- * the `outreach.paused` kill switch) is re-checked before each send rather
- * than once at the start, so an operator pausing outreach or claiming the
- * site mid-flight stops the run at its next step rather than only at launch.
+ * the global and per-lead outreach pause switches) is re-checked before each
+ * send rather than once at the start, so an operator pausing outreach or
+ * claiming the site mid-flight stops the run at its next step rather than only
+ * at launch.
  *
  * Each stage issues its own claim invitation instead of reusing one across
  * the follow-up delay: `CLAIM_INVITATION_TTL_MS` (48h) is shorter than the
@@ -247,12 +254,7 @@ async function loadEligibleLead(
   stage: OutreachStage,
 ): Promise<{ slug: string; email: string } | null> {
   "use step";
-  return readEligibleLead(
-    siteId,
-    expectedRecipient,
-    expectedReviewedAt,
-    stage,
-  );
+  return readEligibleLead(siteId, expectedRecipient, expectedReviewedAt, stage);
 }
 
 async function readEligibleLead(
@@ -268,6 +270,7 @@ async function readEligibleLead(
       select: {
         slug: true,
         leadContactEmail: true,
+        attributes: true,
         status: true,
         vertical: true,
         updatedAt: true,
@@ -284,16 +287,24 @@ async function readEligibleLead(
         },
       },
     }),
-    db.operatorSetting.findUnique({ where: { key: "outreach.paused" } }),
+    db.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [GLOBAL_OUTREACH_PAUSE_KEY, siteOutreachPauseKey(siteId)],
+        },
+      },
+      select: { key: true, value: true },
+    }),
   ]);
-  const paused = setting?.value === true;
+  const paused = isOutreachPaused(setting, siteId);
   const hasInboundReply = Boolean(
     site?.outreachMessages.some((message) => message.direction === "INBOUND"),
   );
   const latestPreviewReady =
     site?.outreachMessages.find(
       (message) =>
-        message.direction === "OUTBOUND" && message.template === "preview_ready",
+        message.direction === "OUTBOUND" &&
+        message.template === "preview_ready",
     )?.status ?? null;
   if (
     !isLeadEligibleForOutreach(
@@ -302,12 +313,7 @@ async function readEligibleLead(
       stage === "follow_up_1" ? latestPreviewReady : null,
       hasInboundReply,
     ) ||
-    !isReviewedRestofrontLead(
-      site,
-      paused,
-      expectedRecipient,
-      expectedReviewedAt,
-    )
+    !isReviewedLead(site, paused, expectedRecipient, expectedReviewedAt)
   ) {
     return null;
   }
@@ -316,9 +322,10 @@ async function readEligibleLead(
   return { slug: site!.slug, email: expectedRecipient.trim().toLowerCase() };
 }
 
-export function isReviewedRestofrontLead(
+export function isReviewedLead(
   site: {
     leadContactEmail: string | null;
+    attributes: unknown;
     status: string;
     vertical: string;
     updatedAt: Date;
@@ -331,13 +338,15 @@ export function isReviewedRestofrontLead(
   const latestReview = site?.auditEvents[0]?.createdAt ?? null;
   return Boolean(
     site &&
-      !paused &&
-      site.vertical === Vertical.RESTAURANT &&
-      mutableLeadStatuses.has(site.status) &&
-      site.leadContactEmail?.trim().toLowerCase() ===
-        expectedRecipient.trim().toLowerCase() &&
-      latestReview?.toISOString() === expectedReviewedAt &&
-      isOperatorReviewCurrent(latestReview, site.updatedAt),
+    !paused &&
+    isVerticalOutreachConfigured(site.vertical) &&
+    evaluateLeadOutreachEligibility(site.attributes, site.leadContactEmail)
+      .allowed &&
+    mutableLeadStatuses.has(site.status) &&
+    site.leadContactEmail?.trim().toLowerCase() ===
+      expectedRecipient.trim().toLowerCase() &&
+    latestReview?.toISOString() === expectedReviewedAt &&
+    isOperatorReviewCurrent(latestReview, site.updatedAt),
   );
 }
 
@@ -449,9 +458,8 @@ async function finishInitialDispatch(
   error?: string,
 ): Promise<void> {
   "use step";
-  const { markInitialOutreachDispatchFinished } = await import(
-    "@/lib/outreach-dispatch"
-  );
+  const { markInitialOutreachDispatchFinished } =
+    await import("@/lib/outreach-dispatch");
   await markInitialOutreachDispatchFinished({
     dispatchId,
     siteId,

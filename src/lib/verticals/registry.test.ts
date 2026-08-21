@@ -25,6 +25,7 @@ import {
   verticalSlug,
 } from "@/lib/verticals/registry";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
+import { listLeadDiscoveryAdapters } from "@/lib/lead-generation/registry";
 
 /**
  * Concrete configs are imported directly rather than pulled back out of the
@@ -47,6 +48,16 @@ describe("vertical registry", () => {
     for (const id of listVerticalIds()) {
       expect(resolveVerticalConfig(id).id).toBe(id);
     }
+  });
+
+  it("requires one vertical-specific lead discovery adapter per enum entry", () => {
+    expect(listLeadDiscoveryAdapters().map((adapter) => adapter.vertical)).toEqual(
+      listVerticalIds(),
+    );
+    expect(
+      new Set(listLeadDiscoveryAdapters().map((adapter) => adapter.adapterId))
+        .size,
+    ).toBe(listVerticalIds().length);
   });
 
   it("preserves the legacy restaurant draft through the compatibility shim", () => {
@@ -136,6 +147,7 @@ describe("vertical registry", () => {
         address: "",
         phone: "",
         heroImageUrl: null,
+        photos: [],
         pageText: "Café Roma",
         links: [],
       },
@@ -167,6 +179,7 @@ describe("vertical registry", () => {
         address: "",
         phone: "",
         heroImageUrl: null,
+        photos: [],
         pageText: "Atelier Coupe",
         links: [],
       },

@@ -34,9 +34,10 @@ jobs:
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/cornershopdev_ci
       WORKFLOW_POSTGRES_URL: postgresql://ci:ci@127.0.0.1:5432/cornershopdev_ci
       BETTER_AUTH_SECRET: ci-only-better-auth-secret-32-bytes
+      OUTREACH_LEGAL_CONTROLLER: Corner Shop Labs Ltd
       WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
@@ -56,6 +57,10 @@ jobs:
         env:
           SITE_PUBLICATION_POSTGRES_TEST: "1"
         run: bun test src/lib/site-publication.postgres.test.ts
+      - name: Postgres photo library suite
+        env:
+          PHOTO_LIBRARY_POSTGRES_TEST: "1"
+        run: bun test src/lib/photo-library.postgres.test.ts
       - name: Postgres source-monitoring concurrency suite
         env:
           SOURCE_MONITORING_POSTGRES_TEST: "1"
@@ -64,6 +69,14 @@ jobs:
         env:
           CLAIM_INVITATIONS_POSTGRES_TEST: "1"
         run: bun test src/lib/claim-invitations.postgres.test.ts
+      - name: Postgres inbound suppression concurrency suite
+        env:
+          OUTREACH_INBOUND_RACE_POSTGRES_TEST: "1"
+        run: bun test src/lib/outreach-inbound-race.postgres.test.ts
+      - name: Postgres operator lead ingest atomicity suite
+        env:
+          OPERATOR_LEAD_INGEST_POSTGRES_TEST: "1"
+        run: bun test src/lib/operator-lead-ingest.postgres.test.ts
       - name: Postgres authentication retry concurrency suite
         env:
           AUTH_MAGIC_LINK_RETRY_POSTGRES_TEST: "1"
@@ -90,7 +103,7 @@ jobs:
       - name: Show Lighthouse server log
         if: failure()
         run: cat .next/lighthouse-server.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: lighthouseci
@@ -153,6 +166,7 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       BETTER_AUTH_SECRET: e2e-only-better-auth-secret-32-bytes
       CLAIM_TOKEN_SECRET: e2e-only-claim-token-secret-32-bytes
+      OUTREACH_LEGAL_CONTROLLER: Corner Shop Labs Ltd
       STRIPE_SECRET_KEY: sk_test_first_customer_e2e
       STRIPE_WEBHOOK_SECRET: whsec_first_customer_e2e
       STRIPE_STARTER_PRICE_ID: price_first_customer_e2e

@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import "server-only";
 import type { OutreachStatus } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
+import type { OutreachEligibilityReason } from "@/lib/electronic-outreach-eligibility";
+import { lockOutreachSite } from "@/lib/outreach-lock";
 
 const INITIAL_TEMPLATE = "preview_ready";
 export const OUTREACH_DISPATCH_STALE_MS = 5 * 60_000;
@@ -12,6 +15,16 @@ export type InitialOutreachDispatch = {
   workflowRunId: string | null;
   attempt: number;
 };
+
+export class OutreachDispatchAuthorizationError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: OutreachEligibilityReason,
+  ) {
+    super(message);
+    this.name = "OutreachDispatchAuthorizationError";
+  }
+}
 
 export function isInitialOutreachDispatchRetryable(
   dispatch: {
@@ -45,6 +58,29 @@ export async function reserveInitialOutreachDispatch(input: {
   );
 
   return db.$transaction(async (tx) => {
+    await lockOutreachSite(tx, input.siteId);
+    const site = await tx.site.findUnique({
+      where: { id: input.siteId },
+      select: { attributes: true, leadContactEmail: true },
+    });
+    const eligibility = evaluateLeadOutreachEligibility(
+      site?.attributes,
+      site?.leadContactEmail ?? null,
+    );
+    if (
+      !site?.leadContactEmail ||
+      site.leadContactEmail.trim().toLowerCase() !==
+        input.recipient.trim().toLowerCase() ||
+      !eligibility.allowed
+    ) {
+      throw new OutreachDispatchAuthorizationError(
+        eligibility.allowed
+          ? "The private lead contact changed before outreach was queued."
+          : eligibility.message,
+        eligibility.allowed ? "recipient_mismatch" : eligibility.reason,
+      );
+    }
+
     const dispatch = await tx.outreachDispatch.upsert({
       where: { idempotencyKey },
       update: {},
@@ -99,9 +135,7 @@ export async function reserveInitialOutreachDispatch(input: {
           // A definite failure gets a fresh provider idempotency slot. A
           // stale no-run reservation is ambiguous, so replay the same logical
           // attempt and converge on its existing provider key instead.
-          attempt: retryingFailure
-            ? { increment: 1 }
-            : dispatch.attempt,
+          attempt: retryingFailure ? { increment: 1 } : dispatch.attempt,
         },
       });
       if (reclaimed.count !== 1) {
@@ -194,9 +228,7 @@ export async function markInitialOutreachDispatchFinished(input: {
       where: {
         id: input.dispatchId,
         status:
-          input.status === "SENT"
-            ? { in: ["QUEUED", "FAILED"] }
-            : "QUEUED",
+          input.status === "SENT" ? { in: ["QUEUED", "FAILED"] } : "QUEUED",
         attempt: input.attempt,
       },
       data: {

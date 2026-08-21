@@ -19,7 +19,7 @@ export function getStripe(): Stripe {
     ? new URL(process.env.STRIPE_API_BASE_URL!)
     : null;
   stripe = new Stripe(secretKey, {
-    apiVersion: "2026-06-24.dahlia",
+    apiVersion: "2026-07-29.dahlia",
     typescript: true,
     ...(providerUrl
       ? {

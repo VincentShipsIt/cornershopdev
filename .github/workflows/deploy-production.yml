@@ -31,7 +31,7 @@ jobs:
       INSTANCE_ID: i-00e74422e719396c3
       ROLE_ARN: arn:aws:iam::948918267147:role/cornershopdev-github-production-deploy
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false

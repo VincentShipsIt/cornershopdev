@@ -5,6 +5,7 @@ import {
   RESEND_OUTREACH_EVENT_TRANSITIONS,
   type ResendOutreachEventType,
 } from "@/lib/outreach-event-policy";
+import { lockOutreachDelivery } from "@/lib/outreach-lock";
 
 /**
  * Durably records one signed Resend delivery event and applies only a current,
@@ -21,6 +22,10 @@ export async function recordResendOutreachEvent(input: {
 }): Promise<{ handled: boolean; updated: number }> {
   const db = getDb();
   return db.$transaction(async (tx) => {
+    // Delivery and terminal suppression events share one lock order so a
+    // complaint/bounce either commits before the final send check or after the
+    // already-started provider attempt, never in the gap between them.
+    await lockOutreachDelivery(tx);
     const taggedMessage = input.taggedOutreachMessageId
       ? await tx.outreachMessage.findUnique({
           where: { id: input.taggedOutreachMessageId },
@@ -124,7 +129,8 @@ export async function recordResendOutreachEvent(input: {
 }
 
 function failureLabel(eventType: ResendOutreachEventType): string | undefined {
-  if (eventType === "email.failed") return "Provider reported delivery failure.";
+  if (eventType === "email.failed")
+    return "Provider reported delivery failure.";
   if (eventType === "email.suppressed") {
     return "Provider suppressed delivery to this recipient.";
   }

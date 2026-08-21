@@ -21,7 +21,14 @@ import {
   lockOutreachSite,
 } from "@/lib/outreach-lock";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import type { VerticalId } from "@/lib/verticals/types";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 import { isVerticalClaimEnabled } from "@/lib/verticals/registry";
 
 export const CLAIM_INVITATION_TTL_MS = 48 * 60 * 60_000;
@@ -272,6 +279,7 @@ export async function issueClaimInvitation(input: {
               sourceUrl: true,
               email: true,
               leadContactEmail: true,
+              attributes: true,
               status: true,
               organizationId: true,
               updatedAt: true,
@@ -289,16 +297,28 @@ export async function issueClaimInvitation(input: {
             throw new Error("Outreach dispatch site mismatch");
           }
           if (input.outreachDispatch) {
-            const pauseSetting = await tx.operatorSetting.findUnique({
-              where: { key: "outreach.paused" },
-              select: { value: true },
+            const pauseSettings = await tx.operatorSetting.findMany({
+              where: {
+                key: {
+                  in: [
+                    GLOBAL_OUTREACH_PAUSE_KEY,
+                    siteOutreachPauseKey(site.id),
+                  ],
+                },
+              },
+              select: { key: true, value: true },
             });
             const latestReview = site.auditEvents[0]?.createdAt ?? null;
+            const eligibility = evaluateLeadOutreachEligibility(
+              site.attributes,
+              site.leadContactEmail,
+            );
             if (
-              pauseSetting?.value === true ||
-              site.vertical !== "RESTAURANT" ||
+              isOutreachPaused(pauseSettings, site.id) ||
+              !isVerticalOutreachConfigured(site.vertical) ||
               !site.leadContactEmail ||
               normalizeAccountEmail(site.leadContactEmail) !== email ||
+              !eligibility.allowed ||
               latestReview?.toISOString() !==
                 input.outreachDispatch.reviewedAt ||
               !isOperatorReviewCurrent(latestReview, site.updatedAt)

@@ -15,6 +15,7 @@ import {
   ThemeLocation,
   type RestaurantThemeRendererProps,
 } from "@/components/restaurant-themes/shared";
+import { SitePhotoGallery } from "@/components/site-photo-gallery";
 import { cn } from "@/lib/utils";
 
 export function AfterDarkTheme({
@@ -215,6 +216,13 @@ export function AfterDarkTheme({
           </div>
         </div>
       </section>
+
+      <SitePhotoGallery
+        draft={draft}
+        eyebrow={dictionary.featuredHeading}
+        heading={dictionary.featuredSubheading}
+        enabled={draft.attributes.showMenuImages === true}
+      />
 
       <section className="border-t border-current/15 bg-[var(--theme-accent)] px-6 py-12 text-[var(--theme-accent-fg)] md:px-10">
         <div className="mx-auto flex max-w-7xl flex-col gap-7 md:flex-row md:items-end md:justify-between">

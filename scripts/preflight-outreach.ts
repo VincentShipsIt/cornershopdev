@@ -2,10 +2,10 @@ import { Client } from "pg";
 import { getResend } from "@/lib/resend";
 import {
   evaluateOutreachEnvironment,
+  hasRequiredResendDomains,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
-  isOutreachPreflightReady,
-  OUTREACH_MIGRATION,
+  OUTREACH_MIGRATIONS,
 } from "@/lib/outreach-readiness";
 
 let environment: "preview" | "production" | "invalid" = "invalid";
@@ -16,8 +16,13 @@ try {
     expectedAppOrigin:
       environment === "production" ? "https://cornershop.dev" : undefined,
   });
-  const [database, workflowDatabaseReachable, webhookRegistered, inboundWebhookRegistered] =
-    configuration.ready
+  const [
+    database,
+    workflowDatabaseReachable,
+    webhookRegistered,
+    inboundWebhookRegistered,
+    senderAndReplyDomainsReady,
+  ] = configuration.ready
     ? await Promise.all([
         checkDatabase(process.env.DATABASE_URL!),
         checkReadOnlyConnection(process.env.WORKFLOW_POSTGRES_URL!),
@@ -25,21 +30,23 @@ try {
         configuration.inboundWebhookEndpoint
           ? checkInboundWebhook(configuration.inboundWebhookEndpoint)
           : Promise.resolve(false),
+        checkSenderAndReplyDomains(),
       ])
     : [
         { migrationApplied: false, schemaReady: false },
         false,
         false,
         false,
+        false,
       ];
-  const ready = isOutreachPreflightReady({
-    configurationReady: configuration.ready,
-    migrationApplied: database.migrationApplied,
-    schemaReady: database.schemaReady,
-    workflowDatabaseReachable,
-    deliveryWebhookRegistered: webhookRegistered,
-    inboundWebhookRegistered,
-  });
+  const ready =
+    configuration.ready &&
+    database.migrationApplied &&
+    database.schemaReady &&
+    workflowDatabaseReachable &&
+    webhookRegistered &&
+    inboundWebhookRegistered &&
+    senderAndReplyDomainsReady;
 
   console.log(
     JSON.stringify(
@@ -49,8 +56,8 @@ try {
         ready,
         checks: {
           environment: configuration.checks,
-          migration: {
-            name: OUTREACH_MIGRATION,
+          migrations: {
+            names: OUTREACH_MIGRATIONS,
             applied: database.migrationApplied,
             schemaReady: database.schemaReady,
           },
@@ -62,6 +69,10 @@ try {
           inboundWebhook: {
             endpoint: configuration.inboundWebhookEndpoint,
             registered: inboundWebhookRegistered,
+          },
+          senderAndReplyDomains: {
+            ready: senderAndReplyDomainsReady,
+            verticals: configuration.verticals,
           },
         },
         missingOrInvalid: configuration.missingOrInvalid,
@@ -103,21 +114,29 @@ async function checkDatabase(databaseUrl: string): Promise<{
       schemaReady: boolean;
     }>(
       `SELECT
-         EXISTS (
-           SELECT 1
+         (
+           SELECT count(*)::int
            FROM "_prisma_migrations"
-           WHERE "migration_name" = $1
+           WHERE "migration_name" = ANY($1::text[])
              AND "finished_at" IS NOT NULL
              AND "rolled_back_at" IS NULL
-         ) AS "migrationApplied",
+         ) = $2 AS "migrationApplied",
          (
            to_regclass('"OutreachDispatch"') IS NOT NULL
            AND to_regclass('"OutreachProviderEvent"') IS NOT NULL
            AND to_regclass('"OperatorAuditEvent"') IS NOT NULL
+           AND to_regclass('"OperatorSetting"') IS NOT NULL
            AND to_regclass('"OutreachMessage_idempotencyKey_key"') IS NOT NULL
            AND to_regclass('"OutreachDispatch_idempotencyKey_key"') IS NOT NULL
            AND to_regclass('"OutreachDispatch_workflowRunId_key"') IS NOT NULL
            AND to_regclass('"ClaimInvitation_outreachKey_key"') IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM information_schema.columns
+             WHERE table_schema = current_schema()
+               AND table_name = 'Site'
+               AND column_name = 'leadContactEmail'
+               AND is_nullable = 'YES'
+           )
            AND EXISTS (
              SELECT 1 FROM information_schema.columns
              WHERE table_schema = current_schema()
@@ -173,13 +192,15 @@ async function checkDatabase(databaseUrl: string): Promise<{
                AND contype = 'f'
            )
          ) AS "schemaReady"`,
-      [OUTREACH_MIGRATION],
+      [[...OUTREACH_MIGRATIONS], OUTREACH_MIGRATIONS.length],
     );
     await client.query("ROLLBACK");
-    return result.rows[0] ?? {
-      migrationApplied: false,
-      schemaReady: false,
-    };
+    return (
+      result.rows[0] ?? {
+        migrationApplied: false,
+        schemaReady: false,
+      }
+    );
   } finally {
     await client.end().catch(() => undefined);
   }
@@ -215,15 +236,19 @@ async function checkInboundWebhook(expectedEndpoint: string): Promise<boolean> {
   return hasRequiredResendInboundWebhook(result.data.data, expectedEndpoint);
 }
 
+async function checkSenderAndReplyDomains(): Promise<boolean> {
+  const result = await getResend().domains.list();
+  if (result.error || !result.data) throw new Error("domain list failed");
+  return hasRequiredResendDomains(result.data.data);
+}
+
 function parseEnvironment(args: string[]): "preview" | "production" {
   if (
     args.length !== 2 ||
     args[0] !== "--environment" ||
     (args[1] !== "preview" && args[1] !== "production")
   ) {
-    throw new Error(
-      "Use --environment preview or --environment production.",
-    );
+    throw new Error("Use --environment preview or --environment production.");
   }
   return args[1];
 }

@@ -1,8 +1,14 @@
-import { Vertical } from "@/generated/prisma/enums";
 import { emailReplyTo, emailSender } from "@/lib/resend";
+import { listOutreachVerticals } from "@/lib/lead-generation/registry";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
+import { configuredOutreachController } from "@/lib/electronic-outreach-eligibility";
+import { approvedNominatimBaseUrl } from "@/lib/lead-discovery-places";
 
-export const OUTREACH_MIGRATION =
-  "20260819120000_outreach_inbound_mailbox";
+export const OUTREACH_MIGRATIONS = [
+  "20260819120000_outreach_inbound_mailbox",
+  "20260820200000_site_contact_privacy_and_catalog_availability",
+] as const;
 export const RESTOFRONT_OUTREACH_FROM =
   "Vincent from Restofrontapp <vincent@send.restofront.com>";
 export const RESTOFRONT_OUTREACH_REPLY_TO = "vincent@restofront.com";
@@ -28,6 +34,8 @@ export type OutreachEnvironmentReadiness = {
     resendDeliveryWebhookSecret: boolean;
     resendInboundWebhookSecret: boolean;
     claimTokenSecret: boolean;
+    legalController: boolean;
+    leadDiscoveryProvider: boolean;
     workflow: boolean;
     appOrigin: boolean;
     sender: boolean;
@@ -36,12 +44,24 @@ export type OutreachEnvironmentReadiness = {
   missingOrInvalid: string[];
   webhookEndpoint: string | null;
   inboundWebhookEndpoint: string | null;
+  verticals: Array<{
+    vertical: VerticalId;
+    brand: string;
+    senderConfigured: boolean;
+    replyToConfigured: boolean;
+  }>;
 };
 
 export type ResendWebhookSummary = {
   endpoint: string;
   status: "enabled" | "disabled";
   events: string[] | null;
+};
+
+export type ResendDomainSummary = {
+  name: string;
+  status: string;
+  capabilities?: { sending?: string; receiving?: string };
 };
 
 export function isOutreachPreflightReady(checks: {
@@ -63,6 +83,19 @@ export function evaluateOutreachEnvironment(
   const inboundWebhookEndpoint = resolveInboundWebhookEndpoint(
     env.NEXT_PUBLIC_APP_URL,
   );
+  const verticals = listOutreachVerticals().map((vertical) => {
+    const marketing = resolveVerticalConfig(vertical).marketing;
+    return {
+      vertical,
+      brand: marketing.brand.name,
+      senderConfigured:
+        Boolean(marketing.email?.from) &&
+        emailSender(vertical, env) === marketing.email?.from,
+      replyToConfigured:
+        Boolean(marketing.email?.replyTo) &&
+        emailReplyTo(vertical, env) === marketing.email?.replyTo,
+    };
+  });
   const checks = {
     database: Boolean(env.DATABASE_URL),
     resendApiKey: Boolean(env.RESEND_API_KEY),
@@ -73,6 +106,10 @@ export function evaluateOutreachEnvironment(
     claimTokenSecret: Boolean(
       env.CLAIM_TOKEN_SECRET && env.CLAIM_TOKEN_SECRET.length >= 32,
     ),
+    legalController: Boolean(configuredOutreachController(env)),
+    leadDiscoveryProvider:
+      Boolean(env.GOOGLE_PLACES_API_KEY?.trim()) ||
+      Boolean(approvedNominatimBaseUrl(env.LEAD_DISCOVERY_NOMINATIM_BASE_URL)),
     workflow:
       env.WORKFLOW_ENABLED === "true" &&
       env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres" &&
@@ -85,10 +122,11 @@ export function evaluateOutreachEnvironment(
       (!options.expectedAppOrigin ||
         webhookEndpoint === resolveWebhookEndpoint(options.expectedAppOrigin)),
     sender:
-      emailSender(Vertical.RESTAURANT, env) === RESTOFRONT_OUTREACH_FROM,
+      verticals.length > 0 &&
+      verticals.every((vertical) => vertical.senderConfigured),
     replyTo:
-      emailReplyTo(Vertical.RESTAURANT, env) ===
-      RESTOFRONT_OUTREACH_REPLY_TO,
+      verticals.length > 0 &&
+      verticals.every((vertical) => vertical.replyToConfigured),
   };
   const variableByCheck = {
     database: "DATABASE_URL",
@@ -97,15 +135,16 @@ export function evaluateOutreachEnvironment(
     resendInboundWebhookSecret:
       "RESEND_INBOUND_WEBHOOK_SECRET (present and distinct)",
     claimTokenSecret: "CLAIM_TOKEN_SECRET",
+    legalController: "OUTREACH_LEGAL_CONTROLLER",
+    leadDiscoveryProvider:
+      "GOOGLE_PLACES_API_KEY|LEAD_DISCOVERY_NOMINATIM_BASE_URL",
     workflow: "WORKFLOW_*",
     appOrigin: "NEXT_PUBLIC_APP_URL",
-    sender: "RESTOFRONT_SENDER_IDENTITY",
-    replyTo: "RESTOFRONT_REPLY_TO_IDENTITY",
+    sender: "VERTICAL_MARKETING_EMAIL_FROM",
+    replyTo: "VERTICAL_MARKETING_EMAIL_REPLY_TO",
   } satisfies Record<keyof typeof checks, string>;
   const missingOrInvalid = Object.entries(checks).flatMap(([name, ready]) =>
-    ready
-      ? []
-      : [variableByCheck[name as keyof typeof variableByCheck]],
+    ready ? [] : [variableByCheck[name as keyof typeof variableByCheck]],
   );
 
   return {
@@ -114,7 +153,39 @@ export function evaluateOutreachEnvironment(
     missingOrInvalid,
     webhookEndpoint,
     inboundWebhookEndpoint,
+    verticals,
   };
+}
+
+export function hasRequiredResendDomains(
+  domains: ResendDomainSummary[],
+): boolean {
+  return listOutreachVerticals().every((vertical) => {
+    const email = resolveVerticalConfig(vertical).marketing.email;
+    if (!email) return false;
+    const senderDomain = emailDomain(email.from);
+    const replyDomain = emailDomain(email.replyTo);
+    if (!senderDomain || !replyDomain) return false;
+    return (
+      domains.some(
+        (domain) =>
+          domain.name.toLowerCase() === senderDomain &&
+          domain.status === "verified" &&
+          domain.capabilities?.sending === "enabled",
+      ) &&
+      domains.some(
+        (domain) =>
+          domain.name.toLowerCase() === replyDomain &&
+          domain.status === "verified" &&
+          domain.capabilities?.receiving === "enabled",
+      )
+    );
+  });
+}
+
+function emailDomain(value: string): string | null {
+  const match = value.toLowerCase().match(/<?[^<>\s@]+@([^<>\s]+)>?$/);
+  return match?.[1]?.replace(/>$/, "") ?? null;
 }
 
 function isPostgresUrl(value: string | undefined): boolean {

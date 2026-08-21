@@ -290,3 +290,21 @@ export function limitOperatorOutreachSend(
     windowMs,
   });
 }
+
+/** Image edits are provider-billed and can fan out into a bounded batch. */
+export function limitPhotoEnhancement(request: Request): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "photo-enhancement",
+    limit: 6,
+    windowMs: 60_000,
+  });
+}
+
+/** Owner uploads/references are cheaper but still write durable object storage. */
+export function limitPhotoIngest(request: Request): Promise<RateLimitResult> {
+  return limitByIp(request, {
+    namespace: "photo-ingest",
+    limit: 20,
+    windowMs: 60 * 60_000,
+  });
+}

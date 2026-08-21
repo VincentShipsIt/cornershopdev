@@ -22,8 +22,15 @@ export async function lockOutreachDelivery(
     await transaction.$queryRaw`
       SELECT set_config('lock_timeout', '12000', true)
     `;
-    await transaction.$queryRaw`
-      SELECT pg_advisory_xact_lock(1381258068, 1)
+    // Run the void-returning PostgreSQL lock function as a command. Returning
+    // its `void` pseudo-type through `$queryRaw` makes Prisma's PostgreSQL
+    // adapter reject an acquired lock while decoding the result row.
+    await transaction.$executeRaw`
+      DO $outreach_delivery_lock$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(1381258068, 1);
+      END
+      $outreach_delivery_lock$
     `;
   } catch {
     throw new OutreachDeliveryLockUnavailableError();
