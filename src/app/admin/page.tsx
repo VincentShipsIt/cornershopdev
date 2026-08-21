@@ -11,6 +11,7 @@ import {
 import { ClaimInvitationForm } from "@/app/admin/claim-invitation-form";
 import { OperatorLeadForm } from "@/app/admin/operator-lead-form";
 import { OperatorOutreachPanel } from "@/app/admin/operator-outreach-panel";
+import { configuredOutreachController } from "@/lib/electronic-outreach-eligibility";
 import { OperatorReviewPanel } from "@/app/admin/operator-review-panel";
 import { OutreachPauseControl } from "@/app/admin/outreach-pause-control";
 import { Brand } from "@/components/brand";
@@ -20,6 +21,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSuperadminAccess } from "@/lib/authorization";
 import { FACTORY_BRAND } from "@/lib/brand";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  listVerticalIds,
+  resolveVerticalConfig,
+} from "@/lib/verticals/registry";
 import { getCurrentSession } from "@/lib/current-session";
 import {
   getOperatorDashboardData,
@@ -54,12 +60,20 @@ export default async function AdminPage() {
             {operator.email}
           </span>
           {session.siteSlug ? (
-            <Button render={<Link href="/dashboard" />} variant="outline" size="sm">
+            <Button
+              render={<Link href="/dashboard" />}
+              variant="outline"
+              size="sm"
+            >
               Client dashboard
             </Button>
           ) : null}
           <AccountActions canSwitch />
-          <Button render={<Link href="/admin/auth" />} variant="outline" size="sm">
+          <Button
+            render={<Link href="/admin/auth" />}
+            variant="outline"
+            size="sm"
+          >
             Sign-in delivery
           </Button>
         </div>
@@ -126,13 +140,19 @@ export default async function AdminPage() {
             </p>
           </CardHeader>
           <CardContent>
-            <OperatorLeadForm />
+            <OperatorLeadForm
+              verticalOptions={listVerticalIds().map((vertical) => ({
+                id: vertical,
+                label: resolveVerticalConfig(vertical).marketing.brand.name,
+                audience: resolveVerticalConfig(vertical).marketing.audience,
+              }))}
+            />
           </CardContent>
         </Card>
 
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Restofront outreach</CardTitle>
+            <CardTitle>Niche outreach</CardTitle>
           </CardHeader>
           <CardContent>
             <OutreachPauseControl initialPaused={data.outreachPaused} />
@@ -151,23 +171,45 @@ export default async function AdminPage() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
-                  <th scope="col" className="px-5 py-3 font-medium">Window</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Visits</th>
-                  <th scope="col" className="px-5 py-3 font-medium">CTA visitors</th>
-                  <th scope="col" className="px-5 py-3 font-medium">CTA rate</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Live booking leads</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Lead conversion</th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Window
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Visits
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    CTA visitors
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    CTA rate
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Live booking leads
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Lead conversion
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {data.analytics.windows.map((window) => (
                   <tr key={window.days}>
-                    <td className="px-5 py-4 font-medium">{window.days} days</td>
+                    <td className="px-5 py-4 font-medium">
+                      {window.days} days
+                    </td>
                     <td className="px-5 py-4">{formatNumber(window.visits)}</td>
-                    <td className="px-5 py-4">{formatNumber(window.ctaVisitors)}</td>
-                    <td className="px-5 py-4">{formatPercent(window.ctaRate)}</td>
-                    <td className="px-5 py-4">{formatNumber(window.bookingLeads)}</td>
-                    <td className="px-5 py-4">{formatPercent(window.leadRate)}</td>
+                    <td className="px-5 py-4">
+                      {formatNumber(window.ctaVisitors)}
+                    </td>
+                    <td className="px-5 py-4">
+                      {formatPercent(window.ctaRate)}
+                    </td>
+                    <td className="px-5 py-4">
+                      {formatNumber(window.bookingLeads)}
+                    </td>
+                    <td className="px-5 py-4">
+                      {formatPercent(window.leadRate)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -183,25 +225,63 @@ export default async function AdminPage() {
             <table className="w-full min-w-[2600px] text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
-                  <th scope="col" className="px-5 py-3 font-medium">Business</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Score</th>
-                  <th scope="col" className="px-5 py-3 font-medium">City</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Discovered</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Local SEO</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Lifecycle</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Signup</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Subscription</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Source monitoring</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Import</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Booking leads</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Visits · 30d</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Lead conv. · 30d</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Created</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Blocker rollup</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Content review</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Outreach</th>
-                  <th scope="col" className="px-5 py-3 font-medium">Concierge claim</th>
-                  <th scope="col" className="px-5 py-3 text-right font-medium">Site</th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Business
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Score
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    City
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Discovered
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Local SEO
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Lifecycle
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Signup
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Subscription
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Source monitoring
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Import
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Booking leads
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Visits · 30d
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Lead conv. · 30d
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Created
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Blocker rollup
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Content review
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Outreach
+                  </th>
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    Concierge claim
+                  </th>
+                  <th scope="col" className="px-5 py-3 text-right font-medium">
+                    Site
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -246,7 +326,9 @@ function MetricCard({
           </span>
           <span className="[&>svg]:size-4">{icon}</span>
         </div>
-        <p className="mt-5 text-3xl font-semibold tracking-[-0.04em]">{value}</p>
+        <p className="mt-5 text-3xl font-semibold tracking-[-0.04em]">
+          {value}
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
       </CardContent>
     </Card>
@@ -281,7 +363,8 @@ function SiteRow({
           <>
             <p className="font-medium">{site.discovery.score}</p>
             <p className="mt-1 max-w-56 text-[11px] text-muted-foreground">
-              {site.discovery.reasons.slice(0, 2).join(" · ") || "No scoring deductions"}
+              {site.discovery.reasons.slice(0, 2).join(" · ") ||
+                "No scoring deductions"}
             </p>
           </>
         ) : (
@@ -355,7 +438,9 @@ function SiteRow({
         </p>
       </td>
       <td className="px-5 py-4">
-        <p>{site.latestImportStatus ? humanize(site.latestImportStatus) : "—"}</p>
+        <p>
+          {site.latestImportStatus ? humanize(site.latestImportStatus) : "—"}
+        </p>
         {site.latestImportAt ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {formatDate(site.latestImportAt)}
@@ -410,21 +495,26 @@ function SiteRow({
           reviewedAt={site.reviewedAt}
           notes={site.notes}
           contentReview={site.contentReview}
+          eligibility={site.eligibility}
         />
       </td>
       <td className="px-5 py-4">
-        {site.vertical === "RESTAURANT" ? (
+        {isVerticalOutreachConfigured(site.vertical) ? (
           <OperatorOutreachPanel
             slug={site.slug}
+            vertical={site.vertical}
             contactEmail={site.contactEmail}
             outreachMessages={site.outreachMessages}
             outreachDispatch={site.outreachDispatch}
             reviewedAt={site.reviewedAt}
+            eligibility={site.eligibility}
             outreachPaused={outreachPaused}
+            leadOutreachPaused={site.outreachPaused}
+            expectedController={configuredOutreachController()}
           />
         ) : (
           <span className="text-xs text-muted-foreground">
-            Restofront only
+            Sender not configured
           </span>
         )}
       </td>

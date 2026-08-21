@@ -8,34 +8,47 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { OperatorSiteRow } from "@/lib/operator-dashboard";
+import { evaluateElectronicOutreachEligibility } from "@/lib/electronic-outreach-eligibility";
 
 type Props = Pick<
   OperatorSiteRow,
   | "slug"
+  | "vertical"
   | "contactEmail"
   | "outreachMessages"
   | "outreachDispatch"
   | "reviewedAt"
-> & { outreachPaused: boolean };
+  | "eligibility"
+> & {
+  outreachPaused: boolean;
+  leadOutreachPaused: boolean;
+  expectedController: string | null;
+};
 
 export function OperatorOutreachPanel({
   slug,
+  vertical,
   contactEmail,
   outreachMessages,
   outreachDispatch,
   reviewedAt,
+  eligibility,
   outreachPaused,
+  leadOutreachPaused,
+  expectedController,
 }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [replyPending, setReplyPending] = useState(false);
+  const [pausePending, setPausePending] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const thread = useMemo(
     () =>
       [...outreachMessages].sort(
         (left, right) =>
-          new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+          new Date(left.createdAt).getTime() -
+          new Date(right.createdAt).getTime(),
       ),
     [outreachMessages],
   );
@@ -51,7 +64,7 @@ export function OperatorOutreachPanel({
     if (!contactEmail) return;
     if (
       !window.confirm(
-        `Send the reviewed Restofront preview to ${contactEmail}? This queues one initial email and a pauseable follow-up.`,
+        `Send the reviewed ${humanize(vertical)} preview to ${contactEmail}? This queues one initial email and a pauseable follow-up.`,
       )
     ) {
       return;
@@ -83,7 +96,9 @@ export function OperatorOutreachPanel({
       router.refresh();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Outreach could not be queued.",
+        caught instanceof Error
+          ? caught.message
+          : "Outreach could not be queued.",
       );
     } finally {
       setPending(false);
@@ -132,14 +147,56 @@ export function OperatorOutreachPanel({
     }
   }
 
+  async function toggleLeadPause() {
+    setPausePending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/outreach/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paused: !leadOutreachPaused,
+          siteSlug: slug,
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(
+          payload.error ?? "Lead outreach control could not be saved.",
+        );
+      }
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Lead outreach control could not be saved.",
+      );
+    } finally {
+      setPausePending(false);
+    }
+  }
+
   const retryableInitial =
     initial?.status === "FAILED" && initial.retryable === true;
   const retryableDispatch = outreachDispatch?.retryable === true;
+  const eligibilityDecision = evaluateElectronicOutreachEligibility({
+    state: eligibility.state,
+    evidence: eligibility.evidence,
+    expectedRecipient: contactEmail,
+    expectedController,
+  });
+  const eligibilityReady = eligibilityDecision.allowed;
   const disabled =
     pending ||
     outreachPaused ||
+    leadOutreachPaused ||
     !contactEmail ||
     !reviewedAt ||
+    !eligibilityReady ||
     (Boolean(initial) && !retryableInitial) ||
     (Boolean(outreachDispatch) && !retryableDispatch);
   const label = retryableInitial
@@ -148,15 +205,19 @@ export function OperatorOutreachPanel({
       ? `Initial ${humanize(initial.status)}`
       : outreachPaused
         ? "Outreach paused"
-        : !reviewedAt
-          ? "Review first"
-          : !contactEmail
-            ? "Email required"
-            : retryableDispatch
-              ? "Retry initial"
-              : outreachDispatch
-                ? `Initial ${humanize(outreachDispatch.status)}`
-                : "Send initial";
+        : leadOutreachPaused
+          ? "Lead paused"
+          : !eligibilityReady
+            ? "Consent evidence required"
+            : !reviewedAt
+              ? "Review first"
+              : !contactEmail
+                ? "Email required"
+                : retryableDispatch
+                  ? "Retry initial"
+                  : outreachDispatch
+                    ? `Initial ${humanize(outreachDispatch.status)}`
+                    : "Send initial";
 
   return (
     <div className="min-w-72 space-y-2">
@@ -164,6 +225,13 @@ export function OperatorOutreachPanel({
         {contactEmail ?? "No contact email"}
         {hasInboundReply ? " · Replied" : ""}
       </p>
+      {!eligibilityReady ? (
+        <p className="text-[11px] text-destructive">
+          {eligibilityDecision.allowed
+            ? null
+            : `Outreach blocked: ${eligibilityDecision.message}`}
+        </p>
+      ) : null}
       <Button
         type="button"
         size="sm"
@@ -173,10 +241,21 @@ export function OperatorOutreachPanel({
         {pending ? <LoaderCircle className="animate-spin" /> : <Send />}
         {pending ? "Queueing…" : label}
       </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={pausePending || outreachPaused}
+        onClick={() => void toggleLeadPause()}
+      >
+        {pausePending
+          ? "Saving…"
+          : leadOutreachPaused
+            ? "Resume lead"
+            : "Pause lead"}
+      </Button>
       <div aria-live="polite">
-        {error ? (
-          <p className="text-[11px] text-destructive">{error}</p>
-        ) : null}
+        {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
       </div>
       {!initial && outreachDispatch ? (
         <div className="rounded-md border px-2 py-1.5">
@@ -258,7 +337,11 @@ export function OperatorOutreachPanel({
             disabled={replyPending || !replyBody.trim()}
             onClick={() => void sendReply()}
           >
-            {replyPending ? <LoaderCircle className="animate-spin" /> : <Send />}
+            {replyPending ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <Send />
+            )}
             {replyPending ? "Sending…" : "Send reply"}
           </Button>
         </div>
@@ -281,12 +364,10 @@ function formatDate(value: Date): string {
   }).format(new Date(value));
 }
 
-function statusVariant(status: string): "secondary" | "outline" | "destructive" {
-  if (
-    status === "DELIVERED" ||
-    status === "SENT" ||
-    status === "RECEIVED"
-  ) {
+function statusVariant(
+  status: string,
+): "secondary" | "outline" | "destructive" {
+  if (status === "DELIVERED" || status === "SENT" || status === "RECEIVED") {
     return "secondary";
   }
   if (status === "FAILED" || status === "BOUNCED" || status === "COMPLAINED") {

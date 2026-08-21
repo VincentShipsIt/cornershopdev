@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 
 const enabled = process.env.CLAIM_INVITATIONS_POSTGRES_TEST === "1";
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 if (enabled) mock.module("server-only", () => ({}));
 const suffix = randomUUID();
 const siteId = `claim-retry-site-${suffix}`;
@@ -9,6 +10,10 @@ const slug = `claim-retry-${suffix}`;
 const email = `owner@claim-retry-${suffix}.example.test`;
 const foodSiteId = `claim-food-private-site-${suffix}`;
 const foodSlug = `claim-food-private-${suffix}`;
+const outreachSiteId = `claim-outreach-site-${suffix}`;
+const outreachSlug = `claim-outreach-${suffix}`;
+const outreachEmail = `owner@claim-outreach-${suffix}.example.test`;
+const outreachDispatchId = `claim-outreach-dispatch-${suffix}`;
 
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let claim: typeof import("@/lib/claim-invitations");
@@ -42,11 +47,41 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
         status: "PREVIEW_READY",
       },
     });
+    await db.site.create({
+      data: {
+        id: outreachSiteId,
+        slug: outreachSlug,
+        name: "Outreach claim authorization fixture",
+        description: "A delivery-time claim authorization fixture.",
+        leadContactEmail: outreachEmail,
+        sourceUrl: `https://${outreachSlug}.example.test/`,
+        vertical: "RESTAURANT",
+        status: "PREVIEW_READY",
+        attributes: {
+          leadEligibility: {
+            state: "ELIGIBLE",
+            evidence: {
+              channel_basis: "VERIFIED_WRITTEN_CONSENT",
+              recipient: outreachEmail,
+              controller: "Corner Shop Labs Ltd",
+              channel: "EMAIL",
+              purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+              evidence_timestamp: "2026-08-20T09:00:00+02:00",
+              evidence_source: "consent:claim-outreach-1234",
+            },
+            updatedAt: "2026-08-20T09:00:00+02:00",
+            updatedBy: "operator:fixture",
+          },
+        },
+      },
+    });
   });
 
   afterAll(async () => {
     if (db) {
-      await db.site.deleteMany({ where: { id: { in: [siteId, foodSiteId] } } });
+      await db.site.deleteMany({
+        where: { id: { in: [siteId, foodSiteId, outreachSiteId] } },
+      });
     }
   });
 
@@ -61,6 +96,75 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
     ).rejects.toMatchObject({ code: "not_claimable", status: 409 });
     expect(
       await db.claimInvitation.count({ where: { siteId: foodSiteId } }),
+    ).toBe(0);
+  });
+
+  test("rechecks channel evidence before outreach claim issuance", async () => {
+    const review = await db.$transaction(async (transaction) => {
+      await transaction.site.update({
+        where: { id: outreachSiteId },
+        data: {
+          attributes: {
+            leadEligibility: {
+              state: "ELIGIBLE",
+              evidence: {
+                contact_basis: "generic corporate",
+                public_source: `https://${outreachSlug}.example.test/contact`,
+              },
+              updatedAt: new Date().toISOString(),
+              updatedBy: "operator:fixture",
+            },
+          },
+        },
+      });
+      const currentReview = await transaction.auditEvent.create({
+        data: {
+          siteId: outreachSiteId,
+          type: "site.review.completed",
+          actor: "operator:fixture",
+        },
+      });
+      await transaction.outreachDispatch.create({
+        data: {
+          id: outreachDispatchId,
+          idempotencyKey: `lead-outreach:${outreachSiteId}:preview_ready`,
+          siteId: outreachSiteId,
+          template: "preview_ready",
+          recipient: outreachEmail,
+          reviewedAt: currentReview.createdAt,
+          requestedBy: "operator:fixture",
+        },
+      });
+      return currentReview;
+    });
+
+    const previousSecret = process.env.CLAIM_TOKEN_SECRET;
+    process.env.CLAIM_TOKEN_SECRET =
+      "test-secret-that-is-at-least-32-characters";
+    try {
+      await expect(
+        claim.issueClaimInvitation({
+          siteSlug: outreachSlug,
+          email: outreachEmail,
+          proofMethod: "OPERATOR_APPROVAL",
+          actor: "operator:fixture",
+          outreachKey: `lead-outreach:${outreachSiteId}:preview_ready`,
+          outreachDispatch: {
+            id: outreachDispatchId,
+            attempt: 1,
+            recipient: outreachEmail,
+            reviewedAt: review.createdAt.toISOString(),
+            stage: "preview_ready",
+          },
+        }),
+      ).rejects.toThrow("Outreach lead changed before invitation issuance");
+    } finally {
+      if (previousSecret === undefined) delete process.env.CLAIM_TOKEN_SECRET;
+      else process.env.CLAIM_TOKEN_SECRET = previousSecret;
+    }
+
+    expect(
+      await db.claimInvitation.count({ where: { siteId: outreachSiteId } }),
     ).toBe(0);
   });
 

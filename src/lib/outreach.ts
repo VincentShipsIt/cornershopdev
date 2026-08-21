@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import "server-only";
 import type { OutreachMessage, Prisma } from "@/generated/prisma/client";
-import { Vertical, type OutreachStatus } from "@/generated/prisma/enums";
+import type { OutreachStatus } from "@/generated/prisma/enums";
 import { appOrigin } from "@/lib/app-origin";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import { getDb } from "@/lib/db";
 import { buildImportUrls } from "@/lib/import-identity";
 import { mutableLeadStatuses } from "@/lib/lead-status";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import {
   lockClaimInvitationById,
   lockOutreachDelivery,
@@ -34,6 +35,12 @@ import {
   replySubject,
 } from "@/lib/outreach-thread";
 import { sendBoundedResendEmail } from "@/lib/resend";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 
 export class OutreachError extends Error {
   constructor(
@@ -122,10 +129,7 @@ export async function sendLeadEmail(
 
   const to = input.to ?? site.leadContactEmail;
   if (!to) {
-    throw new OutreachError(
-      "No contact email on file for this site.",
-      400,
-    );
+    throw new OutreachError("No contact email on file for this site.", 400);
   }
 
   const previewUrl = `${appOrigin()}${buildImportUrls(site.slug).preview}`;
@@ -158,7 +162,9 @@ export async function sendLeadEmail(
     html: storedEmail.html,
     actor: input.actor,
     threadKey: outreachThreadKey(input.siteId),
-    rfcMessageId: normalizeRfcMessageId(outboundRfcMessageId(messageId)),
+    rfcMessageId: normalizeRfcMessageId(
+      outboundRfcMessageId(messageId, site.vertical),
+    ),
   });
   let persistedMessageId = reservation.message.id;
   const deduplicated = reservation.deduplicated;
@@ -191,111 +197,126 @@ export async function sendLeadEmail(
   let providerAccepted = false;
   let result: DeliveryAttemptResult;
   try {
-    result = await db.$transaction(async (transaction) => {
-      await lockOutreachDelivery(transaction);
-      await lockOutreachDispatchById(
-        transaction,
-        input.dispatchAuthorization.dispatchId,
-      );
-      await assertCurrentOutreachDispatch(transaction, {
-        siteId: input.siteId,
-        recipient: to,
-        reviewedAt: input.expectedReviewedAt,
-        template: input.template,
-        dispatchId: input.dispatchAuthorization.dispatchId,
-        attempt: input.dispatchAuthorization.attempt,
-      });
-      await lockOutreachSite(transaction, input.siteId);
-      await assertReviewedRestofrontDelivery(transaction, {
-        siteId: input.siteId,
-        expectedRecipient: to,
-        expectedReviewedAt: input.expectedReviewedAt,
-        template: input.template,
-      });
+    result = await db.$transaction(
+      async (transaction) => {
+        await lockOutreachDelivery(transaction);
+        await lockOutreachDispatchById(
+          transaction,
+          input.dispatchAuthorization.dispatchId,
+        );
+        await assertCurrentOutreachDispatch(transaction, {
+          siteId: input.siteId,
+          recipient: to,
+          reviewedAt: input.expectedReviewedAt,
+          template: input.template,
+          dispatchId: input.dispatchAuthorization.dispatchId,
+          attempt: input.dispatchAuthorization.attempt,
+        });
+        await lockOutreachSite(transaction, input.siteId);
+        await assertReviewedLeadDelivery(transaction, {
+          siteId: input.siteId,
+          expectedRecipient: to,
+          expectedReviewedAt: input.expectedReviewedAt,
+          template: input.template,
+        });
 
-      await lockOutreachMessageById(transaction, reservation.message.id);
-      const current = await transaction.outreachMessage.findUniqueOrThrow({
-        where: { id: reservation.message.id },
-      });
-      persistedMessageId = current.id;
-      if (current.status !== "QUEUED") {
-        return { kind: "existing", status: current.status };
-      }
-      if (
-        current.deliveryLeaseId !== reservation.leaseId ||
-        !current.deliveryLeaseExpiresAt ||
-        current.deliveryLeaseExpiresAt <= new Date()
-      ) {
-        throw new OutreachError(
-          "The outreach delivery lease expired before provider delivery.",
-          409,
-        );
-      }
-      if (
-        normalizeAccountEmail(current.toAddress) !==
-        normalizeAccountEmail(to)
-      ) {
-        throw new OutreachError(
-          "The queued outreach recipient no longer matches this dispatch.",
-          409,
-        );
-      }
-      await assertActiveOutreachInvitation(transaction, {
-        invitationId: input.claimInvitationId,
-        siteId: input.siteId,
-        recipient: to,
-        template: input.template,
-      });
-      providerCallStarted = true;
-      const { data, error } = await sendBoundedResendEmail(
-        {
-          from: current.fromAddress,
-          to: current.toAddress,
-          replyTo: current.replyToAddress ?? undefined,
-          subject: email.subject,
-          html: email.html,
-          text: email.text,
-          headers: {
-            "Message-ID": outboundRfcMessageId(current.id),
-          },
-          tags: [
-            { name: "category", value: "lead_outreach" },
-            { name: "outreach_message_id", value: current.id },
-          ],
-        },
-        `outreach-${current.id}-attempt-${input.dispatchAuthorization.attempt}`,
-      );
-      if (data?.id) {
-        providerAccepted = true;
-        const sentAt = new Date();
-        await transaction.outreachMessage.updateMany({
-          where: {
-            id: current.id,
-            status: "QUEUED",
-            OR: [
-              { providerMessageId: null },
-              { providerMessageId: data.id },
+        await lockOutreachMessageById(transaction, reservation.message.id);
+        const current = await transaction.outreachMessage.findUniqueOrThrow({
+          where: { id: reservation.message.id },
+        });
+        persistedMessageId = current.id;
+        if (current.status !== "QUEUED") {
+          return { kind: "existing", status: current.status };
+        }
+        if (
+          current.deliveryLeaseId !== reservation.leaseId ||
+          !current.deliveryLeaseExpiresAt ||
+          current.deliveryLeaseExpiresAt <= new Date()
+        ) {
+          throw new OutreachError(
+            "The outreach delivery lease expired before provider delivery.",
+            409,
+          );
+        }
+        if (
+          normalizeAccountEmail(current.toAddress) !== normalizeAccountEmail(to)
+        ) {
+          throw new OutreachError(
+            "The queued outreach recipient no longer matches this dispatch.",
+            409,
+          );
+        }
+        await assertActiveOutreachInvitation(transaction, {
+          invitationId: input.claimInvitationId,
+          siteId: input.siteId,
+          recipient: to,
+          template: input.template,
+        });
+        providerCallStarted = true;
+        const { data, error } = await sendBoundedResendEmail(
+          {
+            from: current.fromAddress,
+            to: current.toAddress,
+            replyTo: current.replyToAddress ?? undefined,
+            subject: email.subject,
+            html: email.html,
+            text: email.text,
+            headers: {
+              "Message-ID": outboundRfcMessageId(current.id, site.vertical),
+            },
+            tags: [
+              { name: "category", value: "lead_outreach" },
+              { name: "outreach_message_id", value: current.id },
             ],
           },
-          data: {
-            status: "SENT",
-            providerMessageId: data.id,
-            providerAttemptedAt: sentAt,
-            deliveryLeaseId: null,
-            deliveryLeaseExpiresAt: null,
-            sentAt,
-            error: null,
-          },
-        });
-        const persisted = await transaction.outreachMessage.findUniqueOrThrow({
-          where: { id: current.id },
-          select: { status: true },
-        });
-        return { kind: "accepted", status: persisted.status };
-      }
-      if (error && isDefinitiveResendRejection(error.statusCode)) {
-        const reason = "Provider rejected outreach delivery.";
-        const attemptedAt = new Date();
+          `outreach-${current.id}-attempt-${input.dispatchAuthorization.attempt}`,
+        );
+        if (data?.id) {
+          providerAccepted = true;
+          const sentAt = new Date();
+          await transaction.outreachMessage.updateMany({
+            where: {
+              id: current.id,
+              status: "QUEUED",
+              OR: [{ providerMessageId: null }, { providerMessageId: data.id }],
+            },
+            data: {
+              status: "SENT",
+              providerMessageId: data.id,
+              providerAttemptedAt: sentAt,
+              deliveryLeaseId: null,
+              deliveryLeaseExpiresAt: null,
+              sentAt,
+              error: null,
+            },
+          });
+          const persisted = await transaction.outreachMessage.findUniqueOrThrow(
+            {
+              where: { id: current.id },
+              select: { status: true },
+            },
+          );
+          return { kind: "accepted", status: persisted.status };
+        }
+        if (error && isDefinitiveResendRejection(error.statusCode)) {
+          const reason = "Provider rejected outreach delivery.";
+          const attemptedAt = new Date();
+          await transaction.outreachMessage.updateMany({
+            where: {
+              id: current.id,
+              status: "QUEUED",
+              deliveryLeaseId: reservation.leaseId,
+            },
+            data: {
+              status: "FAILED",
+              providerAttemptedAt: attemptedAt,
+              deliveryLeaseId: null,
+              deliveryLeaseExpiresAt: null,
+              error: reason,
+            },
+          });
+          return { kind: "rejected", reason };
+        }
         await transaction.outreachMessage.updateMany({
           where: {
             id: current.id,
@@ -303,28 +324,14 @@ export async function sendLeadEmail(
             deliveryLeaseId: reservation.leaseId,
           },
           data: {
-            status: "FAILED",
-            providerAttemptedAt: attemptedAt,
-            deliveryLeaseId: null,
-            deliveryLeaseExpiresAt: null,
-            error: reason,
+            providerAttemptedAt: new Date(),
+            error: "Provider acceptance is unknown; awaiting signed status.",
           },
         });
-        return { kind: "rejected", reason };
-      }
-      await transaction.outreachMessage.updateMany({
-        where: {
-          id: current.id,
-          status: "QUEUED",
-          deliveryLeaseId: reservation.leaseId,
-        },
-        data: {
-          providerAttemptedAt: new Date(),
-          error: "Provider acceptance is unknown; awaiting signed status.",
-        },
-      });
-      return { kind: "unknown" };
-    }, { maxWait: 5_000, timeout: 30_000 });
+        return { kind: "unknown" };
+      },
+      { maxWait: 5_000, timeout: 30_000 },
+    );
   } catch (error) {
     if (providerCallStarted || providerAccepted) {
       console.error("[outreach] provider acceptance is unknown", {
@@ -334,6 +341,10 @@ export async function sendLeadEmail(
       });
       throw new OutreachDeliveryUnknownError();
     }
+    const reason =
+      error instanceof OutreachError
+        ? error.message
+        : "Outreach failed before provider delivery.";
     if (reservation.knownUnsent) {
       const failed = await db.outreachMessage.updateMany({
         where: {
@@ -346,7 +357,7 @@ export async function sendLeadEmail(
           status: "FAILED",
           deliveryLeaseId: null,
           deliveryLeaseExpiresAt: null,
-          error: "Outreach failed before provider delivery.",
+          error: reason,
         },
       });
       if (failed.count !== 1) {
@@ -355,10 +366,6 @@ export async function sendLeadEmail(
     } else {
       throw new OutreachDeliveryUnknownError();
     }
-    const reason =
-      error instanceof OutreachError
-        ? error.message
-        : "Outreach failed before provider delivery.";
     console.error("[outreach] send failed", {
       siteId: input.siteId,
       template: input.template,
@@ -417,7 +424,7 @@ async function sendOperatorReply(input: {
     },
   });
   if (!site) throw new OutreachError("Site not found.", 404);
-  if (site.vertical !== Vertical.RESTAURANT) {
+  if (!isVerticalOutreachConfigured(site.vertical)) {
     throw new OutreachError("This lead is not eligible for outreach.", 409);
   }
   const to = site.leadContactEmail;
@@ -437,18 +444,23 @@ async function sendOperatorReply(input: {
     },
   });
   const inReplyToRow = input.inReplyToMessageId
-    ? thread.find((message) => message.id === input.inReplyToMessageId) ??
+    ? (thread.find((message) => message.id === input.inReplyToMessageId) ??
       (await db.outreachMessage.findFirst({
         where: { id: input.inReplyToMessageId, siteId: input.siteId },
-        select: { id: true, rfcMessageId: true, subject: true, direction: true },
-      }))
-    : thread[0] ?? null;
+        select: {
+          id: true,
+          rfcMessageId: true,
+          subject: true,
+          direction: true,
+        },
+      })))
+    : (thread[0] ?? null);
   if (!inReplyToRow) {
     throw new OutreachError("There is no outreach thread to reply on.", 409);
   }
   const inReplyTo =
     inReplyToRow.rfcMessageId ??
-    normalizeRfcMessageId(outboundRfcMessageId(inReplyToRow.id));
+    normalizeRfcMessageId(outboundRfcMessageId(inReplyToRow.id, site.vertical));
   const references = [
     ...new Set(
       thread
@@ -485,7 +497,9 @@ async function sendOperatorReply(input: {
     html: email.html,
     actor: input.actor,
     threadKey: outreachThreadKey(input.siteId),
-    rfcMessageId: normalizeRfcMessageId(outboundRfcMessageId(messageId)),
+    rfcMessageId: normalizeRfcMessageId(
+      outboundRfcMessageId(messageId, site.vertical),
+    ),
     inReplyTo,
   });
   if (!reservation.leaseId) {
@@ -512,72 +526,102 @@ async function sendOperatorReply(input: {
 
   let providerCallStarted = false;
   try {
-    const result = await db.$transaction(async (transaction) => {
-      await lockOutreachDelivery(transaction);
-      await lockOutreachSite(transaction, input.siteId);
-      await lockOutreachMessageById(transaction, reservation.message.id);
-      const current = await transaction.outreachMessage.findUniqueOrThrow({
-        where: { id: reservation.message.id },
-      });
-      if (current.status !== "QUEUED") {
-        return { kind: "existing" as const, status: current.status };
-      }
-      if (
-        current.deliveryLeaseId !== reservation.leaseId ||
-        !current.deliveryLeaseExpiresAt ||
-        current.deliveryLeaseExpiresAt <= new Date()
-      ) {
-        throw new OutreachError(
-          "The outreach delivery lease expired before provider delivery.",
-          409,
+    const result = await db.$transaction(
+      async (transaction) => {
+        await lockOutreachDelivery(transaction);
+        await lockOutreachSite(transaction, input.siteId);
+        await assertConfiguredOutreachSite(transaction, {
+          siteId: input.siteId,
+          expectedRecipient: to,
+        });
+        await lockOutreachMessageById(transaction, reservation.message.id);
+        const current = await transaction.outreachMessage.findUniqueOrThrow({
+          where: { id: reservation.message.id },
+        });
+        if (current.status !== "QUEUED") {
+          return { kind: "existing" as const, status: current.status };
+        }
+        if (
+          current.deliveryLeaseId !== reservation.leaseId ||
+          !current.deliveryLeaseExpiresAt ||
+          current.deliveryLeaseExpiresAt <= new Date()
+        ) {
+          throw new OutreachError(
+            "The outreach delivery lease expired before provider delivery.",
+            409,
+          );
+        }
+        providerCallStarted = true;
+        const { data, error } = await sendBoundedResendEmail(
+          {
+            from: current.fromAddress,
+            to: current.toAddress,
+            replyTo: current.replyToAddress ?? undefined,
+            subject: email.subject,
+            html: email.html,
+            text: email.text,
+            headers: {
+              "Message-ID": outboundRfcMessageId(current.id, site.vertical),
+              "In-Reply-To": inReplyTo.includes("<")
+                ? inReplyTo
+                : `<${inReplyTo}>`,
+              References:
+                references ||
+                (inReplyTo.includes("<") ? inReplyTo : `<${inReplyTo}>`),
+            },
+            tags: [
+              { name: "category", value: "lead_outreach" },
+              { name: "outreach_message_id", value: current.id },
+            ],
+          },
+          `outreach-${current.id}-reply`,
         );
-      }
-      providerCallStarted = true;
-      const { data, error } = await sendBoundedResendEmail(
-        {
-          from: current.fromAddress,
-          to: current.toAddress,
-          replyTo: current.replyToAddress ?? undefined,
-          subject: email.subject,
-          html: email.html,
-          text: email.text,
-          headers: {
-            "Message-ID": outboundRfcMessageId(current.id),
-            "In-Reply-To": inReplyTo.includes("<") ? inReplyTo : `<${inReplyTo}>`,
-            "References": references || (inReplyTo.includes("<") ? inReplyTo : `<${inReplyTo}>`),
-          },
-          tags: [
-            { name: "category", value: "lead_outreach" },
-            { name: "outreach_message_id", value: current.id },
-          ],
-        },
-        `outreach-${current.id}-reply`,
-      );
-      if (data?.id) {
-        const sentAt = new Date();
-        await transaction.outreachMessage.updateMany({
-          where: {
-            id: current.id,
-            status: "QUEUED",
-            OR: [{ providerMessageId: null }, { providerMessageId: data.id }],
-          },
-          data: {
-            status: "SENT",
-            providerMessageId: data.id,
-            providerAttemptedAt: sentAt,
-            deliveryLeaseId: null,
-            deliveryLeaseExpiresAt: null,
-            sentAt,
-            error: null,
-          },
-        });
-        const persisted = await transaction.outreachMessage.findUniqueOrThrow({
-          where: { id: current.id },
-          select: { status: true },
-        });
-        return { kind: "accepted" as const, status: persisted.status };
-      }
-      if (error && isDefinitiveResendRejection(error.statusCode)) {
+        if (data?.id) {
+          const sentAt = new Date();
+          await transaction.outreachMessage.updateMany({
+            where: {
+              id: current.id,
+              status: "QUEUED",
+              OR: [{ providerMessageId: null }, { providerMessageId: data.id }],
+            },
+            data: {
+              status: "SENT",
+              providerMessageId: data.id,
+              providerAttemptedAt: sentAt,
+              deliveryLeaseId: null,
+              deliveryLeaseExpiresAt: null,
+              sentAt,
+              error: null,
+            },
+          });
+          const persisted = await transaction.outreachMessage.findUniqueOrThrow(
+            {
+              where: { id: current.id },
+              select: { status: true },
+            },
+          );
+          return { kind: "accepted" as const, status: persisted.status };
+        }
+        if (error && isDefinitiveResendRejection(error.statusCode)) {
+          await transaction.outreachMessage.updateMany({
+            where: {
+              id: current.id,
+              status: "QUEUED",
+              deliveryLeaseId: reservation.leaseId,
+            },
+            data: {
+              status: "FAILED",
+              providerAttemptedAt: new Date(),
+              deliveryLeaseId: null,
+              deliveryLeaseExpiresAt: null,
+              error: "Provider rejected outreach delivery.",
+            },
+          });
+          return {
+            kind: "rejected" as const,
+            reason: "Provider rejected outreach delivery.",
+          };
+        }
         await transaction.outreachMessage.updateMany({
           where: {
             id: current.id,
@@ -585,31 +629,14 @@ async function sendOperatorReply(input: {
             deliveryLeaseId: reservation.leaseId,
           },
           data: {
-            status: "FAILED",
             providerAttemptedAt: new Date(),
-            deliveryLeaseId: null,
-            deliveryLeaseExpiresAt: null,
-            error: "Provider rejected outreach delivery.",
+            error: "Provider acceptance is unknown; awaiting signed status.",
           },
         });
-        return {
-          kind: "rejected" as const,
-          reason: "Provider rejected outreach delivery.",
-        };
-      }
-      await transaction.outreachMessage.updateMany({
-        where: {
-          id: current.id,
-          status: "QUEUED",
-          deliveryLeaseId: reservation.leaseId,
-        },
-        data: {
-          providerAttemptedAt: new Date(),
-          error: "Provider acceptance is unknown; awaiting signed status.",
-        },
-      });
-      return { kind: "unknown" as const };
-    }, { maxWait: 5_000, timeout: 30_000 });
+        return { kind: "unknown" as const };
+      },
+      { maxWait: 5_000, timeout: 30_000 },
+    );
     if (result.kind === "unknown") throw new OutreachDeliveryUnknownError();
     if (result.kind === "rejected") {
       throw new OutreachError(result.reason, 503);
@@ -621,6 +648,29 @@ async function sendOperatorReply(input: {
     };
   } catch (error) {
     if (providerCallStarted) throw new OutreachDeliveryUnknownError();
+    if (reservation.knownUnsent) {
+      const reason =
+        error instanceof OutreachError
+          ? error.message
+          : "Operator reply failed before provider delivery.";
+      const failed = await db.outreachMessage.updateMany({
+        where: {
+          id: reservation.message.id,
+          status: "QUEUED",
+          providerAttemptedAt: null,
+          deliveryLeaseId: reservation.leaseId,
+        },
+        data: {
+          status: "FAILED",
+          deliveryLeaseId: null,
+          deliveryLeaseExpiresAt: null,
+          error: reason,
+        },
+      });
+      if (failed.count !== 1) throw new OutreachDeliveryUnknownError();
+    } else {
+      throw new OutreachDeliveryUnknownError();
+    }
     throw error;
   }
 }
@@ -784,8 +834,7 @@ async function assertCurrentOutreachDispatch(
       attempt: true,
     },
   });
-  const expectedStatus =
-    input.template === "preview_ready" ? "QUEUED" : "SENT";
+  const expectedStatus = input.template === "preview_ready" ? "QUEUED" : "SENT";
   if (
     !dispatch ||
     dispatch.siteId !== input.siteId ||
@@ -842,7 +891,7 @@ async function assertActiveOutreachInvitation(
   }
 }
 
-async function assertReviewedRestofrontDelivery(
+async function assertReviewedLeadDelivery(
   transaction: Prisma.TransactionClient,
   input: {
     siteId: string;
@@ -851,13 +900,14 @@ async function assertReviewedRestofrontDelivery(
     template: OutreachTemplateId;
   },
 ): Promise<void> {
-  const [site, pauseSetting] = await Promise.all([
+  const [site, pauseSettings] = await Promise.all([
     transaction.site.findUnique({
       where: { id: input.siteId },
       select: {
         leadContactEmail: true,
         status: true,
         vertical: true,
+        attributes: true,
         updatedAt: true,
         auditEvents: {
           where: { type: "site.review.completed" },
@@ -867,15 +917,23 @@ async function assertReviewedRestofrontDelivery(
         },
       },
     }),
-    transaction.operatorSetting.findUnique({
-      where: { key: "outreach.paused" },
-      select: { value: true },
+    transaction.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [GLOBAL_OUTREACH_PAUSE_KEY, siteOutreachPauseKey(input.siteId)],
+        },
+      },
+      select: { key: true, value: true },
     }),
   ]);
+  const eligibility = evaluateLeadOutreachEligibility(
+    site?.attributes,
+    site?.leadContactEmail ?? input.expectedRecipient,
+  );
   if (
     !site ||
-    pauseSetting?.value === true ||
-    site.vertical !== Vertical.RESTAURANT ||
+    isOutreachPaused(pauseSettings, input.siteId) ||
+    !isVerticalOutreachConfigured(site.vertical) ||
     !mutableLeadStatuses.has(site.status) ||
     !site.leadContactEmail ||
     normalizeAccountEmail(site.leadContactEmail) !==
@@ -884,12 +942,13 @@ async function assertReviewedRestofrontDelivery(
     !isOperatorReviewCurrent(
       site.auditEvents[0]?.createdAt ?? null,
       site.updatedAt,
-    )
+    ) ||
+    !eligibility.allowed
   ) {
-    throw new OutreachError(
-      "The reviewed Restofront lead became ineligible before delivery.",
-      409,
-    );
+    const reason = eligibility.allowed
+      ? "The reviewed lead became ineligible before delivery."
+      : `The reviewed lead became ineligible before delivery: ${eligibility.message}`;
+    throw new OutreachError(reason, 409);
   }
   if (input.template === "follow_up_1") {
     const initialKey = `lead-outreach:${input.siteId}:preview_ready`;
@@ -911,6 +970,72 @@ async function assertReviewedRestofrontDelivery(
     if (inbound) {
       throw new OutreachError("This lead already replied.", 409);
     }
+  }
+}
+
+async function assertConfiguredOutreachSite(
+  transaction: Prisma.TransactionClient,
+  input: { siteId: string; expectedRecipient: string },
+): Promise<void> {
+  const [site, pauseSettings] = await Promise.all([
+    transaction.site.findUnique({
+      where: { id: input.siteId },
+      select: {
+        vertical: true,
+        leadContactEmail: true,
+        status: true,
+        attributes: true,
+      },
+    }),
+    transaction.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [GLOBAL_OUTREACH_PAUSE_KEY, siteOutreachPauseKey(input.siteId)],
+        },
+      },
+      select: { key: true, value: true },
+    }),
+  ]);
+  const eligibility = evaluateLeadOutreachEligibility(
+    site?.attributes,
+    site?.leadContactEmail ?? input.expectedRecipient,
+  );
+  if (
+    !site ||
+    isOutreachPaused(pauseSettings, input.siteId) ||
+    !isVerticalOutreachConfigured(site.vertical) ||
+    !mutableLeadStatuses.has(site.status) ||
+    !site.leadContactEmail ||
+    normalizeAccountEmail(site.leadContactEmail) !==
+      normalizeAccountEmail(input.expectedRecipient) ||
+    !eligibility.allowed
+  ) {
+    throw new OutreachError(
+      eligibility.allowed
+        ? "The outreach lead became ineligible before delivery."
+        : `The outreach lead became ineligible before delivery: ${eligibility.message}`,
+      409,
+    );
+  }
+  const suppressed = await transaction.outreachMessage.findFirst({
+    where: {
+      siteId: input.siteId,
+      direction: "OUTBOUND",
+      OR: [
+        { status: { in: ["BOUNCED", "COMPLAINED"] } },
+        {
+          status: "FAILED",
+          error: { contains: "suppressed", mode: "insensitive" },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  if (suppressed) {
+    throw new OutreachError(
+      "The outreach recipient is suppressed after a bounce, complaint, or provider suppression.",
+      409,
+    );
   }
 }
 

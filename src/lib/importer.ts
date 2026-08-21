@@ -277,26 +277,32 @@ async function readLimitedBody(response: Response): Promise<string> {
   return html + decoder.decode();
 }
 
-async function fetchHtml(initialUrl: URL): Promise<{
+export async function fetchPublicHtml(
+  rawUrl: string | URL,
+  options: { userAgent?: string; timeoutMs?: number } = {},
+): Promise<{
   html: string;
   finalUrl: URL;
+  lastModifiedAt: string | null;
 }> {
-  let url = initialUrl;
+  let url = typeof rawUrl === "string" ? new URL(rawUrl) : rawUrl;
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
     const response = await fetchPublicResponse(url, {
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "User-Agent":
+          options.userAgent ??
           "Cornershopdev Importer/1.0 (+https://cornershop.dev; local business preview builder)",
       },
       redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     });
 
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
-      if (!location) throw new Error("The website returned an invalid redirect");
+      if (!location)
+        throw new Error("The website returned an invalid redirect");
       url = new URL(location, url);
       continue;
     }
@@ -310,7 +316,11 @@ async function fetchHtml(initialUrl: URL): Promise<{
       throw new Error("The supplied URL is not an HTML website");
     }
 
-    return { html: await readLimitedBody(response), finalUrl: url };
+    return {
+      html: await readLimitedBody(response),
+      finalUrl: url,
+      lastModifiedAt: response.headers.get("last-modified"),
+    };
   }
 
   throw new Error("The website redirected too many times");
@@ -680,9 +690,9 @@ export function extractSourceLinks(
               ? "Request a quote"
               : type === "contact"
                 ? "Contact us"
-            : type === "social"
-              ? "Follow us"
-              : "Order online"),
+                : type === "social"
+                  ? "Follow us"
+                  : "Order online"),
         provider,
         url,
       });
@@ -736,8 +746,7 @@ export async function inspectSource(
 ): Promise<ExtractedSite> {
   const source = sourceSchema.parse(rawSource);
   const looksLikeUrl =
-    /^(?:https?:\/\/|www\.)/i.test(source) ||
-    bareDomainPattern.test(source);
+    /^(?:https?:\/\/|www\.)/i.test(source) || bareDomainPattern.test(source);
 
   if (!looksLikeUrl) {
     return {
@@ -765,15 +774,17 @@ export async function inspectSource(
     };
   }
 
-  const normalized = /^https?:\/\//i.test(source) ? source : `https://${source}`;
-  const { html, finalUrl } = await fetchHtml(new URL(normalized));
+  const normalized = /^https?:\/\//i.test(source)
+    ? source
+    : `https://${source}`;
+  const { html, finalUrl } = await fetchPublicHtml(new URL(normalized));
   const contentPages = await Promise.allSettled(
     extractInternalContentUrls(
       html,
       finalUrl,
       vertical.crawl.relevantPathPattern,
     ).map(async (url) => {
-      const result = await fetchHtml(url);
+      const result = await fetchPublicHtml(url);
       if (result.finalUrl.origin !== finalUrl.origin) return null;
       return {
         html: result.html,
@@ -787,9 +798,7 @@ export async function inspectSource(
   );
   const pageText = [
     `Homepage: ${stripMarkup(html)}`,
-    ...discoveredPages.map(
-      (page) => `Page ${page.url.pathname}: ${page.text}`,
-    ),
+    ...discoveredPages.map((page) => `Page ${page.url.pathname}: ${page.text}`),
   ]
     .join("\n\n")
     .slice(0, MAX_SOURCE_TEXT_CHARS);

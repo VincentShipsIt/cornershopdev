@@ -1,9 +1,41 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildProspectIdentity,
+  fetchHomepageSignals,
   parseHomepageSignals,
   scoreWebsiteQuality,
 } from "@/lib/lead-discovery";
+
+describe("discovery homepage fetch boundary", () => {
+  it("rejects private IPv6 through the real DNS-pinned importer boundary", async () => {
+    await expect(
+      fetchHomepageSignals("http://[::1]/admin"),
+    ).resolves.toMatchObject({
+      isFetched: false,
+      finalUrl: null,
+    });
+  });
+
+  it.each([
+    "DNS answer changed to a private address before connect",
+    "Private network addresses are not supported after redirect",
+  ])("fails closed when the hardened boundary reports %s", async (reason) => {
+    let calls = 0;
+    const rejectedPublicFetch = async () => {
+      calls += 1;
+      throw new Error(reason);
+    };
+
+    await expect(
+      fetchHomepageSignals(
+        "https://listing-controlled.example/",
+        "RESTAURANT",
+        rejectedPublicFetch,
+      ),
+    ).resolves.toMatchObject({ isFetched: false, finalUrl: null });
+    expect(calls).toBe(1);
+  });
+});
 
 describe("prospect identity", () => {
   it("dedupes equivalent websites onto one sourceKey", () => {
@@ -42,9 +74,7 @@ describe("prospect identity", () => {
 
 describe("website quality scoring", () => {
   it("explains a missing website without claiming a fetch", () => {
-    expect(
-      scoreWebsiteQuality({ hasWebsite: false, homepage: null }),
-    ).toEqual({
+    expect(scoreWebsiteQuality({ hasWebsite: false, homepage: null })).toEqual({
       score: 60,
       reasons: ["No public website listed"],
     });
@@ -82,7 +112,7 @@ describe("website quality scoring", () => {
       "Homepage is HTTP, not HTTPS",
       "Viewport looks desktop-only",
       "Homepage uses frameset or Flash",
-      "No menu link found on the homepage",
+      "No menu or carte link found on the homepage",
       "No booking or reservation link found",
       "Homepage title is missing",
       "Homepage HTML is unusually large",
@@ -112,5 +142,61 @@ describe("website quality scoring", () => {
       reasons: [],
     });
     expect(homepage.hasRestaurantJsonLd).toBe(true);
+  });
+
+  it("scores beauty catalog and booking signals with its own vocabulary", () => {
+    const homepage = parseHomepageSignals(
+      `<html><head>
+        <meta name="viewport" content="width=device-width">
+        <title>Studio Iris</title>
+        <script type="application/ld+json">{"@type":"BeautySalon"}</script>
+      </head><body>
+        <a href="/services">Treatments</a>
+        <a href="https://www.fresha.com/studio-iris">Book appointment</a>
+      </body></html>`,
+      new URL("https://studio-iris.example/"),
+      null,
+      "BEAUTY",
+    );
+
+    expect(
+      scoreWebsiteQuality({
+        vertical: "BEAUTY",
+        hasWebsite: true,
+        homepage,
+      }),
+    ).toEqual({ score: 100, reasons: [] });
+    expect(homepage.hasBusinessJsonLd).toBe(true);
+    expect(homepage.hasCatalogHint).toBe(true);
+    expect(homepage.hasConversionHint).toBe(true);
+  });
+
+  it("records a provider taxonomy mismatch without deciding operator eligibility", () => {
+    const homepage = parseHomepageSignals(
+      `<html><head>
+        <meta name="viewport" content="width=device-width">
+        <title>Studio Iris</title>
+      </head><body>
+        <a href="/services">Treatments</a>
+        <a href="https://www.fresha.com/studio-iris">Book appointment</a>
+      </body></html>`,
+      new URL("https://studio-iris.example/"),
+      null,
+      "BEAUTY",
+    );
+
+    expect(
+      scoreWebsiteQuality({
+        vertical: "BEAUTY",
+        hasWebsite: true,
+        homepage,
+        categories: ["restaurant"],
+      }),
+    ).toEqual({
+      score: 88,
+      reasons: [
+        "Listing categories do not confirm a beauty, hair, barber, nail, or spa business",
+      ],
+    });
   });
 });

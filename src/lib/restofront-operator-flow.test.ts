@@ -5,6 +5,7 @@ import {
 } from "@/lib/complete-test-module-mocks";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
 type AuditEvent = {
   id: string;
@@ -107,12 +108,24 @@ const site = {
   email: "bonjour@chez-lea.test" as string | null,
   leadContactEmail: "Legacy.Owner@Chez-Lea.TEST" as string | null,
   status: "PROSPECT" as
-    | "PROSPECT"
-    | "PREVIEW_READY"
-    | "CLAIMED"
-    | "LIVE"
-    | "PAUSED",
+    "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED",
   organizationId: null,
+  attributes: {
+    leadEligibility: {
+      state: "ELIGIBLE",
+      evidence: {
+        channel_basis: "VERIFIED_WRITTEN_CONSENT",
+        recipient: "Legacy.Owner@Chez-Lea.TEST",
+        controller: "Corner Shop Labs Ltd",
+        channel: "EMAIL",
+        purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+        evidence_timestamp: "2026-08-20T09:00:00+02:00",
+        evidence_source: "consent:owner-record-1234",
+      },
+      updatedAt: "2026-08-19T08:00:00.000Z",
+      updatedBy: "operator:operator_1",
+    },
+  },
   updatedAt: new Date(clock),
 };
 
@@ -127,12 +140,13 @@ function siteRecord() {
       (event) =>
         event.siteId === site.id && event.type === "site.review.completed",
     )
-    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    .sort(
+      (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+    );
   return {
     ...site,
     auditEvents: reviews,
-    outreachMessages:
-      message?.template === "preview_ready" ? [message] : [],
+    outreachMessages: message?.template === "preview_ready" ? [message] : [],
   };
 }
 
@@ -147,7 +161,36 @@ function matchesStatus(
 }
 
 const fakeModels = {
-  $queryRaw: async () => [],
+  $queryRaw: async (
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<unknown[]> => {
+    const sql = strings.join("?");
+    // Locked lead read used by createOrReopenOperatorLead.
+    if (sql.includes('FROM "Site"') && sql.includes('"sourceKey"')) {
+      if (typeof values[0] === "string" && values[0] !== site.sourceKey) {
+        return [];
+      }
+      return [
+        {
+          id: site.id,
+          slug: site.slug,
+          status: site.status,
+          vertical: site.vertical,
+          attributes: site.attributes,
+        },
+      ];
+    }
+    // Locked read used by recordOperatorLeadAction.
+    if (sql.includes('FROM "Site"') && sql.includes('"slug"')) {
+      if (typeof values[0] === "string" && values[0] !== site.slug) {
+        return [];
+      }
+      return [{ id: site.id, attributes: site.attributes }];
+    }
+    return [];
+  },
+  $executeRaw: async () => 0,
   site: {
     findUnique: async (input: {
       where: { id?: string; slug?: string; sourceKey?: string };
@@ -159,7 +202,7 @@ const fakeModels = {
       return siteRecord();
     },
     updateMany: async (input: {
-      where: { id: string; status?: { in: string[] } };
+      where: { id: string; vertical?: string; status?: { in: string[] } };
       data: {
         status?: typeof site.status;
         leadContactEmail?: string;
@@ -167,8 +210,8 @@ const fakeModels = {
     }) => {
       if (
         input.where.id !== site.id ||
-        (input.where.status &&
-          !input.where.status.in.includes(site.status))
+        (input.where.vertical && input.where.vertical !== site.vertical) ||
+        (input.where.status && !input.where.status.in.includes(site.status))
       ) {
         return { count: 0 };
       }
@@ -178,6 +221,17 @@ const fakeModels = {
       }
       site.updatedAt = tick();
       return { count: 1 };
+    },
+    update: async (input: {
+      where: { id: string };
+      data: { attributes?: unknown };
+    }) => {
+      if (input.where.id !== site.id) throw new Error("site missing");
+      if (input.data.attributes) {
+        site.attributes = input.data.attributes as typeof site.attributes;
+      }
+      site.updatedAt = tick();
+      return siteRecord();
     },
   },
   auditEvent: {
@@ -204,6 +258,8 @@ const fakeModels = {
   },
   operatorSetting: {
     findUnique: async () => (paused ? { value: true } : null),
+    findMany: async () =>
+      paused ? [{ key: "outreach.paused", value: true }] : [],
     upsert: async (input: {
       update: { value: boolean };
       create: { value: boolean };
@@ -308,7 +364,8 @@ const fakeModels = {
         | "updatedAt"
       >;
     }) => {
-      if (message?.idempotencyKey === input.where.idempotencyKey) return message;
+      if (message?.idempotencyKey === input.where.idempotencyKey)
+        return message;
       const createdAt = tick();
       message = {
         ...input.create,
@@ -318,8 +375,7 @@ const fakeModels = {
         providerEventAt: null,
         providerAttemptedAt: null,
         deliveryLeaseId: input.create.deliveryLeaseId ?? null,
-        deliveryLeaseExpiresAt:
-          input.create.deliveryLeaseExpiresAt ?? null,
+        deliveryLeaseExpiresAt: input.create.deliveryLeaseExpiresAt ?? null,
         inReplyTo: input.create.inReplyTo ?? null,
         threadKey: input.create.threadKey ?? null,
         createdByActor: input.create.createdByActor ?? null,
@@ -363,9 +419,18 @@ const fakeModels = {
     },
     findMany: async () => (message ? [message] : []),
     findFirst: async (input: {
-      where: { id?: string; siteId?: string; direction?: string };
+      where: {
+        id?: string;
+        siteId?: string;
+        direction?: string;
+        OR?: Array<
+          | { status: { in: string[] } }
+          | { status: string; error: { contains: string; mode: string } }
+        >;
+      };
     }) => {
       if (!message) return null;
+      const currentMessage = message;
       if (input.where.id && input.where.id !== message.id) return null;
       if (input.where.siteId && input.where.siteId !== message.siteId) {
         return null;
@@ -373,6 +438,19 @@ const fakeModels = {
       if (
         input.where.direction &&
         input.where.direction !== message.direction
+      ) {
+        return null;
+      }
+      if (
+        input.where.OR &&
+        !input.where.OR.some((condition) =>
+          !("error" in condition)
+            ? condition.status.in.includes(currentMessage.status)
+            : currentMessage.status === condition.status &&
+              currentMessage.error
+                ?.toLowerCase()
+                .includes(condition.error.contains.toLowerCase()) === true,
+        )
       ) {
         return null;
       }
@@ -469,11 +547,7 @@ const fakeModels = {
     create: async (input: {
       data: Omit<
         ClaimInvitation,
-        | "id"
-        | "verifiedAt"
-        | "acceptedAt"
-        | "revokedAt"
-        | "checkoutSessionId"
+        "id" | "verifiedAt" | "acceptedAt" | "revokedAt" | "checkoutSessionId"
       >;
     }) => {
       invitation = {
@@ -547,33 +621,30 @@ mock.module("@/lib/resend", () => ({
     vertical === "RESTAURANT" ? "vincent@restofront.com" : undefined,
 }));
 
-const { POST: createOrReopenLead } = await import(
-  "@/app/api/admin/leads/batch/route"
-);
-const { POST: completeReview } = await import(
-  "@/app/api/admin/sites/[slug]/review/route"
-);
-const { GET: getOutreach, POST: queueOutreach } = await import(
-  "@/app/api/admin/leads/[slug]/outreach/route"
-);
-const { POST: setOutreachPause } = await import(
-  "@/app/api/admin/outreach/pause/route"
-);
-const {
-  markInitialOutreachDispatchFinished,
-  reserveInitialOutreachDispatch,
-} = await import("@/lib/outreach-dispatch");
+const { POST: createOrReopenLead } =
+  await import("@/app/api/admin/leads/batch/route");
+const { POST: completeReview } =
+  await import("@/app/api/admin/sites/[slug]/review/route");
+const { GET: getOutreach, POST: queueOutreach } =
+  await import("@/app/api/admin/leads/[slug]/outreach/route");
+const { POST: setOutreachPause } =
+  await import("@/app/api/admin/outreach/pause/route");
+const { markInitialOutreachDispatchFinished, reserveInitialOutreachDispatch } =
+  await import("@/lib/outreach-dispatch");
 const { issueClaimInvitation } = await import("@/lib/claim-invitations");
-const { recordResendOutreachEvent } = await import(
-  "@/lib/outreach-event-recorder"
-);
+const { recordResendOutreachEvent } =
+  await import("@/lib/outreach-event-recorder");
 const { listOutreachMessages, sendLeadEmail } = await import("@/lib/outreach");
+const { ingestOperatorProspectLead } =
+  await import("@/lib/operator-lead-ingest");
 
 describe("mocked Restofront operator delivery flow", () => {
   beforeEach(() => {
     clock = new Date("2026-08-19T08:00:00.000Z").getTime();
     site.email = "bonjour@chez-lea.test";
     site.leadContactEmail = "Legacy.Owner@Chez-Lea.TEST";
+    site.attributes.leadEligibility.evidence.recipient =
+      "Legacy.Owner@Chez-Lea.TEST";
     site.status = "PROSPECT";
     site.updatedAt = new Date(clock);
     dispatch = null;
@@ -592,6 +663,50 @@ describe("mocked Restofront operator delivery flow", () => {
     ).toString("base64")}`;
     process.env.CLAIM_TOKEN_SECRET =
       "mocked-claim-token-secret-with-more-than-32-characters";
+  });
+
+  it("rejects manual and discovery cross-vertical source reuse without mutation", async () => {
+    const originalContact = site.leadContactEmail;
+    const manualResponse = await createOrReopenLead(
+      sameOriginRequest("/api/admin/leads/batch", {
+        leads: [
+          {
+            source: "https://chez-lea.test",
+            contactEmail: "beauty-owner@example.test",
+            vertical: "BEAUTY",
+          },
+        ],
+        sendEmail: false,
+      }),
+    );
+    const manual = (await manualResponse.json()) as {
+      results: Array<{ error?: string }>;
+    };
+
+    expect(manual.results[0]?.error).toContain("another vertical");
+    expect(site.status).toBe("PROSPECT");
+    expect(site.leadContactEmail).toBe(originalContact);
+    expect(auditEvents).toHaveLength(0);
+
+    await expect(
+      ingestOperatorProspectLead({
+        source: "https://chez-lea.test/",
+        websiteUrl: "https://chez-lea.test/",
+        vertical: "BEAUTY",
+        name: "Chez Léa Beauty",
+        city: "Valletta",
+        score: 20,
+        reasons: ["Cross-vertical regression"],
+        queries: [
+          { provider: "google_places", query: "beauty salons in Valletta" },
+        ],
+        generatePreview: true,
+      }),
+    ).rejects.toThrow("another vertical");
+    expect(site.status).toBe("PROSPECT");
+    expect(site.name).toBe("Chez Léa");
+    expect(site.leadContactEmail).toBe(originalContact);
+    expect(auditEvents).toHaveLength(0);
   });
 
   it("reopens and reviews a persisted preview, explicitly sends, refreshes status, then pauses", async () => {
@@ -614,12 +729,33 @@ describe("mocked Restofront operator delivery flow", () => {
     expect(providerSend).not.toHaveBeenCalled();
 
     // A separate read sees the same private preview identity and contact.
-    expect(await fakeModels.site.findUnique({ where: { slug: site.slug } })).toMatchObject({
+    expect(
+      await fakeModels.site.findUnique({ where: { slug: site.slug } }),
+    ).toMatchObject({
       slug: "chez-lea",
       status: "PREVIEW_READY",
       email: "bonjour@chez-lea.test",
       leadContactEmail: "owner@chez-lea.test",
     });
+
+    const eligibilityResponse = await completeReview(
+      sameOriginRequest(`/api/admin/sites/${site.slug}/review`, {
+        action: "set_eligibility",
+        eligibility: "ELIGIBLE",
+        eligibilityEvidence: {
+          channel_basis: "VERIFIED_WRITTEN_CONSENT",
+          recipient: "owner@chez-lea.test",
+          controller: "Corner Shop Labs Ltd",
+          channel: "EMAIL",
+          purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+          evidence_timestamp: "2026-08-20T09:00:00+02:00",
+          evidence_source: "consent:owner-record-1234",
+        },
+        note: null,
+      }),
+      siteContext(completeReview),
+    );
+    expect(eligibilityResponse.status).toBe(200);
 
     const reviewResponse = await completeReview(
       sameOriginRequest(`/api/admin/sites/${site.slug}/review`, {
@@ -746,7 +882,9 @@ describe("mocked Restofront operator delivery flow", () => {
     expect(delivery).toEqual({ handled: true, updated: 1 });
 
     const mailboxResponse = await getOutreach(
-      new Request(`https://cornershop.dev/api/admin/leads/${site.slug}/outreach`),
+      new Request(
+        `https://cornershop.dev/api/admin/leads/${site.slug}/outreach`,
+      ),
       siteContext(getOutreach),
     );
     expect(mailboxResponse.status).toBe(200);
@@ -809,6 +947,8 @@ describe("mocked Restofront operator delivery flow", () => {
   });
 
   it("replays an ambiguous stale reservation but increments a definite failure", async () => {
+    site.leadContactEmail = "owner@chez-lea.test";
+    site.attributes.leadEligibility.evidence.recipient = "owner@chez-lea.test";
     dispatch = {
       id: "dispatch_stale",
       idempotencyKey: `lead-outreach:${site.id}:preview_ready`,

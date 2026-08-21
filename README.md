@@ -1,6 +1,10 @@
 # Cornershopdev
 
-Cornershopdev turns an existing local-business website—or just a business name—into a private, prefilled, mobile-first website preview. The registered vertical supplies the schema, prompts, providers, templates and language for its trade while the business keeps the ordering, delivery or booking tools it already uses.
+Cornershopdev is a multi-vertical local-business website factory. Each
+configured niche supplies its own discovery queries, catalog/conversion
+signals, content schema, preview generator, storefront identity, and provider
+adapters. A business keeps the operational tools it already uses, reviews a
+private prefilled preview, claims it, subscribes, then connects its domain.
 
 ## Product flow
 
@@ -32,9 +36,19 @@ after the session is revalidated against that site's organization membership.
 subscriptions, request totals, portfolio traffic and conversion summaries, and
 bounded per-site operational rows. The private owner/outreach recipient is
 stored separately from the sourced public business email and is visible only in
-this dual-gated console. Lead creation never sends mail: an
-operator must review the persisted preview, confirm the initial Restofront
-email, and can pause every workflow before its next send.
+this dual-gated console. Lead creation never sends mail: an operator must review
+the persisted preview, record a verified written-consent or soft-opt-in channel
+basis with exact recipient, controller, email channel, claim/follow-up purpose,
+timestamp, and private evidence reference, and confirm the exact niche-branded
+recipient. Soft opt-in additionally requires customer/sale and collection
+opt-out proof. The controller must exactly match `OUTREACH_LEGAL_CONTROLLER`,
+and future-dated evidence is rejected. A public listing, generic corporate
+rationale, value-first offer, or bare `ELIGIBLE` flag never authorizes
+electronic outreach. Operators can pause all outreach or one lead before its
+next send. Initials, follow-ups, and operator replies recheck current evidence,
+mutable/unclaimed state, and bounce/complaint/provider suppression immediately
+before provider delivery. Inbound replies and suppression webhooks use the same
+transactional delivery fence, so they cannot commit in a post-check send gap.
 
 ## First-party analytics
 
@@ -349,18 +363,23 @@ deduplicated outbox with bounded delivery retries. Deployment and exercise
 instructions are in
 [`docs/operations/platform-services.md`](docs/operations/platform-services.md).
 
-### Restofront outreach
+### Niche outreach
 
 - `RESEND_API_KEY`
 - `RESEND_WEBHOOK_SECRET`
+- `GOOGLE_PLACES_API_KEY` or an approved non-public
+  `LEAD_DISCOVERY_NOMINATIM_BASE_URL` (the public OSMF endpoint is blocked)
 - `WORKFLOW_ENABLED=true`
 - the complete `WORKFLOW_POSTGRES_*` contract listed above
 
 Before release, run the read-only outreach preflight inside the reviewed
-container. It checks the committed migration, registered Restofront sender and
-reply-to, Workflow configuration, and the enabled Resend delivery webhook. It
-prints only check names, booleans, the public webhook endpoint, and timestamps;
-it never prints secret values and never sends an email.
+container. It checks the committed outreach and private-contact migrations, registered Restofront sender and
+reply-to plus every other launched niche identity, Workflow/database
+configuration, verified Resend sending/receiving domains, and enabled delivery
+and inbound webhooks. It also fails closed unless a commercial or self-hosted
+lead-enumeration provider is configured. It prints only check names, booleans, public endpoints,
+niche names, and timestamps; it never prints secret values and never sends an
+email.
 
 ```bash
 bun run operator:preflight-outreach --environment production

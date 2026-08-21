@@ -5,6 +5,7 @@ import {
 } from "@/lib/complete-test-module-mocks";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
 const outreachActual = await import("@/lib/outreach");
 const outreachTestModule = {
@@ -19,6 +20,18 @@ const outreachTestModule = {
 
 let reviewed = true;
 let vertical = "RESTAURANT";
+let eligibilityState: "UNKNOWN" | "ELIGIBLE" | "INELIGIBLE" = "ELIGIBLE";
+let eligibilityEvidence: Record<string, string> = {
+  channel_basis: "VERIFIED_WRITTEN_CONSENT",
+  recipient: "owner@example.test",
+  controller: "Corner Shop Labs Ltd",
+  channel: "EMAIL",
+  purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+  evidence_timestamp: "2026-08-20T09:00:00+02:00",
+  evidence_source: "consent:owner-record-1234",
+};
+let revokeEligibilityAfterFirstRead = false;
+let siteReadCount = 0;
 let existingMessage: {
   id: string;
   status: string;
@@ -31,6 +44,7 @@ let existingDispatch: {
   workflowRunId: string | null;
 } | null = null;
 let paused = false;
+let leadPaused = false;
 const auditEvents: Array<Record<string, unknown>> = [];
 const operatorAuditEvents: Array<Record<string, unknown>> = [];
 const workflowStart = mock(async () => ({ runId: "wrun_test_1" }));
@@ -92,6 +106,35 @@ function whereMatches(
     return false;
   }
   return true;
+}
+
+function siteRecord() {
+  siteReadCount += 1;
+  const currentEligibilityState =
+    revokeEligibilityAfterFirstRead && siteReadCount > 1
+      ? "INELIGIBLE"
+      : eligibilityState;
+  return {
+    id: "site_1",
+    email: "bonjour@example.test",
+    leadContactEmail: "owner@example.test",
+    status: "PREVIEW_READY",
+    vertical,
+    attributes: {
+      leadEligibility: {
+        state: currentEligibilityState,
+        evidence: eligibilityEvidence,
+        updatedAt: "2026-08-19T08:00:00.000Z",
+        updatedBy: "operator:operator_1",
+      },
+    },
+    updatedAt: new Date("2026-08-19T08:00:00.000Z"),
+    auditEvents: reviewed
+      ? [{ createdAt: new Date("2026-08-19T08:01:00.000Z") }]
+      : [],
+    outreachMessages: existingMessage ? [existingMessage] : [],
+    outreachDispatches: existingDispatch ? [existingDispatch] : [],
+  };
 }
 
 const outreachDispatchApi = {
@@ -169,31 +212,31 @@ mock.module("@/lib/outreach", () => outreachTestModule);
 mock.module("@/lib/db", () => ({
   getDb: () => ({
     site: {
-      findUnique: async () => ({
-        id: "site_1",
-        email: "bonjour@example.test",
-        leadContactEmail: "owner@example.test",
-        status: "PREVIEW_READY",
-        vertical,
-        updatedAt: new Date("2026-08-19T08:00:00.000Z"),
-        auditEvents: reviewed
-          ? [{ createdAt: new Date("2026-08-19T08:01:00.000Z") }]
-          : [],
-        outreachMessages: existingMessage ? [existingMessage] : [],
-        outreachDispatches: existingDispatch ? [existingDispatch] : [],
-      }),
+      findUnique: async () => siteRecord(),
     },
     operatorSetting: {
       findUnique: async () => (paused ? { value: true } : null),
+      findMany: async () => [
+        ...(paused ? [{ key: "outreach.paused", value: true }] : []),
+        ...(leadPaused
+          ? [{ key: "outreach.paused.site.site_1", value: true }]
+          : []),
+      ],
       upsert: async ({
+        where,
         update,
         create,
       }: {
+        where: { key: string };
         update: { value: boolean };
         create: { value: boolean };
       }) => {
-        paused = (paused ? update : create).value;
-        return { value: paused };
+        const next = (where.key === "outreach.paused" ? paused : leadPaused)
+          ? update.value
+          : create.value;
+        if (where.key === "outreach.paused") paused = next;
+        else leadPaused = next;
+        return { value: next };
       },
     },
     operatorAuditEvent: {
@@ -214,6 +257,10 @@ mock.module("@/lib/db", () => ({
         | Array<Promise<unknown>>
         | ((transaction: {
             $queryRaw: () => Promise<Array<{ acquired: boolean }>>;
+            $executeRaw: () => Promise<number>;
+            site: {
+              findUnique: () => Promise<ReturnType<typeof siteRecord>>;
+            };
             outreachDispatch: typeof outreachDispatchApi;
             auditEvent: {
               create: (input: {
@@ -222,6 +269,7 @@ mock.module("@/lib/db", () => ({
             };
             operatorSetting: {
               upsert: (input: {
+                where: { key: string };
                 update: { value: boolean };
                 create: { value: boolean };
               }) => Promise<{ value: boolean }>;
@@ -237,6 +285,8 @@ mock.module("@/lib/db", () => ({
         if (Array.isArray(operation)) return Promise.all(operation);
         return operation({
           $queryRaw: async () => [{ acquired: true }],
+          $executeRaw: async () => 0,
+          site: { findUnique: async () => siteRecord() },
           outreachDispatch: outreachDispatchApi,
           auditEvent: {
             create: async ({ data }) => {
@@ -245,9 +295,15 @@ mock.module("@/lib/db", () => ({
             },
           },
           operatorSetting: {
-            upsert: async ({ update, create }) => {
-              paused = (paused ? update : create).value;
-              return { value: paused };
+            upsert: async ({ where, update, create }) => {
+              const next = (
+                where.key === "outreach.paused" ? paused : leadPaused
+              )
+                ? update.value
+                : create.value;
+              if (where.key === "outreach.paused") paused = next;
+              else leadPaused = next;
+              return { value: next };
             },
           },
           operatorAuditEvent: {
@@ -268,20 +324,30 @@ mock.module("@/lib/db", () => ({
   }),
 }));
 
-const { POST } = await import(
-  "@/app/api/admin/leads/[slug]/outreach/route"
-);
-const { POST: POSTPause } = await import(
-  "@/app/api/admin/outreach/pause/route"
-);
+const { POST } = await import("@/app/api/admin/leads/[slug]/outreach/route");
+const { POST: POSTPause } =
+  await import("@/app/api/admin/outreach/pause/route");
 
 describe("explicit operator outreach action", () => {
   beforeEach(() => {
     reviewed = true;
     vertical = "RESTAURANT";
+    eligibilityState = "ELIGIBLE";
+    eligibilityEvidence = {
+      channel_basis: "VERIFIED_WRITTEN_CONSENT",
+      recipient: "owner@example.test",
+      controller: "Corner Shop Labs Ltd",
+      channel: "EMAIL",
+      purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+      evidence_timestamp: "2026-08-20T09:00:00+02:00",
+      evidence_source: "consent:owner-record-1234",
+    };
+    revokeEligibilityAfterFirstRead = false;
+    siteReadCount = 0;
     existingMessage = null;
     existingDispatch = null;
     paused = false;
+    leadPaused = false;
     dispatchRow = null;
     auditEvents.length = 0;
     operatorAuditEvents.length = 0;
@@ -306,9 +372,35 @@ describe("explicit operator outreach action", () => {
       {
         type: "outreach.paused",
         actor: "operator:operator_1",
-        metadata: { paused: true },
+        metadata: { paused: true, scope: "global", siteId: null },
       },
     ]);
+  });
+
+  it("persists a per-lead pause and blocks only that reviewed lead", async () => {
+    const pauseResponse = await POSTPause(
+      new Request("https://cornershop.dev/api/admin/outreach/pause", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://cornershop.dev",
+        },
+        body: JSON.stringify({ paused: true, siteSlug: "chez-lea" }),
+      }),
+    );
+    const sendResponse = await POST(
+      request("https://cornershop.dev"),
+      context(),
+    );
+
+    expect(pauseResponse.status).toBe(200);
+    expect(leadPaused).toBe(true);
+    expect(paused).toBe(false);
+    expect(sendResponse.status).toBe(409);
+    expect(operatorAuditEvents[0]).toMatchObject({
+      type: "outreach.paused",
+      metadata: { paused: true, scope: "lead", siteId: "site_1" },
+    });
   });
 
   it("rejects a cookie-authorized mutation without same-origin evidence", async () => {
@@ -353,10 +445,7 @@ describe("explicit operator outreach action", () => {
       status: "QUEUED",
       workflowRunId: "wrun_existing",
     };
-    const response = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+    const response = await POST(request("https://cornershop.dev"), context());
     const payload = (await response.json()) as Record<string, unknown>;
 
     expect(response.status).toBe(200);
@@ -383,15 +472,117 @@ describe("explicit operator outreach action", () => {
     ]);
   });
 
-  it("never dispatches the gated Beauty vertical", async () => {
-    vertical = "BEAUTY";
-    const response = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+  it.each(["BEAUTY", "FOOD_RETAIL", "LOCAL_SERVICE"])(
+    "never dispatches the private %s vertical",
+    async (privateVertical) => {
+      vertical = privateVertical;
+      const response = await POST(request("https://cornershop.dev"), context());
+
+      expect(response.status).toBe(409);
+      expect(workflowStart).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects unknown and explicitly ineligible leads before reserving", async () => {
+    eligibilityState = "UNKNOWN";
+    eligibilityEvidence = {};
+    const unknown = await POST(request("https://cornershop.dev"), context());
+    const unknownPayload = (await unknown.json()) as Record<string, unknown>;
+
+    eligibilityState = "INELIGIBLE";
+    eligibilityEvidence = {
+      contact_basis: "Operator marked contact ineligible",
+      evidence_source: "Manual review",
+    };
+    const ineligible = await POST(request("https://cornershop.dev"), context());
+    const ineligiblePayload = (await ineligible.json()) as Record<
+      string,
+      unknown
+    >;
+
+    expect(unknown.status).toBe(409);
+    expect(unknownPayload).toMatchObject({ reason: "unknown" });
+    expect(ineligible.status).toBe(409);
+    expect(ineligiblePayload).toMatchObject({ reason: "ineligible" });
+    expect(workflowStart).not.toHaveBeenCalled();
+    expect(dispatchRow).toBeNull();
+  });
+
+  it.each([
+    {
+      label: "generic corporate eligibility",
+      evidence: { contact_basis: "generic corporate" },
+      reason: "channel_basis_required",
+    },
+    {
+      label: "public-source evidence",
+      evidence: {
+        channel_basis: "VERIFIED_WRITTEN_CONSENT",
+        recipient: "owner@example.test",
+        controller: "Corner Shop Labs Ltd",
+        channel: "EMAIL",
+        purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+        evidence_timestamp: "2026-08-20T09:00:00+02:00",
+        evidence_source: "https://directory.example.test/owner",
+      },
+      reason: "evidence_required",
+    },
+    {
+      label: "soft opt-in without collection opt-out proof",
+      evidence: {
+        channel_basis: "VERIFIED_SOFT_OPT_IN",
+        recipient: "owner@example.test",
+        controller: "Corner Shop Labs Ltd",
+        channel: "EMAIL",
+        purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+        evidence_timestamp: "2026-08-20T09:00:00+02:00",
+        evidence_source: "crm:soft-opt-in-1234",
+        customer_or_sale_evidence: "crm:sale-1234",
+      },
+      reason: "evidence_required",
+    },
+    {
+      label: "evidence for another controller",
+      evidence: {
+        ...eligibilityEvidence,
+        controller: "Another Controller Ltd",
+      },
+      reason: "controller_mismatch",
+    },
+    {
+      label: "future-dated evidence",
+      evidence: {
+        ...eligibilityEvidence,
+        evidence_timestamp: "2099-08-20T09:00:00+02:00",
+      },
+      reason: "evidence_required",
+    },
+  ])(
+    "rejects $label before queue authorization",
+    async ({ evidence, reason }) => {
+      eligibilityEvidence = evidence as unknown as Record<string, string>;
+
+      const response = await POST(request("https://cornershop.dev"), context());
+      const payload = (await response.json()) as Record<string, unknown>;
+
+      expect(response.status).toBe(409);
+      expect(payload).toMatchObject({ reason });
+      expect(workflowStart).not.toHaveBeenCalled();
+      expect(dispatchRow).toBeNull();
+    },
+  );
+
+  it("rechecks eligibility inside the reservation transaction", async () => {
+    eligibilityState = "ELIGIBLE";
+    revokeEligibilityAfterFirstRead = true;
+
+    const response = await POST(request("https://cornershop.dev"), context());
+    const payload = (await response.json()) as Record<string, unknown>;
 
     expect(response.status).toBe(409);
+    expect(payload).toMatchObject({ reason: "ineligible" });
     expect(workflowStart).not.toHaveBeenCalled();
+    expect(dispatchRow).toBeNull();
   });
 
   it("does not start again when the initial message already exists", async () => {
@@ -416,10 +607,7 @@ describe("explicit operator outreach action", () => {
 
   it("blocks both unreviewed and globally paused sends", async () => {
     reviewed = false;
-    const unreviewed = await POST(
-      request("https://cornershop.dev"),
-      context(),
-    );
+    const unreviewed = await POST(request("https://cornershop.dev"), context());
     reviewed = true;
     paused = true;
     const globallyPaused = await POST(

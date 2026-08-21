@@ -2,12 +2,18 @@ import {
   normalizeImportSource,
   storedImportSource,
 } from "@/lib/import-identity";
-import { restaurantLinkKeywordHints } from "@/lib/verticals/restaurant/providers";
+import { Vertical } from "@/generated/prisma/enums";
+import {
+  evaluateLeadCategoryFit,
+  resolveLeadDiscoveryAdapter,
+} from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
+import { fetchPublicHtml } from "@/lib/importer";
 
 /**
  * Cheap homepage signals only. A local runner cannot afford Lighthouse or a
  * headless browser for 50 businesses: no LCP/CLS, no painted layout, and no
- * JS-rendered menu. Scoring uses the first HTML response, headers, and href
+ * JS-rendered catalog. Scoring uses the first HTML response, headers, and href
  * text.
  */
 export const LEAD_DISCOVERY_CHEAP_CHECKS = [
@@ -16,15 +22,15 @@ export const LEAD_DISCOVERY_CHEAP_CHECKS = [
   "viewport meta present",
   "viewport is not a fixed desktop width",
   "frameset or Flash markup",
-  "menu/carte href or link text",
-  "booking/reservation href, text, or known provider",
+  "vertical-specific catalog href or text",
+  "vertical-specific conversion href, text, or known provider",
   "document title",
   "html byte size and script tag count",
   "Last-Modified header when the origin sends one",
 ] as const;
 
 export const LEAD_DISCOVERY_USER_AGENT =
-  "Cornershopdev Lead Discovery/1.0 (+https://cornershop.dev; local restaurant discovery)";
+  "Cornershopdev Lead Discovery/2.0 (+https://cornershop.dev; local business discovery)";
 
 export type LeadDiscoveryProvider = "google_places" | "nominatim";
 
@@ -35,10 +41,16 @@ export type HomepageSignals = {
   hasViewport: boolean;
   isDesktopOnlyViewport: boolean;
   hasDesktopOnlyMarkup: boolean;
+  hasCatalogHint: boolean;
+  hasConversionHint: boolean;
+  hasBusinessJsonLd: boolean;
+  /** @deprecated Read `hasCatalogHint`; retained for stored/test compatibility. */
   hasMenuHint: boolean;
+  /** @deprecated Read `hasConversionHint`; retained for stored/test compatibility. */
   hasBookingHint: boolean;
   hasTitle: boolean;
   hasMetaDescription: boolean;
+  /** @deprecated Read `hasBusinessJsonLd`; retained for stored/test compatibility. */
   hasRestaurantJsonLd: boolean;
   scriptCount: number;
   htmlBytes: number;
@@ -59,8 +71,6 @@ export type ProspectIdentity = {
   sourceUrl: string | null;
 };
 
-const MAX_HTML_BYTES = 1_500_000;
-const MAX_REDIRECTS = 3;
 const MAX_PAGE_TEXT_CHARS = 8_000;
 
 export function buildProspectIdentity(input: {
@@ -88,19 +98,32 @@ export function buildProspectIdentity(input: {
 }
 
 export function scoreWebsiteQuality(input: {
+  vertical?: VerticalId;
   hasWebsite: boolean;
   homepage: HomepageSignals | null;
+  categories?: string[];
 }): SiteQualityScore {
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const reasons: string[] = [];
   let score = 100;
+  if (
+    evaluateLeadCategoryFit(vertical, input.categories ?? []) === "mismatch"
+  ) {
+    score -= 12;
+    reasons.push(
+      `Listing categories do not confirm a ${adapter.eligibility.categoryLabel}`,
+    );
+  }
 
   if (!input.hasWebsite) {
-    return clampScore(60, ["No public website listed"]);
+    return clampScore(score - 40, [...reasons, "No public website listed"]);
   }
 
   const homepage = input.homepage;
   if (!homepage || !homepage.isFetched) {
-    return clampScore(45, [
+    return clampScore(score - 55, [
+      ...reasons,
       "Website listed but the homepage did not respond",
     ]);
   }
@@ -120,13 +143,15 @@ export function scoreWebsiteQuality(input: {
     score -= 10;
     reasons.push("Homepage uses frameset or Flash");
   }
-  if (!homepage.hasMenuHint) {
+  if (!homepage.hasCatalogHint) {
     score -= 8;
-    reasons.push("No menu link found on the homepage");
+    reasons.push(
+      `No ${adapter.homepage.catalogLabel} link found on the homepage`,
+    );
   }
-  if (!homepage.hasBookingHint) {
+  if (!homepage.hasConversionHint) {
     score -= 8;
-    reasons.push("No booking or reservation link found");
+    reasons.push(`No ${adapter.homepage.conversionLabel} link found`);
   }
   if (!homepage.hasTitle) {
     score -= 5;
@@ -155,56 +180,40 @@ export type DiscoveryFetch = (
 
 export async function fetchHomepageSignals(
   rawUrl: string,
-  fetchImpl: DiscoveryFetch = fetch,
+  vertical: VerticalId = Vertical.RESTAURANT,
+  fetchHtml: typeof fetchPublicHtml = fetchPublicHtml,
 ): Promise<HomepageSignals> {
   const empty = emptyHomepageSignals();
-  let url: URL;
   try {
-    url = new URL(rawUrl);
-  } catch {
-    return empty;
-  }
-  if (!isPublicHttpUrl(url)) return empty;
-
-  try {
-    for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
-      const response = await fetchImpl(url, {
-        headers: {
-          Accept: "text/html,application/xhtml+xml",
-          "User-Agent": LEAD_DISCOVERY_USER_AGENT,
-        },
-        redirect: "manual",
-        signal: AbortSignal.timeout(8_000),
-      });
-
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get("location");
-        if (!location) return empty;
-        const next = new URL(location, url);
-        if (!isPublicHttpUrl(next)) return empty;
-        url = next;
-        continue;
-      }
-
-      if (!response.ok) return empty;
-      const contentType = response.headers.get("content-type") ?? "";
-      if (!contentType.includes("text/html")) return empty;
-
-      const html = await readLimitedBody(response);
-      return parseHomepageSignals(html, url, response.headers.get("last-modified"));
-    }
+    const url = new URL(rawUrl);
+    if (!isHttpUrl(url)) return empty;
   } catch {
     return empty;
   }
 
-  return empty;
+  try {
+    const result = await fetchHtml(rawUrl, {
+      userAgent: LEAD_DISCOVERY_USER_AGENT,
+      timeoutMs: 8_000,
+    });
+    return parseHomepageSignals(
+      result.html,
+      result.finalUrl,
+      result.lastModifiedAt,
+      vertical,
+    );
+  } catch {
+    return empty;
+  }
 }
 
 export function parseHomepageSignals(
   html: string,
   finalUrl: URL,
   lastModifiedHeader: string | null = null,
+  vertical: VerticalId = Vertical.RESTAURANT,
 ): HomepageSignals {
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const viewport = metaContent(html, "viewport");
   const title =
     decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") ||
@@ -213,6 +222,16 @@ export function parseHomepageSignals(
     metaContent(html, "description") || metaContent(html, "og:description");
   const pageText = stripMarkup(html).slice(0, MAX_PAGE_TEXT_CHARS);
 
+  const hasCatalogHint = adapter.homepage.catalogPattern.test(
+    html.slice(0, 250_000),
+  );
+  const hasConversionHint = adapter.homepage.conversionPattern.test(
+    html.slice(0, 250_000),
+  );
+  const hasBusinessJsonLd = detectBusinessJsonLd(
+    html,
+    adapter.homepage.structuredDataTypes,
+  );
   return {
     isFetched: true,
     finalUrl: finalUrl.toString(),
@@ -220,12 +239,16 @@ export function parseHomepageSignals(
     hasViewport: viewport.length > 0,
     isDesktopOnlyViewport: isDesktopOnlyViewport(viewport),
     hasDesktopOnlyMarkup:
-      /<frameset\b/i.test(html) || /shockwave-flash|application\/x-shockwave-flash/i.test(html),
-    hasMenuHint: detectMenuHint(html),
-    hasBookingHint: detectBookingHint(html),
+      /<frameset\b/i.test(html) ||
+      /shockwave-flash|application\/x-shockwave-flash/i.test(html),
+    hasCatalogHint,
+    hasConversionHint,
+    hasBusinessJsonLd,
+    hasMenuHint: hasCatalogHint,
+    hasBookingHint: hasConversionHint,
     hasTitle: title.length > 0,
     hasMetaDescription: metaDescription.length > 0,
-    hasRestaurantJsonLd: detectRestaurantJsonLd(html),
+    hasRestaurantJsonLd: hasBusinessJsonLd,
     scriptCount: (html.match(/<script\b/gi) ?? []).length,
     htmlBytes: new TextEncoder().encode(html).length,
     lastModifiedAt: lastModifiedHeader,
@@ -243,6 +266,9 @@ function emptyHomepageSignals(): HomepageSignals {
     hasViewport: false,
     isDesktopOnlyViewport: false,
     hasDesktopOnlyMarkup: false,
+    hasCatalogHint: false,
+    hasConversionHint: false,
+    hasBusinessJsonLd: false,
     hasMenuHint: false,
     hasBookingHint: false,
     hasTitle: false,
@@ -265,30 +291,17 @@ function normalizeOptionalWebsite(value: string | null): string | null {
     const url = new URL(
       /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
     );
-    if (!isPublicHttpUrl(url)) return null;
+    if (!isHttpUrl(url)) return null;
     return url.toString();
   } catch {
     return null;
   }
 }
 
-function isPublicHttpUrl(url: URL): boolean {
-  if (!["http:", "https:"].includes(url.protocol)) return false;
-  const hostname = url.hostname.toLowerCase();
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
-  ) {
-    return false;
-  }
-  if (
-    /^(127\.|10\.|192\.168\.|169\.254\.)/.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-  ) {
-    return false;
-  }
-  return true;
+function isHttpUrl(url: URL): boolean {
+  return (
+    ["http:", "https:"].includes(url.protocol) && !url.username && !url.password
+  );
 }
 
 function isDesktopOnlyViewport(content: string): boolean {
@@ -298,60 +311,32 @@ function isDesktopOnlyViewport(content: string): boolean {
   return width ? Number(width) >= 980 : false;
 }
 
-function detectMenuHint(html: string): boolean {
-  const sample = html.slice(0, 250_000);
-  if (
-    /href=["'][^"']*(?:\/menu\b|\/menus\b|\/carte\b|\/speise|\/carta\b)[^"']*["']/i.test(
-      sample,
-    )
-  ) {
-    return true;
-  }
-  return /<a\b[^>]*>[\s\S]{0,80}\b(?:menu|menus|la carte|carte|speisekarte)\b[\s\S]{0,80}<\/a>/i.test(
-    sample,
-  );
-}
-
-function detectBookingHint(html: string): boolean {
-  const sample = html.slice(0, 250_000).toLowerCase();
-  if (
-    restaurantLinkKeywordHints.some(
-      (hint) => hint.type === "booking" && hint.pattern.test(sample),
-    )
-  ) {
-    return true;
-  }
-  return /opentable|sevenrooms|resy|thefork|lafourchette|quandoo|zenchef|bookatable/.test(
-    sample,
-  );
-}
-
-function detectRestaurantJsonLd(html: string): boolean {
+function detectBusinessJsonLd(html: string, typePattern: RegExp): boolean {
   const scriptPattern =
     /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   for (const match of html.matchAll(scriptPattern)) {
     const raw = match[1]?.trim();
     if (!raw) continue;
     try {
-      if (jsonLdHasRestaurantType(JSON.parse(raw))) return true;
+      if (jsonLdHasBusinessType(JSON.parse(raw), typePattern)) return true;
     } catch {
-      // Homepage JSON-LD is often invalid; a parse failure is not a restaurant type.
+      // Homepage JSON-LD is often invalid; a parse failure is not evidence.
     }
   }
   return false;
 }
 
-function jsonLdHasRestaurantType(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(jsonLdHasRestaurantType);
+function jsonLdHasBusinessType(value: unknown, typePattern: RegExp): boolean {
+  if (Array.isArray(value)) {
+    return value.some((entry) => jsonLdHasBusinessType(entry, typePattern));
+  }
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  if (jsonLdHasRestaurantType(record["@graph"])) return true;
+  if (jsonLdHasBusinessType(record["@graph"], typePattern)) return true;
   const type = record["@type"];
   const types = Array.isArray(type) ? type : [type];
   return types.some(
-    (entry) =>
-      typeof entry === "string" &&
-      /^(Restaurant|LocalBusiness|FoodEstablishment)$/i.test(entry),
+    (entry) => typeof entry === "string" && typePattern.test(entry),
   );
 }
 
@@ -406,23 +391,4 @@ function stripMarkup(html: string): string {
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]+>/g, " "),
   );
-}
-
-async function readLimitedBody(response: Response): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let html = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > MAX_HTML_BYTES) {
-      await reader.cancel();
-      break;
-    }
-    html += decoder.decode(value, { stream: true });
-  }
-  return html + decoder.decode();
 }

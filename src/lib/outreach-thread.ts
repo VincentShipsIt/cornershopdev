@@ -1,3 +1,7 @@
+import { Vertical } from "@/generated/prisma/enums";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
+
 export const OUTREACH_THREAD_PREFIX = "lead:";
 export const OUTBOUND_RFC_MESSAGE_DOMAIN = "send.restofront.com";
 
@@ -14,8 +18,14 @@ export function outreachThreadKey(siteId: string): string {
   return `${OUTREACH_THREAD_PREFIX}${siteId}`;
 }
 
-export function outboundRfcMessageId(messageId: string): string {
-  return `<${messageId}@${OUTBOUND_RFC_MESSAGE_DOMAIN}>`;
+export function outboundRfcMessageId(
+  messageId: string,
+  vertical: VerticalId = Vertical.RESTAURANT,
+): string {
+  const from = resolveVerticalConfig(vertical).marketing.email?.from;
+  const address = from ? extractEmailAddress(from) : null;
+  const domain = address?.slice(address.lastIndexOf("@") + 1);
+  return `<${messageId}@${domain || OUTBOUND_RFC_MESSAGE_DOMAIN}>`;
 }
 
 export function normalizeRfcMessageId(value: string): string {

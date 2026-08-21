@@ -10,15 +10,15 @@ Never copy production database or AWS credentials into pull-request builds.
 CI uses non-connecting placeholders; runtime credentials are loaded from
 encrypted SSM parameters on the EC2 host.
 
-| Service | Production isolation | Runtime variables |
-| --- | --- | --- |
-| PostgreSQL | Dedicated database and login on the existing private RDS instance | `DATABASE_URL` |
-| Workflow | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency | `WORKFLOW_*` |
-| Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
-| Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
-| Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
-| Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
-| Restofront outreach | Explicit operator send, Workflow follow-up, signed Resend delivery events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
+| Service         | Production isolation                                                                  | Runtime variables                                       |
+| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| PostgreSQL      | Dedicated database and login on the existing private RDS instance                     | `DATABASE_URL`                                          |
+| Workflow        | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency              | `WORKFLOW_*`                                            |
+| Redis           | Dedicated container and persistent Docker volume, not published to the host           | `REDIS_URL`                                             |
+| Images          | Private versioned S3 bucket served through CloudFront OAC                             | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL`         |
+| Billing         | Stripe Checkout, signed webhooks, and Customer Portal                                 | `STRIPE_*`, `CLAIM_TOKEN_SECRET`                        |
+| Operator alerts | Durable PostgreSQL outbox delivered through Resend                                    | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY`               |
+| Niche outreach  | Explicit operator send, Workflow follow-up, signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -65,12 +65,62 @@ Readiness also checks the operator-alert configuration and durable queue. An
 exhausted alert or a due failed delivery returns `503` with instructions to run
 the dispatcher; recipients and provider errors are never returned.
 
-## Restofront outreach preflight
+## Multi-vertical lead discovery and outreach preflight
 
 Outreach remains disabled until the operator has reviewed the private preview
 and explicitly confirms the initial send. Creating or reopening a lead never
-sends an email. The global pause in `/admin` is checked before every Workflow
-send and every pause/resume change is written to the operator audit log.
+sends an email. The global pause and each lead's own pause in `/admin` are
+checked inside the same delivery fence before every Workflow send; every
+pause/resume change is written to the operator audit log.
+
+Discovery requires a dedicated adapter for every `Vertical` enum entry. It does
+not reuse restaurant category, menu, booking, or structured-data heuristics for
+another niche. Preview the query, score, evidence, and preview action without
+writes first:
+
+```bash
+bun run leads:discover -- --vertical restaurant --city Valletta
+bun run leads:discover -- --vertical beauty --city Valletta
+```
+
+`--execute` requires `OPERATOR_LEAD_INGEST_TOKEN`. Web-backed candidates run
+through the vertical's real import/generation pipeline and persist a private
+preview; place-only candidates remain prospects until an operator supplies a
+source. Redirected sources, preview content, discovery/audit metadata, and
+eligibility are committed to one canonical site in one serializable
+transaction. Execute never sends outreach. It records the adapter, every
+provider/query pair actually executed, and listing categories,
+an operator-owned `UNKNOWN | ELIGIBLE | INELIGIBLE` field and evidence fields.
+These are operational evidence, not legal conclusions. Electronic outreach is
+fail-closed unless `channel_basis` is `VERIFIED_WRITTEN_CONSENT` or
+`VERIFIED_SOFT_OPT_IN` and the record binds the exact private recipient,
+controller, `EMAIL` channel, `CLAIM_INVITATION_AND_FOLLOW_UP` purpose,
+offset-aware timestamp, and a private `crm:`, `consent:`, `ticket:`, or `dms:`
+evidence reference. `controller` must match the exact legal identity configured
+as `OUTREACH_LEGAL_CONTROLLER`; missing, mismatched, or future-dated evidence is
+blocked. Soft opt-in also requires customer/sale evidence and proof that an
+opt-out was offered at collection. Public listings, generic corporate or
+value-first rationales, and a bare `ELIGIBLE` flag do not authorize email.
+The operator can edit the record and must still review the current preview
+before delivery.
+
+Store the exact legal controller at
+`/shipshit/production/cornershopdev/OUTREACH_LEGAL_CONTROLLER`. Deployment
+requires the parameter and the no-send outreach preflight reports only its
+boolean readiness, never the configured identity.
+
+Discovery homepage signals use the same DNS-resolved, connect-pinned,
+redirect-revalidated public fetch boundary as imports. Provider-controlled
+private IPv4/IPv6 literals, private DNS answers, rebinding, and redirects fail
+closed. One normalized source belongs to exactly one vertical; manual and
+automated ingest reject cross-vertical reuse before changing a lead.
+
+Systematic discovery also fails closed unless `GOOGLE_PLACES_API_KEY` or an
+explicit commercial/self-hosted Nominatim-compatible
+`LEAD_DISCOVERY_NOMINATIM_BASE_URL` is configured. The public OSMF
+`nominatim.openstreetmap.org` endpoint is hard-blocked and is never an implicit
+fallback. Store whichever approved provider setting is used under the matching
+`/shipshit/production/cornershopdev/` SSM path.
 
 Store `RESEND_WEBHOOK_SECRET` as a SecureString at
 `/shipshit/production/cornershopdev/RESEND_WEBHOOK_SECRET`. In Resend, register
@@ -82,7 +132,15 @@ https://cornershop.dev/api/webhooks/resend
 
 Subscribe it to `email.sent`, `email.delivered`, `email.bounced`,
 `email.complained`, `email.failed`, and `email.suppressed`. Before approving a
-release, run the read-only preflight inside the exact candidate image with its
+release, also register and enable the inbound endpoint
+`https://cornershop.dev/api/webhooks/resend/inbound` for `email.received`.
+Each launched niche must have its own verified Resend sending domain and a
+verified receiving-capable reply-to domain declared by its vertical config.
+An unlaunched vertical with no niche domain/sender remains discoverable and
+previewable but cannot deliver mail.
+
+Before approving a release, run the read-only preflight inside the exact
+candidate image with its
 deployment env:
 
 ```bash
@@ -94,15 +152,16 @@ docker run --rm \
   run operator:preflight-outreach --environment production
 ```
 
-The command opens read-only PostgreSQL transactions to verify
-`20260819084000_outreach_operator_safety`, its required tables/columns/index,
-and Workflow database reachability; lists Resend webhook metadata; and validates
-the registered Restofront identity (`Vincent from Restofrontapp` with replies
-to `vincent@restofront.com`). It performs no database writes, configuration
-changes, or email sends. Output contains only check names, booleans, the public
-webhook endpoint, and timestamps—never database URLs, API keys, signing
-secrets, or provider error bodies. A failed check is a release blocker; do not
-weaken the preflight or mark it ready from configuration screenshots.
+The command opens read-only PostgreSQL transactions to verify the outreach
+migrations, required tables/columns/indexes (including the private
+`leadContactEmail` boundary), application database, and Workflow database;
+lists Resend delivery/inbound webhook metadata and domain
+capabilities; and validates every launched niche's configured sender and
+reply-to identity plus the approved lead-enumeration provider. It performs no database writes, configuration changes, or
+email sends. Output contains only check names, booleans, public endpoints,
+niche names, and timestamps—never database URLs, API keys, signing secrets,
+mailbox contents, or provider error bodies. A failed check is a release blocker;
+do not weaken the preflight or mark it ready from configuration screenshots.
 
 ## Image storage round trip
 
@@ -201,6 +260,7 @@ Production.
 
    Resolve any returned rows before deploying; the migration itself also fails
    closed on this condition.
+
 4. Check migration state with `bun run db:migrate:status`.
 5. Apply pending migrations with `bun run db:migrate:deploy`.
 6. Redeploy the application and confirm `/api/health/ready` returns `200`.

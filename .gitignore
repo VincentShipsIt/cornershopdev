@@ -44,6 +44,9 @@ yarn-error.log*
 next-env.d.ts
 /src/generated/
 
+# local agent session notes (may contain unreleased operational detail)
+/.agents/sessions/
+
 # codex audit/verification artifacts
 .codex/
 /.swc

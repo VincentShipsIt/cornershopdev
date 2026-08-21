@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { Vertical } from "@/generated/prisma/enums";
 import type { HomepageSignals } from "@/lib/lead-discovery";
+import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@/lib/verticals/types";
 
 export const localSeoFixSchema = z.object({
   id: z.string().min(1).max(40),
@@ -28,6 +32,7 @@ export type LocalSeoCheck = z.infer<typeof localSeoCheckSchema>;
 export type LocalSeoAuditResult = z.infer<typeof localSeoAuditResultSchema>;
 
 export type LocalSeoAuditInput = {
+  vertical?: VerticalId;
   name: string;
   address: string | null;
   phone: string | null;
@@ -50,6 +55,8 @@ export type LocalSeoOutreachEmail = {
 const PHOTO_STALE_MS = 90 * 24 * 60 * 60 * 1000;
 
 export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
   const homepage = input.homepage;
   const pageHaystack = `${homepage?.title ?? ""} ${homepage?.pageText ?? ""}`;
   const checks: LocalSeoCheck[] = [
@@ -74,7 +81,7 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
       failFix: {
         title: "Add specific Google categories",
         detail:
-          "The listing has no specific restaurant category. Set a primary category such as restaurant or the actual cuisine.",
+          `The listing has no specific category for this vertical. Set a primary category such as ${adapter.audit.categoryExample}.`,
       },
     }),
     check({
@@ -90,27 +97,27 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
       },
     }),
     check({
-      id: "menu",
-      label: "Menu link is findable",
+      id: "catalog",
+      label: `${sentenceCase(adapter.homepage.catalogLabel)} is findable`,
       weight: 10,
-      isPassed: Boolean(homepage?.hasMenuHint),
-      passDetail: "A menu or carte link is present on the homepage.",
+      isPassed: Boolean(homepage?.hasCatalogHint),
+      passDetail: `A ${adapter.homepage.catalogLabel} link is present on the homepage.`,
       failFix: {
-        title: "Add a visible menu link",
+        title: `Add a visible ${adapter.homepage.catalogLabel} link`,
         detail:
-          "The homepage does not expose a menu/carte link. Google and diners both look for one above the fold.",
+          `The homepage does not expose a ${adapter.homepage.catalogLabel}. Google and ${adapter.audit.audienceNoun} both look for one above the fold.`,
       },
     }),
     check({
-      id: "booking",
-      label: "Booking or reservation link is findable",
+      id: "conversion",
+      label: `${sentenceCase(adapter.homepage.conversionLabel)} link is findable`,
       weight: 10,
-      isPassed: Boolean(homepage?.hasBookingHint),
-      passDetail: "A booking or reservation path is present on the homepage.",
+      isPassed: Boolean(homepage?.hasConversionHint),
+      passDetail: `A ${adapter.homepage.conversionLabel} path is present on the homepage.`,
       failFix: {
-        title: "Add a reservation or booking link",
+        title: `Add a ${adapter.homepage.conversionLabel} link`,
         detail:
-          "No booking provider or reservation link was found. Keep the existing OpenTable/TheFork/phone flow, but link it from the homepage.",
+          `No ${adapter.homepage.conversionLabel} path was found. Preserve the business's existing provider or phone flow, but link it from the homepage.`,
       },
     }),
     check({
@@ -123,7 +130,7 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
         title: "Upload recent Google photos",
         detail:
           input.photoCount === 0
-            ? "The listing has no photos. Add current interior, exterior, and plate photos from the last 90 days."
+            ? `The listing has no photos. Add current ${adapter.audit.photoSubjects} photos from the last 90 days.`
             : "The newest listing photo is older than 90 days. Add a current set so the profile does not look abandoned.",
       },
     }),
@@ -141,7 +148,7 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
         detail:
           input.reviewCount === null || input.reviewCount === 0
             ? "No Google review count was found. A thin profile loses local pack trust."
-            : `Only ${input.reviewCount} Google reviews were found. Ask recent diners for a genuine review; do not buy ratings.`,
+            : `Only ${input.reviewCount} Google reviews were found. Ask recent ${adapter.audit.audienceNoun} for a genuine review; do not buy ratings.`,
       },
     }),
     check({
@@ -171,14 +178,14 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
     }),
     check({
       id: "jsonld",
-      label: "Restaurant or LocalBusiness JSON-LD is present",
+      label: `${adapter.homepage.structuredDataLabel} JSON-LD is present`,
       weight: 8,
-      isPassed: Boolean(homepage?.hasRestaurantJsonLd),
-      passDetail: "Homepage JSON-LD includes Restaurant or LocalBusiness.",
+      isPassed: Boolean(homepage?.hasBusinessJsonLd),
+      passDetail: `Homepage JSON-LD includes ${adapter.homepage.structuredDataLabel}.`,
       failFix: {
-        title: "Add Restaurant structured data",
+        title: `Add ${adapter.homepage.structuredDataLabel} structured data`,
         detail:
-          "The homepage does not declare Restaurant/LocalBusiness JSON-LD with hours, menu, or booking URLs.",
+          `The homepage does not declare ${adapter.homepage.structuredDataLabel} JSON-LD with hours, catalog, or conversion URLs.`,
       },
     }),
     check({
@@ -205,7 +212,7 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
       failFix: {
         title: "Serve the website over HTTPS",
         detail: input.websiteUrl
-          ? "The homepage is not HTTPS. Browsers and Google both warn on plaintext restaurant sites."
+          ? "The homepage is not HTTPS. Browsers and Google both warn on plaintext business sites."
           : "No public website was listed, so HTTPS cannot be confirmed.",
       },
     }),
@@ -230,11 +237,15 @@ export function auditLocalSeo(input: LocalSeoAuditInput): LocalSeoAuditResult {
 }
 
 export function renderLocalSeoOutreachEmail(input: {
+  vertical?: VerticalId;
   name: string;
   previewUrl: string;
   audit: LocalSeoAuditResult;
 }): LocalSeoOutreachEmail {
-  const name = input.name.trim() || "your restaurant";
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
+  const config = resolveVerticalConfig(vertical);
+  const adapter = resolveLeadDiscoveryAdapter(vertical);
+  const name = input.name.trim() || `your ${adapter.placeSearch.fallbackCategory.replaceAll("_", " ")}`;
   const fixes = input.audit.topFixes.slice(0, 5);
   const lines = [
     `I looked at how ${name} shows up on Google. These are the gaps on the public listing and homepage:`,
@@ -243,15 +254,20 @@ export function renderLocalSeoOutreachEmail(input: {
       (fix, index) => `${index + 1}. ${fix.title} — ${fix.detail}`,
     ),
     "",
-    `I built a mobile-first preview that already covers the on-site items this audit can fix (HTTPS, mobile viewport, Restaurant markup): ${input.previewUrl}`,
+    `I built a mobile-first preview that already covers the on-site items this audit can fix (HTTPS, mobile viewport, ${adapter.homepage.structuredDataLabel} markup): ${input.previewUrl}`,
     "",
     "This is a checklist from public data, not a ranking guarantee and not an award.",
   ];
 
+  const findingCount = fixes.length;
   return {
-    subject: `5 things holding back ${name} on Google`,
+    subject: `${findingCount} ${findingCount === 1 ? "thing" : "things"} ${config.marketing.brand.name} can improve for ${name} on Google`,
     text: lines.join("\n"),
   };
+}
+
+function sentenceCase(value: string): string {
+  return value.replace(/^\w/, (character) => character.toUpperCase());
 }
 
 function check(input: {

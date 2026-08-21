@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 import { z } from "zod";
-import { Vertical } from "@/generated/prisma/enums";
 import { getSuperadminAccess } from "@/lib/authorization";
 import { getDb } from "@/lib/db";
 import { mutableLeadStatuses } from "@/lib/lead-status";
 import {
   markInitialOutreachDispatchFinished,
   markInitialOutreachDispatchStarted,
+  OutreachDispatchAuthorizationError,
   reserveInitialOutreachDispatch,
 } from "@/lib/outreach-dispatch";
+import { evaluateLeadOutreachEligibility } from "@/lib/operator-lead-attributes";
 import { isOperatorReviewCurrent } from "@/lib/operator-lead-status";
 import { isOutreachMessageRetryable } from "@/lib/outreach-delivery-policy";
 import { evaluateOutreachEnvironment } from "@/lib/outreach-readiness";
@@ -21,6 +22,12 @@ import {
 import { limitOperatorOutreachSend } from "@/lib/rate-limit";
 import { isSameOriginMutation } from "@/lib/request-origin";
 import { leadOutreachWorkflow } from "@/workflows/lead-outreach";
+import { isVerticalOutreachConfigured } from "@/lib/lead-generation/registry";
+import {
+  GLOBAL_OUTREACH_PAUSE_KEY,
+  isOutreachPaused,
+  siteOutreachPauseKey,
+} from "@/lib/outreach-pause";
 
 export const runtime = "nodejs";
 
@@ -134,6 +141,7 @@ export async function POST(
         leadContactEmail: true,
         status: true,
         vertical: true,
+        attributes: true,
         updatedAt: true,
         auditEvents: {
           where: { type: "site.review.completed" },
@@ -158,12 +166,22 @@ export async function POST(
       return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
     if (
-      site.vertical !== Vertical.RESTAURANT ||
+      !isVerticalOutreachConfigured(site.vertical) ||
       !mutableLeadStatuses.has(site.status) ||
       !site.leadContactEmail
     ) {
       return NextResponse.json(
         { error: "This lead is not eligible for outreach." },
+        { status: 409 },
+      );
+    }
+    const eligibility = evaluateLeadOutreachEligibility(
+      site.attributes,
+      site.leadContactEmail,
+    );
+    if (!eligibility.allowed) {
+      return NextResponse.json(
+        { error: eligibility.message, reason: eligibility.reason },
         { status: 409 },
       );
     }
@@ -204,11 +222,15 @@ export async function POST(
       );
     }
 
-    const paused = await db.operatorSetting.findUnique({
-      where: { key: "outreach.paused" },
-      select: { value: true },
+    const pauseSettings = await db.operatorSetting.findMany({
+      where: {
+        key: {
+          in: [GLOBAL_OUTREACH_PAUSE_KEY, siteOutreachPauseKey(site.id)],
+        },
+      },
+      select: { key: true, value: true },
     });
-    if (paused?.value === true) {
+    if (isOutreachPaused(pauseSettings, site.id)) {
       return NextResponse.json(
         { error: "Outreach is paused." },
         { status: 409 },
@@ -298,6 +320,12 @@ export async function POST(
         { status: 400 },
       );
     }
+    if (error instanceof OutreachDispatchAuthorizationError) {
+      return NextResponse.json(
+        { error: error.message, reason: error.reason },
+        { status: 409 },
+      );
+    }
     console.error("[operator-outreach] failed", {
       operatorId: operator.id,
       error: error instanceof Error ? error.message : "unknown",
@@ -333,7 +361,7 @@ async function sendOperatorThreadReply(input: {
   if (!site) {
     return NextResponse.json({ error: "Lead not found." }, { status: 404 });
   }
-  if (site.vertical !== Vertical.RESTAURANT || !site.leadContactEmail) {
+  if (!isVerticalOutreachConfigured(site.vertical) || !site.leadContactEmail) {
     return NextResponse.json(
       { error: "This lead is not eligible for outreach." },
       { status: 409 },

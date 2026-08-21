@@ -18,9 +18,11 @@ const hasRequiredResendWebhookActual =
   outreachReadiness.hasRequiredResendWebhook;
 const hasRequiredResendInboundWebhookActual =
   outreachReadiness.hasRequiredResendInboundWebhook;
+const hasRequiredResendDomainsActual =
+  outreachReadiness.hasRequiredResendDomains;
 
 export const outreachReadinessTestModule = {
-  OUTREACH_MIGRATION: outreachReadiness.OUTREACH_MIGRATION,
+  OUTREACH_MIGRATIONS: outreachReadiness.OUTREACH_MIGRATIONS,
   RESTOFRONT_OUTREACH_FROM: outreachReadiness.RESTOFRONT_OUTREACH_FROM,
   RESTOFRONT_OUTREACH_REPLY_TO: outreachReadiness.RESTOFRONT_OUTREACH_REPLY_TO,
   REQUIRED_RESEND_WEBHOOK_EVENTS: [
@@ -31,6 +33,7 @@ export const outreachReadinessTestModule = {
   ],
   hasRequiredResendWebhook: hasRequiredResendWebhookActual,
   hasRequiredResendInboundWebhook: hasRequiredResendInboundWebhookActual,
+  hasRequiredResendDomains: hasRequiredResendDomainsActual,
   evaluateOutreachEnvironment: (
     env: Parameters<typeof evaluateOutreachEnvironmentActual>[0],
     options?: Parameters<typeof evaluateOutreachEnvironmentActual>[1],
@@ -52,6 +55,14 @@ export const outreachReadinessTestModule = {
         webhookEndpoint: "https://cornershop.dev/api/webhooks/resend",
         inboundWebhookEndpoint:
           "https://cornershop.dev/api/webhooks/resend/inbound",
+        verticals: [
+          {
+            vertical: "RESTAURANT" as const,
+            brand: "Restofrontapp",
+            senderConfigured: true,
+            replyToConfigured: true,
+          },
+        ],
       };
     }
     return evaluateOutreachEnvironmentActual(env, options);

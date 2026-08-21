@@ -1,12 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 
 mock.module("server-only", () => ({}));
+process.env.OUTREACH_LEGAL_CONTROLLER = "Corner Shop Labs Ltd";
 
-const {
-  isLeadEligibleForOutreach,
-  isReviewedRestofrontLead,
-  unknownOutreachStepResult,
-} = await import("@/workflows/lead-outreach");
+const { isLeadEligibleForOutreach, isReviewedLead, unknownOutreachStepResult } =
+  await import("@/workflows/lead-outreach");
 
 describe("Workflow delivery result boundary", () => {
   it("turns ambiguous provider acceptance into data before Workflow can rewrite the error", () => {
@@ -111,56 +109,62 @@ describe("isLeadEligibleForOutreach", () => {
   });
 });
 
-describe("reviewed Restofront delivery eligibility", () => {
+describe("reviewed niche delivery eligibility", () => {
   const reviewedAt = "2026-08-19T08:01:00.000Z";
   const site = {
     status: "PREVIEW_READY",
     leadContactEmail: "owner@example.com",
+    attributes: {
+      leadEligibility: {
+        state: "ELIGIBLE",
+        evidence: {
+          channel_basis: "VERIFIED_WRITTEN_CONSENT",
+          recipient: "owner@example.com",
+          controller: "Corner Shop Labs Ltd",
+          channel: "EMAIL",
+          purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+          evidence_timestamp: "2026-08-20T09:00:00+02:00",
+          evidence_source: "consent:owner-record-1234",
+        },
+        updatedAt: "2026-08-19T08:00:00.000Z",
+        updatedBy: "operator:one",
+      },
+    },
     vertical: "RESTAURANT",
     updatedAt: new Date("2026-08-19T08:00:00.000Z"),
-    auditEvents: [
-      { createdAt: new Date("2026-08-19T08:01:00.000Z") },
-    ],
+    auditEvents: [{ createdAt: new Date("2026-08-19T08:01:00.000Z") }],
   };
 
   it("binds delivery to the current reviewed restaurant and recipient", () => {
+    expect(isReviewedLead(site, false, "owner@example.com", reviewedAt)).toBe(
+      true,
+    );
     expect(
-      isReviewedRestofrontLead(
-        site,
-        false,
-        "owner@example.com",
-        reviewedAt,
-      ),
-    ).toBe(true);
-    expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         { ...site, leadContactEmail: "changed@example.com" },
         false,
         "owner@example.com",
         reviewedAt,
       ),
     ).toBe(false);
-    expect(
-      isReviewedRestofrontLead(
-        { ...site, vertical: "BEAUTY" },
-        false,
-        "owner@example.com",
-        reviewedAt,
-      ),
-    ).toBe(false);
+    for (const vertical of ["BEAUTY", "FOOD_RETAIL", "LOCAL_SERVICE"]) {
+      expect(
+        isReviewedLead(
+          { ...site, vertical },
+          false,
+          "owner@example.com",
+          reviewedAt,
+        ),
+      ).toBe(false);
+    }
   });
 
   it("stops after a pause, edit, or replacement review not confirmed for this dispatch", () => {
+    expect(isReviewedLead(site, true, "owner@example.com", reviewedAt)).toBe(
+      false,
+    );
     expect(
-      isReviewedRestofrontLead(
-        site,
-        true,
-        "owner@example.com",
-        reviewedAt,
-      ),
-    ).toBe(false);
-    expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         {
           ...site,
           updatedAt: new Date("2026-08-19T08:02:00.000Z"),
@@ -171,13 +175,71 @@ describe("reviewed Restofront delivery eligibility", () => {
       ),
     ).toBe(false);
     expect(
-      isReviewedRestofrontLead(
+      isReviewedLead(
         {
           ...site,
           updatedAt: new Date("2026-08-19T08:02:00.000Z"),
-          auditEvents: [
-            { createdAt: new Date("2026-08-19T08:03:00.000Z") },
-          ],
+          auditEvents: [{ createdAt: new Date("2026-08-19T08:03:00.000Z") }],
+        },
+        false,
+        "owner@example.com",
+        reviewedAt,
+      ),
+    ).toBe(false);
+  });
+
+  it("stops before invitation issuance when eligibility is unknown or revoked", () => {
+    for (const state of ["UNKNOWN", "INELIGIBLE"] as const) {
+      expect(
+        isReviewedLead(
+          {
+            ...site,
+            attributes: {
+              leadEligibility: {
+                ...site.attributes.leadEligibility,
+                state,
+              },
+            },
+          },
+          false,
+          "owner@example.com",
+          reviewedAt,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it.each([
+    { contact_basis: "generic corporate" },
+    { contact_basis: "value-first outreach" },
+    {
+      channel_basis: "VERIFIED_WRITTEN_CONSENT",
+      recipient: "owner@example.com",
+      controller: "Corner Shop Labs Ltd",
+      channel: "EMAIL",
+      purpose: "CLAIM_INVITATION_AND_FOLLOW_UP",
+      evidence_timestamp: "2026-08-20T09:00:00+02:00",
+      evidence_source: "https://public.example.test/listing",
+    },
+    {
+      ...site.attributes.leadEligibility.evidence,
+      controller: "Another Controller Ltd",
+    },
+    {
+      ...site.attributes.leadEligibility.evidence,
+      evidence_timestamp: "2099-08-20T09:00:00+02:00",
+    },
+  ])("stops before claim issuance for non-channel evidence", (evidence) => {
+    expect(
+      isReviewedLead(
+        {
+          ...site,
+          attributes: {
+            leadEligibility: {
+              ...site.attributes.leadEligibility,
+              evidence,
+            },
+          },
         },
         false,
         "owner@example.com",

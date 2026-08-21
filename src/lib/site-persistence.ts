@@ -2,10 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { catalogPhotoReplacementPosition } from "@/lib/catalog-photo-reconciliation";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
-import {
-  evidenceDigest,
-  integrationUrlDigest,
-} from "@/lib/evidence-digests";
+import { evidenceDigest, integrationUrlDigest } from "@/lib/evidence-digests";
 import { LEGACY_THEME_VERSION, slugify } from "@/lib/site-draft";
 import { restaurantSiteTheme } from "@/lib/site-themes/restaurant/configuration";
 import {
@@ -18,6 +15,13 @@ import {
 } from "@/lib/import-identity";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
+import {
+  mergeOperatorLeadAttributes,
+  preservePersistedLeadEligibility,
+  type LeadDiscoveryRecord,
+  type LeadEligibilityRecord,
+} from "@/lib/operator-lead-attributes";
+import type { LocalSeoAuditResult } from "@/lib/local-seo-audit";
 
 const retryablePrismaCodes = new Set(["P2002", "P2034"]);
 const mutableImportStatuses = new Set(["PROSPECT", "PREVIEW_READY"]);
@@ -95,13 +99,7 @@ export type PersistableSiteDraft = {
     }>;
   }>;
   integrations: Array<{
-    type:
-      | "booking"
-      | "ordering"
-      | "delivery"
-      | "social"
-      | "quote"
-      | "contact";
+    type: "booking" | "ordering" | "delivery" | "social" | "quote" | "contact";
     label: string;
     provider: string | null;
     url: string;
@@ -116,6 +114,15 @@ export type PersistedSiteImport<TDraft extends PersistableSiteDraft> = {
   importJobId: string;
   urls: ImportUrls;
   created: boolean;
+};
+
+export type PersistedLeadIngest = {
+  name: string;
+  phone: string | null;
+  address: string | null;
+  discovery: LeadDiscoveryRecord;
+  audit: LocalSeoAuditResult | null;
+  eligibility: LeadEligibilityRecord;
 };
 
 export type OwnerDraftSaveOptions = {
@@ -140,9 +147,7 @@ export class DraftRevisionConflictError extends Error {
   readonly currentRevision: number | null;
 
   constructor(currentRevision: number | null = null) {
-    super(
-      "This draft was updated elsewhere. Reload before saving again.",
-    );
+    super("This draft was updated elsewhere. Reload before saving again.");
     this.name = "DraftRevisionConflictError";
     this.currentRevision = currentRevision;
   }
@@ -261,17 +266,40 @@ export async function recordImportFailure(
   return message;
 }
 
-export async function persistSiteImport<TDraft extends PersistableSiteDraft>(input: {
+export async function persistSiteImport<
+  TDraft extends PersistableSiteDraft,
+>(input: {
   draft: TDraft;
   vertical: VerticalId;
   source: string;
   importJobId: string;
   actor?: string;
   contactEmail?: string;
+  leadIngest?: PersistedLeadIngest;
 }): Promise<PersistedSiteImport<TDraft>> {
   const db = requireImportDatabase();
   const config = resolveVerticalConfig(input.vertical);
-  const draft = config.draftSchema.parse(input.draft) as TDraft;
+  let draft = config.draftSchema.parse(input.draft) as TDraft;
+  if (input.leadIngest) {
+    const validatedLeadDraft = config.draftSchema.parse({
+      ...draft,
+      name: input.leadIngest.name,
+      phone: input.leadIngest.phone?.trim() || draft.phone,
+      address: input.leadIngest.address?.trim() || draft.address,
+    }) as TDraft;
+    draft = {
+      ...validatedLeadDraft,
+      // Operational lead evidence deliberately sits beside the vertical's
+      // content attributes. Add it after content-schema validation because
+      // Zod strips keys that no storefront renderer owns.
+      attributes: mergeOperatorLeadAttributes(
+        validatedLeadDraft.attributes,
+        input.leadIngest.discovery,
+        input.leadIngest.audit,
+        input.leadIngest.eligibility,
+      ),
+    } as TDraft;
+  }
   const sourceKey = normalizeImportSource(draft.sourceUrl ?? input.source);
   const verticalSlug = input.vertical.toLowerCase();
 
@@ -292,6 +320,8 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
               sourceKey: true,
               sourceUrl: true,
               status: true,
+              vertical: true,
+              attributes: true,
             },
           });
 
@@ -317,6 +347,8 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                   sourceKey: true,
                   sourceUrl: true,
                   status: true,
+                  vertical: true,
+                  attributes: true,
                 },
               });
               if (!collision) {
@@ -344,12 +376,25 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
           if (existing && !mutableImportStatuses.has(existing.status)) {
             throw new ImportConflictError();
           }
+          if (existing && existing.vertical !== input.vertical) {
+            throw new ImportConflictError();
+          }
 
           const site = existing
             ? await tx.site.update({
                 where: { id: existing.id },
                 data: {
-                  ...siteScalarData(draft, input.vertical, sourceKey),
+                  ...siteScalarData(
+                    draft,
+                    input.vertical,
+                    sourceKey,
+                    input.leadIngest
+                      ? (preservePersistedLeadEligibility(
+                          draft.attributes as Record<string, unknown>,
+                          existing.attributes,
+                        ) as Prisma.InputJsonValue)
+                      : undefined,
+                  ),
                   ...(input.contactEmail
                     ? { leadContactEmail: input.contactEmail }
                     : {}),
@@ -360,7 +405,14 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
             : await tx.site.create({
                 data: {
                   slug,
-                  ...siteScalarData(draft, input.vertical, sourceKey),
+                  ...siteScalarData(
+                    draft,
+                    input.vertical,
+                    sourceKey,
+                    input.leadIngest
+                      ? (draft.attributes as Prisma.InputJsonValue)
+                      : undefined,
+                  ),
                   ...(input.contactEmail
                     ? { leadContactEmail: input.contactEmail }
                     : {}),
@@ -384,13 +436,31 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
                 previousStatus: existing?.status ?? null,
                 contactEmailUpdated: Boolean(input.contactEmail),
                 draftContentDigest: evidenceDigest(draft),
-                integrationUrlDigest: integrationUrlDigest(
-                  draft.integrations,
-                ),
+                integrationUrlDigest: integrationUrlDigest(draft.integrations),
               },
               siteId: site.id,
             },
           });
+          if (input.leadIngest) {
+            await tx.auditEvent.create({
+              data: {
+                type: existing
+                  ? "site.lead.ingest.updated"
+                  : "site.lead.ingested",
+                actor: input.actor ?? "system:lead-discovery",
+                metadata: {
+                  sourceKey,
+                  city: input.leadIngest.discovery.city,
+                  score: input.leadIngest.discovery.score,
+                  placeId: input.leadIngest.discovery.placeId,
+                  adapterId: input.leadIngest.discovery.adapterId,
+                  eligibility: input.leadIngest.eligibility.state,
+                  previousStatus: existing?.status ?? null,
+                },
+                siteId: site.id,
+              },
+            });
+          }
           await tx.importJob.update({
             where: { id: input.importJobId },
             data: {
@@ -498,9 +568,7 @@ export async function createOperatorSiteImport<
                 source: storedImportSource(input.source),
                 sourceKey: identity.sourceKey,
                 draftContentDigest: evidenceDigest(draft),
-                integrationUrlDigest: integrationUrlDigest(
-                  draft.integrations,
-                ),
+                integrationUrlDigest: integrationUrlDigest(draft.integrations),
               },
               siteId: site.id,
             },
@@ -520,28 +588,27 @@ export async function createOperatorSiteImport<
             itemCount,
             integrationRows,
             versionCount,
-          ] =
-            await Promise.all([
-              tx.site.findUnique({
-                where: { id: site.id },
-                select: {
-                  slug: true,
-                  eyebrow: true,
-                  status: true,
-                  sourceKey: true,
-                },
-              }),
-              tx.catalogSection.count({ where: { siteId: site.id } }),
-              tx.catalogItem.count({
-                where: { section: { siteId: site.id } },
-              }),
-              tx.integration.findMany({
-                where: { siteId: site.id },
-                orderBy: { position: "asc" },
-                select: { label: true, position: true },
-              }),
-              tx.siteVersion.count({ where: { siteId: site.id } }),
-            ]);
+          ] = await Promise.all([
+            tx.site.findUnique({
+              where: { id: site.id },
+              select: {
+                slug: true,
+                eyebrow: true,
+                status: true,
+                sourceKey: true,
+              },
+            }),
+            tx.catalogSection.count({ where: { siteId: site.id } }),
+            tx.catalogItem.count({
+              where: { section: { siteId: site.id } },
+            }),
+            tx.integration.findMany({
+              where: { siteId: site.id },
+              orderBy: { position: "asc" },
+              select: { label: true, position: true },
+            }),
+            tx.siteVersion.count({ where: { siteId: site.id } }),
+          ]);
           const expectedItemCount = draft.catalogSections.reduce(
             (sum, section) => sum + section.items.length,
             0,
@@ -749,8 +816,7 @@ export async function updateSiteDraft(
                   integrationUrlDigest: integrationUrlDigest(
                     parsed.integrations,
                   ),
-                  publishedSiteVersionIdAtSave:
-                    current.publishedSiteVersionId,
+                  publishedSiteVersionIdAtSave: current.publishedSiteVersionId,
                 },
               },
             });
@@ -796,9 +862,13 @@ function siteScalarData(
   draft: PersistableSiteDraft,
   vertical: VerticalId,
   sourceKey: string | null,
+  trustedOperationalAttributes?: Prisma.InputJsonValue,
 ) {
   return {
     ...siteDraftScalarData(draft, vertical),
+    ...(trustedOperationalAttributes
+      ? { attributes: trustedOperationalAttributes }
+      : {}),
     // Identity and lifecycle columns: only the import path owns these. An owner
     // editing copy must never move a site between verticals, re-point its import
     // identity, or resurrect it into PREVIEW_READY after it has been claimed.
@@ -838,8 +908,7 @@ export function siteDraftScalarData(
     draftTheme: (registeredTheme?.selection ?? {
       id: theme.id,
     }) as Prisma.InputJsonValue,
-    draftThemeVersion:
-      registeredTheme?.version ?? LEGACY_THEME_VERSION,
+    draftThemeVersion: registeredTheme?.version ?? LEGACY_THEME_VERSION,
     draftPalette: draft.palette as Prisma.InputJsonValue,
     autoEnhanceImages: draft.autoEnhanceImages,
     defaultLocale: draft.defaultLocale,
@@ -892,12 +961,7 @@ function toDatabaseIntegrationType(
   value: PersistableSiteDraft["integrations"][number]["type"],
 ): "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL" | "QUOTE" | "CONTACT" {
   return value.toUpperCase() as
-    | "BOOKING"
-    | "ORDERING"
-    | "DELIVERY"
-    | "SOCIAL"
-    | "QUOTE"
-    | "CONTACT";
+    "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL" | "QUOTE" | "CONTACT";
 }
 
 function toDatabaseImageProvenance(

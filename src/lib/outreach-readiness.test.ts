@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
   evaluateOutreachEnvironment,
+  hasRequiredResendDomains,
   hasRequiredResendInboundWebhook,
   hasRequiredResendWebhook,
+  OUTREACH_MIGRATIONS,
   REQUIRED_RESEND_INBOUND_WEBHOOK_EVENTS,
   REQUIRED_RESEND_WEBHOOK_EVENTS,
 } from "@/lib/outreach-readiness";
@@ -12,6 +14,8 @@ const configuredEnvironment = {
   RESEND_API_KEY: "re_private_value",
   RESEND_WEBHOOK_SECRET: "whsec_private_value",
   CLAIM_TOKEN_SECRET: "a-private-value-that-is-at-least-32-characters",
+  OUTREACH_LEGAL_CONTROLLER: "Corner Shop Labs Ltd",
+  GOOGLE_PLACES_API_KEY: "test-google-places-key",
   NEXT_PUBLIC_APP_URL: "https://cornershop.dev",
   WORKFLOW_ENABLED: "true",
   WORKFLOW_TARGET_WORLD: "@workflow/world-postgres",
@@ -22,6 +26,13 @@ const configuredEnvironment = {
 };
 
 describe("outreach environment readiness", () => {
+  it("preflights both mailbox delivery and private-contact migrations", () => {
+    expect(OUTREACH_MIGRATIONS).toEqual([
+      "20260819120000_outreach_inbound_mailbox",
+      "20260820200000_site_contact_privacy_and_catalog_availability",
+    ]);
+  });
+
   it("accepts the registered Restofront identity and complete runtime contract", () => {
     expect(evaluateOutreachEnvironment(configuredEnvironment)).toEqual({
       ready: true,
@@ -30,6 +41,8 @@ describe("outreach environment readiness", () => {
         resendApiKey: true,
         resendWebhookSecret: true,
         claimTokenSecret: true,
+        legalController: true,
+        leadDiscoveryProvider: true,
         workflow: true,
         appOrigin: true,
         sender: true,
@@ -39,6 +52,14 @@ describe("outreach environment readiness", () => {
       webhookEndpoint: "https://cornershop.dev/api/webhooks/resend",
       inboundWebhookEndpoint:
         "https://cornershop.dev/api/webhooks/resend/inbound",
+      verticals: [
+        {
+          vertical: "RESTAURANT",
+          brand: "Restofrontapp",
+          senderConfigured: true,
+          replyToConfigured: true,
+        },
+      ],
     });
   });
 
@@ -60,6 +81,8 @@ describe("outreach environment readiness", () => {
       configuredEnvironment.RESEND_API_KEY,
       configuredEnvironment.RESEND_WEBHOOK_SECRET,
       configuredEnvironment.CLAIM_TOKEN_SECRET,
+      configuredEnvironment.OUTREACH_LEGAL_CONTROLLER,
+      configuredEnvironment.GOOGLE_PLACES_API_KEY,
       configuredEnvironment.WORKFLOW_POSTGRES_URL,
     ]) {
       expect(serialized).not.toContain(value);
@@ -109,6 +132,47 @@ describe("outreach environment readiness", () => {
       expect(readiness.ready).toBe(false);
       expect(readiness.checks.workflow).toBe(false);
     }
+  });
+
+  it("requires a specific configured legal outreach controller", () => {
+    for (const controller of [undefined, "generic corporate"]) {
+      const readiness = evaluateOutreachEnvironment({
+        ...configuredEnvironment,
+        OUTREACH_LEGAL_CONTROLLER: controller,
+      });
+      expect(readiness.ready).toBe(false);
+      expect(readiness.checks.legalController).toBe(false);
+      expect(readiness.missingOrInvalid).toContain("OUTREACH_LEGAL_CONTROLLER");
+    }
+  });
+
+  it("requires an approved lead-enumeration provider and blocks public OSMF Nominatim", () => {
+    for (const providerEnvironment of [
+      {},
+      {
+        LEAD_DISCOVERY_NOMINATIM_BASE_URL:
+          "https://nominatim.openstreetmap.org/search",
+      },
+    ]) {
+      const readiness = evaluateOutreachEnvironment({
+        ...configuredEnvironment,
+        GOOGLE_PLACES_API_KEY: undefined,
+        ...providerEnvironment,
+      });
+      expect(readiness.ready).toBe(false);
+      expect(readiness.checks.leadDiscoveryProvider).toBe(false);
+      expect(readiness.missingOrInvalid).toContain(
+        "GOOGLE_PLACES_API_KEY|LEAD_DISCOVERY_NOMINATIM_BASE_URL",
+      );
+    }
+
+    const selfHosted = evaluateOutreachEnvironment({
+      ...configuredEnvironment,
+      GOOGLE_PLACES_API_KEY: undefined,
+      LEAD_DISCOVERY_NOMINATIM_BASE_URL:
+        "https://nominatim.internal.example/search",
+    });
+    expect(selfHosted.checks.leadDiscoveryProvider).toBe(true);
   });
 });
 
@@ -165,6 +229,39 @@ describe("Resend webhook readiness", () => {
         ],
         expected,
       ),
+    ).toBe(false);
+  });
+});
+
+describe("Resend niche identity readiness", () => {
+  it("requires verified sending and receiving capabilities without sending mail", () => {
+    expect(
+      hasRequiredResendDomains([
+        {
+          name: "send.restofront.com",
+          status: "verified",
+          capabilities: { sending: "enabled", receiving: "disabled" },
+        },
+        {
+          name: "restofront.com",
+          status: "verified",
+          capabilities: { sending: "disabled", receiving: "enabled" },
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      hasRequiredResendDomains([
+        {
+          name: "send.restofront.com",
+          status: "verified",
+          capabilities: { sending: "enabled", receiving: "disabled" },
+        },
+        {
+          name: "restofront.com",
+          status: "pending",
+          capabilities: { sending: "disabled", receiving: "enabled" },
+        },
+      ]),
     ).toBe(false);
   });
 });

@@ -57,6 +57,10 @@ mock.module("@/lib/db", () => ({
 }));
 
 const fakeDb = {
+  $queryRaw: async () => [],
+  $executeRaw: async () => 0,
+  $transaction: async (callback: (transaction: object) => unknown) =>
+    callback(fakeDb),
   outreachMessage: {
     findUnique: async (input: {
       where: { providerMessageId?: string; rfcMessageId?: string };
@@ -86,9 +90,7 @@ const fakeDb = {
                   "in" in value &&
                   Array.isArray((value as { in: unknown[] }).in)
                 ) {
-                  return (value as { in: unknown[] }).in.includes(
-                    message[key],
-                  );
+                  return (value as { in: unknown[] }).in.includes(message[key]);
                 }
                 return message[key] === value;
               }),
@@ -116,14 +118,22 @@ const fakeDb = {
       where: {
         leadContactEmail?: string;
         slug?: { in: string[] };
-        vertical?: string;
+        vertical?: string | { in: string[] };
       };
     }) => {
       return (
         sites.find((site) => {
-          if (input.where.vertical && site.vertical !== input.where.vertical) {
+          if (
+            typeof input.where.vertical === "string" &&
+            site.vertical !== input.where.vertical
+          ) {
             return false;
           }
+          if (
+            typeof input.where.vertical === "object" &&
+            !input.where.vertical.in.includes(site.vertical)
+          )
+            return false;
           if (
             input.where.leadContactEmail &&
             site.leadContactEmail !== input.where.leadContactEmail
@@ -140,6 +150,22 @@ const fakeDb = {
         }) ?? null
       );
     },
+    findMany: async (input: {
+      where: {
+        leadContactEmail?: string;
+        vertical?: { in: string[] };
+      };
+      take: number;
+    }) =>
+      sites
+        .filter(
+          (site) =>
+            (!input.where.leadContactEmail ||
+              site.leadContactEmail === input.where.leadContactEmail) &&
+            (!input.where.vertical ||
+              input.where.vertical.in.includes(site.vertical)),
+        )
+        .slice(0, input.take),
   },
   auditEvent: {
     create: async (input: { data: Record<string, unknown> }) => {
@@ -149,9 +175,7 @@ const fakeDb = {
   },
 };
 
-const { recordInboundOutreachMessage } = await import(
-  "@/lib/outreach-inbound"
-);
+const { recordInboundOutreachMessage } = await import("@/lib/outreach-inbound");
 
 describe("inbound outreach mailbox", () => {
   beforeEach(() => {

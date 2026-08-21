@@ -3,6 +3,10 @@ import {
   type DiscoveryFetch,
   type LeadDiscoveryProvider,
 } from "@/lib/lead-discovery";
+import { Vertical } from "@/generated/prisma/enums";
+import { resolveLeadDiscoveryAdapter } from "@/lib/lead-generation/registry";
+import type { VerticalId } from "@/lib/verticals/types";
+import { resolveVerticalConfig } from "@/lib/verticals/registry";
 
 export type DiscoveredPlace = {
   name: string;
@@ -25,11 +29,16 @@ export type PlaceDiscoveryResult = {
   places: DiscoveredPlace[];
   provider: LeadDiscoveryProvider;
   fallbackReason: string | null;
+  executedQueries: ExecutedPlaceQuery[];
+};
+
+export type ExecutedPlaceQuery = {
+  provider: LeadDiscoveryProvider;
+  query: string;
 };
 
 const GOOGLE_TEXT_SEARCH_URL =
   "https://places.googleapis.com/v1/places:searchText";
-const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const GENERIC_PLACE_TYPES = new Set([
   "point_of_interest",
   "establishment",
@@ -39,147 +48,295 @@ const GENERIC_PLACE_TYPES = new Set([
 ]);
 
 export async function discoverLocalPlaces(input: {
+  vertical?: VerticalId;
   city: string;
   limit: number;
   googlePlacesApiKey?: string | null;
+  nominatimBaseUrl?: string | null;
   fetchImpl?: DiscoveryFetch;
 }): Promise<PlaceDiscoveryResult> {
+  const vertical = input.vertical ?? Vertical.RESTAURANT;
   const fetchImpl = input.fetchImpl ?? fetch;
   const city = input.city.trim();
   const limit = Math.min(100, Math.max(1, input.limit));
   const apiKey = input.googlePlacesApiKey?.trim() || null;
+  const nominatimBaseUrl = approvedNominatimBaseUrl(input.nominatimBaseUrl);
+  const executedQueries: ExecutedPlaceQuery[] = [];
 
   if (apiKey) {
+    let googlePlaces: DiscoveredPlace[] = [];
+    let googleFailure: unknown = null;
     try {
-      const places = await searchGooglePlaces({
+      googlePlaces = await searchGooglePlaces({
+        vertical,
         city,
         limit,
         apiKey,
         fetchImpl,
+        onQuery: (query) =>
+          executedQueries.push({ provider: "google_places", query }),
       });
-      if (places.length > 0) {
-        return { places, provider: "google_places", fallbackReason: null };
-      }
-      return {
-        places: await searchNominatimPlaces({ city, limit, fetchImpl }),
-        provider: "nominatim",
-        fallbackReason: "Google Places returned no restaurants",
-      };
     } catch (error) {
+      googleFailure = error;
+    }
+    if (googlePlaces.length > 0) {
       return {
-        places: await searchNominatimPlaces({ city, limit, fetchImpl }),
-        provider: "nominatim",
-        fallbackReason:
-          error instanceof Error
-            ? error.message
-            : "Google Places request failed",
+        places: googlePlaces,
+        provider: "google_places",
+        fallbackReason: null,
+        executedQueries,
       };
     }
+    if (!nominatimBaseUrl) {
+      if (googleFailure) throw googleFailure;
+      throw new Error(
+        `Google Places returned no ${resolveVerticalConfig(vertical).marketing.audience} and no approved non-public fallback is configured`,
+      );
+    }
+    return {
+      places: await searchNominatimPlaces({
+        vertical,
+        city,
+        limit,
+        baseUrl: nominatimBaseUrl,
+        fetchImpl,
+        onQuery: (query) =>
+          executedQueries.push({ provider: "nominatim", query }),
+      }),
+      provider: "nominatim",
+      fallbackReason: googleFailure
+        ? googleFailure instanceof Error
+          ? googleFailure.message
+          : "Google Places request failed"
+        : `Google Places returned no ${resolveVerticalConfig(vertical).marketing.audience}`,
+      executedQueries,
+    };
   }
 
+  if (!nominatimBaseUrl) throw discoveryProviderRequired();
+
   return {
-    places: await searchNominatimPlaces({ city, limit, fetchImpl }),
+    places: await searchNominatimPlaces({
+      vertical,
+      city,
+      limit,
+      baseUrl: nominatimBaseUrl,
+      fetchImpl,
+      onQuery: (query) =>
+        executedQueries.push({ provider: "nominatim", query }),
+    }),
     provider: "nominatim",
     fallbackReason: null,
+    executedQueries,
   };
 }
 
 export async function searchGooglePlaces(input: {
+  vertical: VerticalId;
   city: string;
   limit: number;
   apiKey: string;
   fetchImpl: DiscoveryFetch;
+  onQuery?: (query: string) => void;
 }): Promise<DiscoveredPlace[]> {
-  const places: DiscoveredPlace[] = [];
-  let pageToken: string | null = null;
+  const adapter = resolveLeadDiscoveryAdapter(input.vertical);
+  const queries = adapter.placeSearch.googleQueries?.(input.city) ?? [
+    {
+      query: adapter.placeSearch.googleQuery(input.city),
+      includedType: adapter.placeSearch.googleIncludedType,
+    },
+  ];
+  const batches: DiscoveredPlace[][] = [];
 
-  while (places.length < input.limit) {
-    const pageSize = Math.min(20, input.limit - places.length);
-    const body: Record<string, unknown> = {
-      textQuery: `restaurants in ${input.city}`,
-      includedType: "restaurant",
-      pageSize,
-      languageCode: "en",
-    };
-    if (pageToken) body.pageToken = pageToken;
+  for (const query of queries) {
+    input.onQuery?.(query.query);
+    const queryPlaces = new Map<string, DiscoveredPlace>();
+    let pageToken: string | null = null;
+    do {
+      const body: Record<string, unknown> = {
+        textQuery: query.query,
+        pageSize: Math.min(20, input.limit),
+        languageCode: "en",
+      };
+      if (query.includedType) body.includedType = query.includedType;
+      if (pageToken) body.pageToken = pageToken;
 
-    const response = await input.fetchImpl(GOOGLE_TEXT_SEARCH_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": input.apiKey,
-        "X-Goog-FieldMask": [
-          "places.id",
-          "places.displayName",
-          "places.formattedAddress",
-          "places.nationalPhoneNumber",
-          "places.internationalPhoneNumber",
-          "places.websiteUri",
-          "places.rating",
-          "places.userRatingCount",
-          "places.types",
-          "places.regularOpeningHours.weekdayDescriptions",
-          "places.photos",
-          "places.editorialSummary",
-          "nextPageToken",
-        ].join(","),
-        "User-Agent": LEAD_DISCOVERY_USER_AGENT,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) {
-      throw new Error(`Google Places returned HTTP ${response.status}`);
-    }
+      const response = await input.fetchImpl(GOOGLE_TEXT_SEARCH_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": input.apiKey,
+          "X-Goog-FieldMask": [
+            "places.id",
+            "places.displayName",
+            "places.formattedAddress",
+            "places.nationalPhoneNumber",
+            "places.internationalPhoneNumber",
+            "places.websiteUri",
+            "places.rating",
+            "places.userRatingCount",
+            "places.types",
+            "places.regularOpeningHours.weekdayDescriptions",
+            "places.photos",
+            "places.editorialSummary",
+            "nextPageToken",
+          ].join(","),
+          "User-Agent": LEAD_DISCOVERY_USER_AGENT,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        throw new Error(`Google Places returned HTTP ${response.status}`);
+      }
 
-    const payload = asRecord(await response.json());
-    const rows = Array.isArray(payload?.places) ? payload.places : [];
-    for (const row of rows) {
-      const place = parseGooglePlace(row, input.city);
-      if (place) places.push(place);
-      if (places.length >= input.limit) break;
-    }
+      const payload = asRecord(await response.json());
+      const rows = Array.isArray(payload?.places) ? payload.places : [];
+      for (const row of rows) {
+        const place = parseGooglePlace(row, input.city);
+        if (place) mergeDiscoveredPlace(queryPlaces, place);
+      }
 
-    const next = asString(payload?.nextPageToken);
-    if (!next || rows.length === 0) break;
-    pageToken = next;
+      pageToken = rows.length > 0 ? asString(payload?.nextPageToken) : null;
+    } while (pageToken && queryPlaces.size < input.limit);
+    batches.push([...queryPlaces.values()]);
   }
 
-  return places;
+  return selectFairPlaces(batches, input.limit);
 }
 
 export async function searchNominatimPlaces(input: {
+  vertical: VerticalId;
   city: string;
   limit: number;
+  baseUrl: URL;
   fetchImpl: DiscoveryFetch;
+  onQuery?: (query: string) => void;
 }): Promise<DiscoveredPlace[]> {
-  const url = new URL(NOMINATIM_SEARCH_URL);
-  url.searchParams.set("q", `restaurant in ${input.city}`);
-  url.searchParams.set("format", "jsonv2");
-  url.searchParams.set("addressdetails", "1");
-  url.searchParams.set("extratags", "1");
-  url.searchParams.set("limit", String(Math.min(50, input.limit)));
-
-  const response = await input.fetchImpl(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": LEAD_DISCOVERY_USER_AGENT,
+  const adapter = resolveLeadDiscoveryAdapter(input.vertical);
+  const queries = adapter.placeSearch.nominatimQueries?.(input.city) ?? [
+    {
+      query: adapter.placeSearch.nominatimQuery(input.city),
+      fallbackCategory: adapter.placeSearch.fallbackCategory,
     },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    throw new Error(`Nominatim returned HTTP ${response.status}`);
-  }
+  ];
+  const batches: DiscoveredPlace[][] = [];
+  for (const query of queries) {
+    input.onQuery?.(query.query);
+    const url = new URL(input.baseUrl);
+    url.searchParams.set("q", query.query);
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("addressdetails", "1");
+    url.searchParams.set("extratags", "1");
+    url.searchParams.set("limit", String(Math.min(50, input.limit)));
 
-  const rows = await response.json();
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map((row) => parseNominatimPlace(row, input.city))
-    .filter((place): place is DiscoveredPlace => place !== null)
-    .slice(0, input.limit);
+    const response = await input.fetchImpl(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": LEAD_DISCOVERY_USER_AGENT,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      throw new Error(`Nominatim returned HTTP ${response.status}`);
+    }
+
+    const rows = await response.json();
+    if (!Array.isArray(rows)) {
+      batches.push([]);
+      continue;
+    }
+    const queryPlaces = new Map<string, DiscoveredPlace>();
+    for (const row of rows) {
+      const place = parseNominatimPlace(
+        row,
+        input.city,
+        query.fallbackCategory,
+      );
+      if (place) mergeDiscoveredPlace(queryPlaces, place);
+    }
+    batches.push([...queryPlaces.values()]);
+  }
+  return selectFairPlaces(batches, input.limit);
 }
 
-function parseGooglePlace(value: unknown, fallbackCity: string): DiscoveredPlace | null {
+function selectFairPlaces(
+  batches: DiscoveredPlace[][],
+  limit: number,
+): DiscoveredPlace[] {
+  const canonical = new Map<string, DiscoveredPlace>();
+  for (const batch of batches) {
+    for (const place of batch) mergeDiscoveredPlace(canonical, place);
+  }
+
+  const selectedIds = new Set<string>();
+  const selected: DiscoveredPlace[] = [];
+  for (let index = 0; selected.length < limit; index += 1) {
+    let foundCandidate = false;
+    for (const batch of batches) {
+      const place = batch[index];
+      if (!place) continue;
+      foundCandidate = true;
+      if (selectedIds.has(place.placeId)) continue;
+      selectedIds.add(place.placeId);
+      selected.push(canonical.get(place.placeId) ?? place);
+      if (selected.length === limit) break;
+    }
+    if (!foundCandidate) break;
+  }
+  return selected;
+}
+
+export function approvedNominatimBaseUrl(
+  rawUrl: string | null | undefined,
+): URL | null {
+  if (!rawUrl?.trim()) return null;
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      hostname === "nominatim.openstreetmap.org" ||
+      hostname.endsWith(".nominatim.openstreetmap.org")
+    ) {
+      return null;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function discoveryProviderRequired(): Error {
+  return new Error(
+    "Lead discovery requires GOOGLE_PLACES_API_KEY or an approved non-public LEAD_DISCOVERY_NOMINATIM_BASE_URL",
+  );
+}
+
+function mergeDiscoveredPlace(
+  places: Map<string, DiscoveredPlace>,
+  incoming: DiscoveredPlace,
+): void {
+  const existing = places.get(incoming.placeId);
+  places.set(
+    incoming.placeId,
+    existing
+      ? {
+          ...existing,
+          categories: [
+            ...new Set([...existing.categories, ...incoming.categories]),
+          ],
+        }
+      : incoming,
+  );
+}
+
+function parseGooglePlace(
+  value: unknown,
+  fallbackCity: string,
+): DiscoveredPlace | null {
   const record = asRecord(value);
   if (!record) return null;
   const placeId = asString(record.id)?.replace(/^places\//, "");
@@ -233,6 +390,7 @@ function parseGooglePlace(value: unknown, fallbackCity: string): DiscoveredPlace
 function parseNominatimPlace(
   value: unknown,
   fallbackCity: string,
+  fallbackCategory: string,
 ): DiscoveredPlace | null {
   const record = asRecord(value);
   if (!record) return null;
@@ -262,7 +420,7 @@ function parseNominatimPlace(
     provider: "nominatim",
     rating: null,
     reviewCount: null,
-    categories: [asString(record.type) ?? "restaurant"].filter(Boolean),
+    categories: [asString(record.type) ?? fallbackCategory].filter(Boolean),
     hours: openingHours ? [{ days: "Listed hours", hours: openingHours }] : [],
     photoCount: 0,
     photoNewestAt: null,
@@ -272,10 +430,17 @@ function parseNominatimPlace(
 
 function cityFromAddress(address: string | null, fallbackCity: string): string {
   if (!address) return fallbackCity;
-  if (address.toLocaleLowerCase("en").includes(fallbackCity.toLocaleLowerCase("en"))) {
+  if (
+    address
+      .toLocaleLowerCase("en")
+      .includes(fallbackCity.toLocaleLowerCase("en"))
+  ) {
     return fallbackCity;
   }
-  const parts = address.split(",").map((part) => part.trim()).filter(Boolean);
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
   return parts.at(-2) ?? fallbackCity;
 }
 
