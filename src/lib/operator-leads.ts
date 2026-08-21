@@ -221,10 +221,18 @@ export async function recordOperatorLeadAction(input: {
   }
   const db = getDb();
   return db.$transaction(async (tx) => {
-    const site = await tx.site.findUnique({
-      where: { slug: input.siteSlug },
-      select: { id: true, attributes: true },
-    });
+    // Locked read: the row lock is held from the attribute read until commit,
+    // so a concurrent ingest rerun can never land between the merge input and
+    // the attribute write.
+    const locked = await tx.$queryRaw<
+      Array<{ id: string; attributes: unknown }>
+    >`
+      SELECT "id", "attributes"
+      FROM "Site"
+      WHERE "slug" = ${input.siteSlug}
+      FOR UPDATE
+    `;
+    const site = locked[0];
     if (!site) throw new OperatorLeadError("Lead not found.", 404);
     const createdAt = new Date();
     if (input.action === "set_eligibility") {

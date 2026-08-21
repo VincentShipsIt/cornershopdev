@@ -181,6 +181,13 @@ const fakeModels = {
         },
       ];
     }
+    // Locked read used by recordOperatorLeadAction.
+    if (sql.includes('FROM "Site"') && sql.includes('"slug"')) {
+      if (typeof values[0] === "string" && values[0] !== site.slug) {
+        return [];
+      }
+      return [{ id: site.id, attributes: site.attributes }];
+    }
     return [];
   },
   $executeRaw: async () => 0,
