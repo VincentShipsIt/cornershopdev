@@ -18,7 +18,8 @@ domains.cornershop.dev {
 #
 #   - api.restofront.com was an alternate ingress to this same container. The app
 #     is single-origin, the deploy pipeline health-checks api.cornershop.dev, and
-#     restofront.com itself is served elsewhere, so nothing addressed it but
+#     restofront.com is also served by this Caddy/EC2 origin, so nothing addressed
+#     the retired API hostname but
 #     uptime probes and vulnerability scanners.
 #   - domains.restofront.com never had a DNS record, so the block it used to have
 #     could not complete a challenge and only spent this instance's Let's Encrypt

@@ -16,7 +16,7 @@ import { OperatorLeadError } from "@/lib/operator-leads";
 import { OPERATOR_LEAD_INGEST_ACTOR } from "@/lib/operator-lead-ingest-auth";
 import type { LeadDiscoveryProvider } from "@/lib/lead-discovery";
 import type { LocalSeoAuditResult } from "@/lib/local-seo-audit";
-import { slugify } from "@/lib/verticals/restaurant/schema";
+import { slugify } from "@/lib/site-draft";
 import type { VerticalId } from "@/lib/verticals/types";
 
 export type IngestOperatorProspectInput = {

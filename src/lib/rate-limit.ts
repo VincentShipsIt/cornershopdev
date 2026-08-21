@@ -46,6 +46,13 @@ async function limitByIp(
   request: Request,
   options: { namespace: string; limit: number; windowMs: number },
 ): Promise<RateLimitResult> {
+  return limitByIdentity(clientIpFromHeaders(request.headers), options);
+}
+
+async function limitByIdentity(
+  identity: string,
+  options: { namespace: string; limit: number; windowMs: number },
+): Promise<RateLimitResult> {
   if (!process.env.REDIS_URL) {
     if (process.env.NODE_ENV === "production") {
       return {
@@ -62,13 +69,12 @@ async function limitByIp(
     };
   }
 
-  const address = clientIpFromHeaders(request.headers);
-  const identifier = createHash("sha256").update(address).digest("hex");
+  const key = rateLimitIdentityKey(options.namespace, identity);
   try {
     const now = Date.now();
     const redis = await getRedisClient();
     const result = await redis.eval(slidingWindowScript, {
-      keys: [`cornershopdev:${options.namespace}:${identifier}`],
+      keys: [key],
       arguments: [
         String(now),
         String(options.windowMs),
@@ -101,6 +107,14 @@ async function limitByIp(
       reason: "unavailable",
     };
   }
+}
+
+export function rateLimitIdentityKey(
+  namespace: string,
+  identity: string,
+): string {
+  const identifier = createHash("sha256").update(identity).digest("hex");
+  return `cornershopdev:${namespace}:${identifier}`;
 }
 
 export function limitPublicPreview(request: Request): Promise<RateLimitResult> {
@@ -201,14 +215,35 @@ export function limitOperatorLeadIngest(
   });
 }
 
-export function limitMagicLinkRequest(
+export async function limitMagicLinkRequest(
   request: Request,
+  normalizedEmail: string,
 ): Promise<RateLimitResult> {
-  return limitByIp(request, {
-    namespace: "magic-link",
-    limit: 5,
-    windowMs: 15 * 60_000,
-  });
+  const options = { limit: 5, windowMs: 15 * 60_000 };
+  const [ip, email] = await Promise.all([
+    limitByIp(request, { ...options, namespace: "magic-link-ip" }),
+    limitByIdentity(normalizedEmail, {
+      ...options,
+      namespace: "magic-link-email",
+    }),
+  ]);
+  if (!ip.success || !email.success) {
+    const unavailable = [ip, email].find(
+      (result) => result.reason === "unavailable",
+    );
+    const failure = unavailable ?? (!ip.success ? ip : email);
+    return {
+      success: false,
+      remaining: 0,
+      reset: Math.max(ip.reset, email.reset),
+      reason: failure.reason,
+    };
+  }
+  return {
+    success: true,
+    remaining: Math.min(ip.remaining, email.remaining),
+    reset: Math.max(ip.reset, email.reset),
+  };
 }
 
 export function limitOperatorAuthRetry(

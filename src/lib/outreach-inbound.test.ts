@@ -9,7 +9,8 @@ const sites = [
   {
     id: "site_1",
     slug: "chez-lea",
-    email: "owner@chez-lea.test",
+    email: "bonjour@chez-lea.test",
+    leadContactEmail: "owner@chez-lea.test",
     vertical: "RESTAURANT",
     updatedAt: new Date("2026-08-19T08:00:00.000Z"),
   },
@@ -112,14 +113,21 @@ const fakeDb = {
   },
   site: {
     findFirst: async (input: {
-      where: { email?: string; slug?: { in: string[] }; vertical?: string };
+      where: {
+        leadContactEmail?: string;
+        slug?: { in: string[] };
+        vertical?: string;
+      };
     }) => {
       return (
         sites.find((site) => {
           if (input.where.vertical && site.vertical !== input.where.vertical) {
             return false;
           }
-          if (input.where.email && site.email !== input.where.email) {
+          if (
+            input.where.leadContactEmail &&
+            site.leadContactEmail !== input.where.leadContactEmail
+          ) {
             return false;
           }
           if (
@@ -192,6 +200,77 @@ describe("inbound outreach mailbox", () => {
       "outreach.inbound.received",
     ]);
     expect(alerts[0]).toMatchObject({ kind: "OUTREACH_REPLY" });
+  });
+
+  it("matches a headerless reply only by the private lead recipient", async () => {
+    fetchReceived.mockResolvedValueOnce({
+      id: "recv_headerless",
+      from: "owner@chez-lea.test",
+      to: ["vincent@restofront.com"],
+      subject: "Re: preview",
+      text: "Following up without reply headers",
+      html: null,
+      messageId: "<headerless@chez-lea.test>",
+      receivedFor: ["vincent@restofront.com"],
+      headers: {},
+    });
+
+    const result = await recordInboundOutreachMessage({
+      eventId: "svix_headerless",
+      occurredAt: new Date("2026-08-19T09:05:00.000Z"),
+      metadata: {
+        emailId: "recv_headerless",
+        from: "owner@chez-lea.test",
+        to: ["vincent@restofront.com"],
+        subject: "Re: preview",
+        rfcMessageId: "<headerless@chez-lea.test>",
+        receivedFor: ["vincent@restofront.com"],
+      },
+    });
+
+    expect(result).toMatchObject({
+      handled: true,
+      created: true,
+      siteId: "site_1",
+    });
+    expect(messages.at(-1)).toMatchObject({
+      fromAddress: "owner@chez-lea.test",
+      siteId: "site_1",
+      threadKey: "lead:site_1",
+    });
+
+    fetchReceived.mockResolvedValueOnce({
+      id: "recv_public",
+      from: "bonjour@chez-lea.test",
+      to: ["vincent@restofront.com"],
+      subject: "Unrelated public-address mail",
+      text: "This address must not identify the private lead thread.",
+      html: null,
+      messageId: "<public-address@chez-lea.test>",
+      receivedFor: ["vincent@restofront.com"],
+      headers: {},
+    });
+
+    const publicResult = await recordInboundOutreachMessage({
+      eventId: "svix_public",
+      occurredAt: new Date("2026-08-19T09:06:00.000Z"),
+      metadata: {
+        emailId: "recv_public",
+        from: "bonjour@chez-lea.test",
+        to: ["vincent@restofront.com"],
+        subject: "Unrelated public-address mail",
+        rfcMessageId: "<public-address@chez-lea.test>",
+        receivedFor: ["vincent@restofront.com"],
+      },
+    });
+
+    expect(publicResult).toEqual({
+      handled: false,
+      created: false,
+      retry: false,
+      siteId: null,
+      messageId: null,
+    });
   });
 
   it("is idempotent on the provider receiving id", async () => {

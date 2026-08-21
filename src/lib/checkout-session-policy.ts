@@ -11,6 +11,24 @@ export type CheckoutSessionAction =
   | "replace"
   | "await_provisioning";
 
+export type FoundingCheckoutConfiguration = {
+  allowPromotionCodes: boolean | null;
+  automaticTaxEnabled: boolean;
+  billingAddressCollection: string | null;
+  taxIdCollectionEnabled: boolean;
+};
+
+export function isReusableFoundingCheckout(
+  configuration: FoundingCheckoutConfiguration,
+): boolean {
+  return (
+    configuration.allowPromotionCodes === false &&
+    configuration.automaticTaxEnabled &&
+    configuration.billingAddressCollection === "required" &&
+    configuration.taxIdCollectionEnabled
+  );
+}
+
 export function checkoutSessionAction(
   session: BoundCheckoutSession | null,
   requestedPriceId: string,

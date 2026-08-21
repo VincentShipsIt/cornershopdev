@@ -1,0 +1,18 @@
+export const e2e = {
+  targetId: "first-customer-browser-target",
+  targetSlug: "first-customer-browser-target",
+  targetName: "First Customer Browser Restaurant",
+  existingId: "first-customer-browser-existing",
+  existingSlug: "first-customer-browser-existing",
+  existingName: "Existing Owner Workspace",
+  unauthorizedId: "first-customer-browser-unauthorized",
+  unauthorizedSlug: "first-customer-browser-unauthorized",
+  unauthorizedName: "Unowned Browser Workspace",
+  ownerEmail: "owner@restaurant.example.test",
+  editedName: "First Customer Published Browser Edit",
+  foodId: "first-customer-browser-food-private",
+  foodSlug: "first-customer-browser-food-private",
+  foodName: "Private Food Retail Browser Preview",
+  foodOwnerEmail: "owner@example.com",
+  foodInvitationToken: "food_private_claim_token_1234567890abcdef",
+};

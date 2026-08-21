@@ -81,8 +81,8 @@ export async function POST(request: Request) {
       siteId: persisted.siteId,
       siteSlug: persisted.draft.slug,
       vertical,
-      photos: extracted.photos,
-    }).catch(() => ({ ingested: 0, deduplicated: 0, failed: extracted.photos.length }));
+      photos: extracted.photos ?? [],
+    }).catch(() => ({ ingested: 0, deduplicated: 0, failed: (extracted.photos ?? []).length }));
     return NextResponse.json({
       mode: "inline",
       vertical,

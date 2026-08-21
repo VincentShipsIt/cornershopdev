@@ -471,6 +471,12 @@ describe.skipIf(!enabled)("photo library PostgreSQL persistence", () => {
         slug,
         vertical: "RESTAURANT",
         actor: { id: actor.id, email: "photo-owner@example.test" },
+        expectedRevision: (
+          await db.site.findUniqueOrThrow({
+            where: { id: siteId },
+            select: { draftRevision: true },
+          })
+        ).draftRevision,
         changeSummary: "Reject mutable imported hero",
       }),
     ).rejects.toThrow("immutable storage");
@@ -493,6 +499,12 @@ describe.skipIf(!enabled)("photo library PostgreSQL persistence", () => {
         slug,
         vertical: "RESTAURANT",
         actor: { id: actor.id, email: "photo-owner@example.test" },
+        expectedRevision: (
+          await db.site.findUniqueOrThrow({
+            where: { id: siteId },
+            select: { draftRevision: true },
+          })
+        ).draftRevision,
         changeSummary: "Publish reviewed immutable hero",
       }),
     ).resolves.toMatchObject({ version: 1 });
@@ -559,6 +571,12 @@ describe.skipIf(!enabled)("photo library PostgreSQL persistence", () => {
       slug,
       vertical: "RESTAURANT",
       actor: { id: actor.id, email: "photo-owner@example.test" },
+      expectedRevision: (
+        await db.site.findUniqueOrThrow({
+          where: { id: siteId },
+          select: { draftRevision: true },
+        })
+      ).draftRevision,
       changeSummary: "Publish approved gallery",
     });
     expect((await findPublishedSiteView(slug))?.draft.galleryImages[0]).toEqual({
@@ -585,6 +603,12 @@ describe.skipIf(!enabled)("photo library PostgreSQL persistence", () => {
       slug,
       vertical: "RESTAURANT",
       actor: { id: actor.id, email: "photo-owner@example.test" },
+      expectedRevision: (
+        await db.site.findUniqueOrThrow({
+          where: { id: siteId },
+          select: { draftRevision: true },
+        })
+      ).draftRevision,
       changeSummary: "Restore authentic original gallery",
     });
     expect((await findPublishedSiteView(slug))?.draft.galleryImages[0]).toEqual({

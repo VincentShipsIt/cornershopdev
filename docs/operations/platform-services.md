@@ -33,11 +33,11 @@ Inject `PRODUCTION_DATABASE_URL` and `PREVIEW_DATABASE_URL` into that process
 from the approved secret stores; do not put either value in shell history. The
 command first compares normalized host, port, database, and schema identifiers,
 then opens read-only transactions and compares the observed server/database
-identities. It rejects credential-only differences, local hosts, malformed
-values, matching configuration, matching observed identities, and unreachable
-targets. Attach its hash-only JSON output to the release record; never attach
-the input URLs. This proves database identity separation, not provider backup
-policy.
+identities. It rejects credential-only differences, IPv4 and bracketed or
+unbracketed IPv6 loopback hosts, malformed values, matching configuration,
+matching observed identities, and unreachable targets. Attach its hash-only
+JSON output to the release record; never attach the input URLs. This proves
+database identity separation, not provider backup policy.
 
 After configuring production, redeploy it and request `/api/health/ready`. The
 route returns `200` only when the runtime services and billing configuration are
@@ -124,7 +124,9 @@ and `s3:DeleteObjectVersion` in addition to `s3:PutObject`, `s3:GetObject`, and
 `s3:DeleteObject`. Output contains
 only fixture labels, digests, cleanup status, environment, and timestamp—never
 bucket names, keys, URLs, credentials, or provider error bodies. A run without
-`--execute` performs no write. Do not claim the production round trip until the
+`--execute` performs no write. When verification and cleanup both fail, the
+output retains the primary write/read or content-mismatch failure and reports
+`cleanup: failed` separately. Do not claim the production round trip until the
 real command succeeds and cleanup is recorded as `completed`. Issue #10 remains
 the evidence gate; after an observed role denial, repair and review IAM before an
 authorized retry rather than probing production from a feature branch.
@@ -135,21 +137,36 @@ Checkout webhook infrastructure failures, persisted-draft or server publication
 failures, and failed public `/api/health/live` checks create a durable
 `OperatorAlert`. The fingerprint deduplicates each incident for 15 minutes.
 Delivery uses the configured factory sender and `OPERATOR_ALERT_EMAILS`, leases
-each row against concurrent workers, and stops after three attempts (one, five,
-and fifteen-minute retry spacing). Recipient addresses and provider responses
-are absent from alert rows, readiness responses, and command output.
+each row against concurrent workers, and stops after three total attempts:
+immediate delivery, retries after one and five minutes, then terminal exhaustion
+after the third failure. A database or delivery exception for one row is counted
+as pending and does not prevent later alerts in the same batch from running.
+Recipient addresses and provider responses are absent from alert rows,
+readiness responses, and command output.
+
+Stripe webhook failure responses schedule their operator alert with Next.js
+`after`, which sends the response without waiting for Resend while extending the
+request lifecycle until alert capture settles. Do not replace this with a
+floating promise; it may be dropped after the response completes.
 
 Production deploys install a local systemd timer named
 `cornershopdev-public-health.timer`. Every two minutes it starts the exact
-deployed image with the encrypted environment file, retries due alerts, and
-checks the public HTTPS endpoint. This uses the existing host and providers; it
-creates no separate billable monitoring service.
+deployed image with the encrypted environment file and checks the public HTTPS
+endpoint. Alert draining is deliberately isolated in
+`cornershopdev-operator-alerts.timer`, which runs every minute and processes at
+most five rows per invocation. Five worst-case five-second delivery timeouts
+consume 25 seconds inside its 45-second service limit; a saturated alert queue
+therefore cannot delay or terminate the independent public health check. Both
+timers use the existing host and providers; they create no separate billable
+monitoring service.
 
 Useful commands:
 
 ```bash
 systemctl status cornershopdev-public-health.timer
 journalctl -u cornershopdev-public-health.service --since '30 minutes ago'
+systemctl status cornershopdev-operator-alerts.timer
+journalctl -u cornershopdev-operator-alerts.service --since '30 minutes ago'
 docker exec api-cornershop-dev bun run operator:dispatch-alerts
 ```
 
@@ -302,6 +319,13 @@ deployment bucket, and assumes the repository-scoped AWS OIDC role. Merging to
 the scoped IAM policy, SSM parameters, host bootstrap, and DNS prerequisites are
 reviewed and ready. The role may upload only Cornershopdev artifacts and send only
 `AWS-RunShellScript` commands to the production instance.
+
+The candidate image installs dependencies and runs migrations/operator commands
+with Bun 1.3.14, but both the Next.js production build and standalone web server
+run on the fully pinned Node.js 24.19.0 LTS Alpine image. CI starts the exact
+candidate image, confirms both runtime versions and the Node PID 1 executable,
+then exercises public, sign-in, Better Auth session, and unauthenticated
+dashboard responses before a release can use that image.
 
 The host deployment script:
 

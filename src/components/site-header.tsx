@@ -20,7 +20,11 @@ const SiteHeaderMobileNav = dynamic(() =>
   ),
 );
 
-export type SiteHeaderLink = { href: string; label: string };
+export type SiteHeaderLink = {
+  href: string;
+  label: string;
+  prefetch?: boolean;
+};
 
 const defaultLinks: SiteHeaderLink[] = [
   { href: "#how-it-works", label: "How it works" },
@@ -40,12 +44,14 @@ export function SiteHeader({
   createHref = "/create",
   ctaLabel = "Build a preview",
   inverse = false,
+  fontVariables,
 }: {
   brand: BrandIdentity & { href?: string };
   links?: SiteHeaderLink[];
   createHref?: string;
   ctaLabel?: string;
   inverse?: boolean;
+  fontVariables: string;
 }) {
   return (
     <header
@@ -57,7 +63,7 @@ export function SiteHeader({
       )}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
-        <Brand {...brand} inverse={inverse} />
+        <Brand {...brand} inverse={inverse} prefetch={false} />
         <nav
           className={cn(
             "hidden items-center gap-7 text-sm md:flex",
@@ -68,6 +74,7 @@ export function SiteHeader({
             <Link
               key={link.href}
               href={link.href}
+              prefetch={link.prefetch}
               className={cn(
                 "transition-colors",
                 inverse ? "hover:text-white" : "hover:text-foreground",
@@ -111,6 +118,7 @@ export function SiteHeader({
           createHref={createHref}
           ctaLabel={ctaLabel}
           inverse={inverse}
+          fontVariables={fontVariables}
         />
       </div>
     </header>

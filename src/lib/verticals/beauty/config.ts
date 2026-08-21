@@ -77,6 +77,8 @@ export const beautyConfig = {
     item: "Service",
   },
   marketing: beautyMarketing,
+  publicationEnabled: true,
+  integrationTypes: ["booking", "social"],
   attributesSchema: beautyAttributesSchema,
   attributeDefaults: {
     serviceStyle: "modern-studio",
@@ -112,12 +114,14 @@ export const beautyConfig = {
      * `itemBadges` receives no locale (see `VerticalConfig`); the unit is short
      * and numeric, so this reads acceptably in `fr` until the contract grows one.
      */
-    itemBadges: (attributes) => {
+    itemBadges: (attributes, locale) => {
       const badges: string[] = [];
       if (attributes.durationMinutes !== null) {
         badges.push(`${attributes.durationMinutes} min`);
       }
-      if (attributes.anyStylist) badges.push("With any stylist");
+      if (attributes.anyStylist) {
+        badges.push(locale.toLowerCase().startsWith("fr") ? "Tout praticien" : "With any stylist");
+      }
       return badges;
     },
   },
@@ -142,7 +146,8 @@ export const beautyConfig = {
    */
   rendererCapabilities: (attributes) => ({
     showGallery: attributes.showServiceImages,
-    showBookingRequestForm: true,
+    primaryAction: "booking",
+    bookingRequestMode: "always",
   }),
 } satisfies VerticalConfig<
   BeautyAttributes,

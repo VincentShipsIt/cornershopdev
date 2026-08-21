@@ -1,5 +1,7 @@
 import { Vertical } from "@/generated/prisma/enums";
 import { beautyConfig } from "@/lib/verticals/beauty/config";
+import { foodRetailConfig } from "@/lib/verticals/food-retail/config";
+import { localServiceConfig } from "@/lib/verticals/local-service/config";
 import { restaurantConfig } from "@/lib/verticals/restaurant/config";
 import type { VerticalConfig, VerticalId } from "@/lib/verticals/types";
 
@@ -22,6 +24,8 @@ export type ErasedVerticalConfig = VerticalConfig<any, any, any, any>;
 const registry = {
   [Vertical.RESTAURANT]: restaurantConfig,
   [Vertical.BEAUTY]: beautyConfig,
+  [Vertical.LOCAL_SERVICE]: localServiceConfig,
+  [Vertical.FOOD_RETAIL]: foodRetailConfig,
 } satisfies Record<VerticalId, ErasedVerticalConfig>;
 
 /**
@@ -67,9 +71,7 @@ export function verticalSlug(id: VerticalId): string {
  */
 export function verticalAssetNamespace(id: VerticalId): string {
   const { domain } = resolveVerticalConfig(id).marketing;
-  return domain
-    ? domain.toLowerCase().replace(/[^a-z0-9]+/g, "")
-    : verticalSlug(id);
+  return (domain ?? verticalSlug(id)).toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 /**
@@ -96,6 +98,7 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
   const wanted = hostname.trim().toLowerCase().split(":")[0];
   if (!wanted) return null;
   for (const id of listVerticalIds()) {
+    if (!isVerticalPubliclyLaunched(id)) continue;
     // Through the erased surface, not `registry[id]`: indexing with a runtime id
     // yields the union of the concrete configs, and `includes` on a union of array
     // types demands an argument assignable to every element type at once — which
@@ -107,14 +110,91 @@ export function resolveVerticalByHostname(hostname: string): VerticalId | null {
 }
 
 /**
+ * A registered vertical is not automatically reachable from the public niche
+ * route. This explicit flag preserves factory-hosted verticals such as Beauty,
+ * which are public before they own a standalone domain, while keeping work in
+ * private review unreachable.
+ */
+export function isVerticalPubliclyAccessible(id: VerticalId): boolean {
+  return resolveVerticalConfig(id).marketing.publiclyAccessible;
+}
+
+/**
+ * Standalone launch is stricter than factory-route access: it requires a real
+ * canonical domain, a matching routed hostname and a niche-specific sender.
+ */
+export function isVerticalPubliclyLaunched(id: VerticalId): boolean {
+  return verticalLaunchReadiness(id).ready;
+}
+
+export type VerticalLaunchReadiness = {
+  ready: boolean;
+  issues: Array<
+    | "public-access"
+    | "domain"
+    | "sender"
+    | "hostname"
+    | "sender-domain"
+  >;
+};
+
+export function verticalLaunchReadiness(
+  id: VerticalId,
+): VerticalLaunchReadiness {
+  const { domain, email, hostnames } = resolveVerticalConfig(id).marketing;
+  const issues: VerticalLaunchReadiness["issues"] = [];
+  if (!isVerticalPubliclyAccessible(id)) issues.push("public-access");
+  if (!domain) issues.push("domain");
+  if (!email) issues.push("sender");
+  if (domain && !hostnames.includes(domain)) issues.push("hostname");
+  if (
+    domain &&
+    email &&
+    [email.from, email.replyTo].some((value) => {
+      const emailDomain = value.match(/@([^>\s]+)>?$/)?.[1]?.toLowerCase();
+      return (
+        !emailDomain ||
+        (emailDomain !== domain && !emailDomain.endsWith(`.${domain}`))
+      );
+    })
+  ) {
+    issues.push("sender-domain");
+  }
+  return { ready: issues.length === 0, issues };
+}
+
+/**
+ * Claim invitations and subscription checkout exist only for a fully launched
+ * niche with its own domain, routing and sender. Public factory-route access is
+ * deliberately insufficient: previewing Beauty must not sell Restofront's plan.
+ */
+export function isVerticalClaimEnabled(id: VerticalId): boolean {
+  return isVerticalPubliclyLaunched(id);
+}
+
+/**
+ * Publication is a separate capability from rendering, importing and claim.
+ * Keeping it explicit prevents a private vertical from inheriting the shared
+ * snapshot and rollback engine merely because its schema is registered.
+ */
+export function isVerticalPublicationEnabled(id: VerticalId): boolean {
+  return resolveVerticalConfig(id).publicationEnabled;
+}
+
+/** Every vertical intentionally exposed by the shared public niche route. */
+export function listPublicVerticals(): VerticalId[] {
+  return listVerticalIds().filter(isVerticalPubliclyAccessible);
+}
+
+/**
  * Every launched niche for the factory homepage. A registered vertical can stay
  * private while its positioning and storefront are still being developed; a
- * public domain is the launch gate. Sorting by the niche's own brand name keeps
- * the order independent of registration order.
+ * routed public domain and a dedicated sender are the launch gate. Sorting by
+ * the niche's own brand name keeps the order independent of registration order.
  */
 export function listMarketingVerticals(): VerticalId[] {
   return listVerticalIds()
-    .filter((id) => Boolean(resolveVerticalConfig(id).marketing.domain))
+    .filter(isVerticalPubliclyLaunched)
     .sort((a, b) =>
       resolveVerticalConfig(a).marketing.brand.name.localeCompare(
         resolveVerticalConfig(b).marketing.brand.name,

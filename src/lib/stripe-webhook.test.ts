@@ -152,6 +152,21 @@ describe("Stripe webhook event idempotency", () => {
       });
       expect(state.invitation.acceptedAt).toBeInstanceOf(Date);
       expect(state.audits).toHaveLength(2);
+      expect(state.audits).toContainEqual({
+        data: expect.objectContaining({
+          type: "stripe.checkout.provisioned",
+          siteId: "site_1",
+          metadata: expect.objectContaining({
+            stripeEventId: "evt_checkout_1",
+            stripeEventType: "checkout.session.completed",
+            livemode: false,
+            claimInvitationId: "invite_1",
+            checkoutSessionId: "cs_test_1",
+            stripePriceId: "price_growth",
+            paymentStatus: "paid",
+          }),
+        }),
+      });
 
       // A transport retry and a second valid completion event are both safe.
       expect(
@@ -220,6 +235,79 @@ describe("Stripe webhook event idempotency", () => {
     }
   });
 
+  for (const stripeStatus of ["past_due", "canceled"] as const) {
+    it(`pauses delayed Checkout provisioning after an earlier ${stripeStatus} event`, async () => {
+      await withConfiguredBilling(async () => {
+        const { db, state } = createWebhookDatabase();
+        const currentSubscription = subscriptionFixture({
+          status: stripeStatus,
+        });
+        const stripe = {
+          checkout: {
+            sessions: {
+              retrieve: async () => checkoutFixture(currentSubscription),
+            },
+          },
+          subscriptions: {
+            retrieve: async () => currentSubscription,
+          },
+        } as unknown as Stripe;
+
+        expect(
+          await processStripeWebhookEvent(
+            subscriptionEvent(
+              `evt_${stripeStatus}_before_checkout`,
+              200,
+              currentSubscription,
+            ),
+            stripe,
+            db,
+          ),
+        ).toBe("processed");
+        expect(state.subscriptions).toHaveLength(0);
+
+        expect(
+          await processStripeWebhookEvent(
+            checkoutEvent(`evt_checkout_after_${stripeStatus}`, 100),
+            stripe,
+            db,
+          ),
+        ).toBe("processed");
+        expect(state.subscriptions[0].status).toBe(
+          stripeStatus === "past_due" ? "PAST_DUE" : "CANCELED",
+        );
+        expect(state.sites[0].status).toBe("PAUSED");
+
+        expect(
+          await processStripeWebhookEvent(
+            checkoutEvent(`evt_checkout_after_${stripeStatus}`, 100),
+            stripe,
+            db,
+          ),
+        ).toBe("duplicate");
+        expect(
+          await processStripeWebhookEvent(
+            subscriptionEvent(
+              `evt_${stripeStatus}_after_checkout`,
+              201,
+              currentSubscription,
+            ),
+            stripe,
+            db,
+          ),
+        ).toBe("processed");
+        expect(state.sites[0].status).toBe("PAUSED");
+        expect(
+          state.audits.filter(
+            (audit) =>
+              (audit as { data?: { type?: string } }).data?.type ===
+              "billing.site.paused",
+          ),
+        ).toHaveLength(1);
+      });
+    });
+  }
+
   it("rolls back partial claim writes and persists a durable rejection", async () => {
     const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
     const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
@@ -256,6 +344,214 @@ describe("Stripe webhook event idempotency", () => {
         }),
       ]);
       expect(state.audits).toHaveLength(1);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
+  it("restores a published platform-only site to CLAIMED after a billing pause", async () => {
+    await withConfiguredBilling(async () => {
+      const { db, state } = createWebhookDatabase();
+      let currentSubscription = subscriptionFixture();
+      const stripe = {
+        checkout: {
+          sessions: {
+            retrieve: async () => checkoutFixture(currentSubscription),
+          },
+        },
+        subscriptions: { retrieve: async () => currentSubscription },
+      } as unknown as Stripe;
+
+      await processStripeWebhookEvent(
+        checkoutEvent("evt_claim", 100),
+        stripe,
+        db,
+      );
+      state.sites[0].publishedSiteVersionId = "version_1";
+      currentSubscription = subscriptionFixture({ status: "past_due" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_pause_platform", 200, currentSubscription),
+        stripe,
+        db,
+      );
+      currentSubscription = subscriptionFixture({ status: "active" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_resume_platform", 300, currentSubscription),
+        stripe,
+        db,
+      );
+
+      expect(state.sites[0].status).toBe("CLAIMED");
+      expect(state.audits).toContainEqual({
+        data: expect.objectContaining({
+          type: "billing.site.restored",
+          metadata: expect.objectContaining({ restoredTo: "CLAIMED" }),
+        }),
+      });
+    });
+  });
+
+  it("restores a published verified-domain site to LIVE after a billing pause", async () => {
+    await withConfiguredBilling(async () => {
+      const { db, state } = createWebhookDatabase();
+      let currentSubscription = subscriptionFixture();
+      const stripe = {
+        checkout: {
+          sessions: {
+            retrieve: async () => checkoutFixture(currentSubscription),
+          },
+        },
+        subscriptions: { retrieve: async () => currentSubscription },
+      } as unknown as Stripe;
+
+      await processStripeWebhookEvent(
+        checkoutEvent("evt_claim", 100),
+        stripe,
+        db,
+      );
+      state.sites[0].publishedSiteVersionId = "version_1";
+      state.domains.push({ siteId: "site_1", verified: true });
+      currentSubscription = subscriptionFixture({ status: "past_due" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_pause_domain", 200, currentSubscription),
+        stripe,
+        db,
+      );
+      currentSubscription = subscriptionFixture({ status: "active" });
+      await processStripeWebhookEvent(
+        subscriptionEvent("evt_resume_domain", 300, currentSubscription),
+        stripe,
+        db,
+      );
+
+      expect(state.sites[0].status).toBe("LIVE");
+      expect(state.audits).toContainEqual({
+        data: expect.objectContaining({
+          type: "billing.site.restored",
+          metadata: expect.objectContaining({ restoredTo: "LIVE" }),
+        }),
+      });
+    });
+  });
+
+  it("refuses a completed Checkout that did not collect payment", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase();
+    const fixture = checkoutFixture(subscriptionFixture());
+    fixture.payment_status = "no_payment_required";
+    const stripe = {
+      checkout: { sessions: { retrieve: async () => fixture } },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_no_payment", 550),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.invitation.acceptedAt).toBeNull();
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          eventId: "evt_no_payment",
+          status: "REJECTED",
+          failureReason: "Checkout is not paid and complete",
+        }),
+      ]);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
+  it("refuses provisioning when an old operator approval lacks evidence", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase();
+    state.invitation.proofMethod = "OPERATOR_APPROVAL";
+    const stripe = {
+      checkout: {
+        sessions: { retrieve: async () => checkoutFixture(subscriptionFixture()) },
+      },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_missing_approval_evidence", 560),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.invitation.acceptedAt).toBeNull();
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          status: "REJECTED",
+          failureReason: "Claim invitation ownership evidence is invalid",
+        }),
+      ]);
+    } finally {
+      console.error = original;
+      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    }
+  });
+
+  it("refuses a discounted founding Checkout even when Stripe marks it paid", async () => {
+    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const { db, state } = createWebhookDatabase();
+    state.invitation.stripePriceId = "price_starter";
+    const subscription = subscriptionFixture();
+    subscription.items.data[0].price.id = "price_starter";
+    const fixture = checkoutFixture(subscription);
+    fixture.metadata = { ...fixture.metadata, plan: "starter" };
+    fixture.total_details = {
+      amount_discount: 1_000,
+      amount_shipping: 0,
+      amount_tax: 0,
+    };
+    const stripe = {
+      checkout: { sessions: { retrieve: async () => fixture } },
+    } as unknown as Stripe;
+    const original = console.error;
+    console.error = mock(() => {});
+
+    try {
+      expect(
+        await processStripeWebhookEvent(
+          checkoutEvent("evt_discounted", 575),
+          stripe,
+          db,
+        ),
+      ).toBe("rejected");
+      expect(state.users).toHaveLength(0);
+      expect(state.subscriptions).toHaveLength(0);
+      expect(state.events).toEqual([
+        expect.objectContaining({
+          status: "REJECTED",
+          failureReason: "Checkout total does not match the founding offer",
+        }),
+      ]);
     } finally {
       console.error = original;
       restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
@@ -336,6 +632,9 @@ function createWebhookDatabase(
       id: "invite_1",
       email: "owner@chez-lea.test",
       proofMethod: "DOMAIN_EMAIL",
+      approvalEvidenceRef: null as string | null,
+      approvedBy: null as string | null,
+      approvedAt: null as Date | null,
       expiresAt: new Date("2099-01-01"),
       acceptedAt: null as Date | null,
       revokedAt: null as Date | null,
@@ -354,7 +653,12 @@ function createWebhookDatabase(
     ] as SiteRow[],
     users: [] as Array<{ id: string; email: string }>,
     organizations: [] as Array<{ id: string; name: string }>,
-    memberships: [] as Array<{ userId: string; organizationId: string }>,
+    memberships: [] as Array<{
+      userId: string;
+      organizationId: string;
+      role: string;
+    }>,
+    domains: [] as Array<{ siteId: string; verified: boolean }>,
     subscriptions: [] as SubscriptionRow[],
     audits: [] as unknown[],
   };
@@ -416,30 +720,78 @@ function createWebhookDatabase(
       },
     },
     membership: {
-      findFirst: async ({ where }: { where: { userId: string } }) =>
-        state.memberships.find((row) => row.userId === where.userId) ?? null,
+      findFirst: async ({
+        where,
+      }: {
+        where: { userId: string; organizationId: string; role: string };
+      }) =>
+        state.memberships.find(
+          (row) =>
+            row.userId === where.userId &&
+            row.organizationId === where.organizationId &&
+            row.role === where.role,
+        ) ?? null,
+      upsert: async ({
+        where,
+        update,
+        create,
+      }: {
+        where: {
+          userId_organizationId: { userId: string; organizationId: string };
+        };
+        update: { role: string };
+        create: { userId: string; organizationId: string; role: string };
+      }) => {
+        const key = where.userId_organizationId;
+        const existing = state.memberships.find(
+          (row) =>
+            row.userId === key.userId &&
+            row.organizationId === key.organizationId,
+        );
+        if (existing) return Object.assign(existing, update);
+        state.memberships.push(create);
+        return create;
+      },
     },
     organization: {
-      create: async ({
-        data,
+      upsert: async ({
+        where,
+        create,
       }: {
-        data: {
-          name: string;
-          memberships: { create: { userId: string } };
-        };
+        where: { id: string };
+        create: { id: string; name: string };
       }) => {
-        const organization = { id: nextId("org"), name: data.name };
-        state.organizations.push(organization);
-        state.memberships.push({
-          userId: data.memberships.create.userId,
-          organizationId: organization.id,
-        });
-        return organization;
+        const existing = state.organizations.find(
+          (row) => row.id === where.id,
+        );
+        if (existing) return existing;
+        state.organizations.push(create);
+        return create;
       },
     },
     site: {
-      findUnique: async ({ where }: { where: { slug: string } }) =>
-        state.sites.find((row) => row.slug === where.slug) ?? null,
+      findUnique: async ({
+        where,
+      }: {
+        where: { slug?: string; id?: string };
+      }) => {
+        const site = state.sites.find(
+          (row) =>
+            (where.slug !== undefined && row.slug === where.slug) ||
+            (where.id !== undefined && row.id === where.id),
+        );
+        if (!site) return null;
+        return {
+          ...site,
+          publishedSiteVersion: site.publishedSiteVersionId
+            ? {
+                id: site.publishedSiteVersionId,
+                siteId: site.id,
+                publishedAt: new Date("2026-08-20T00:00:00.000Z"),
+              }
+            : null,
+        };
+      },
       update: async ({
         where,
         data,
@@ -503,6 +855,13 @@ function createWebhookDatabase(
           site: {
             status: site.status,
             publishedSiteVersionId: site.publishedSiteVersionId,
+            publishedSiteVersion: site.publishedSiteVersionId
+              ? {
+                  id: site.publishedSiteVersionId,
+                  siteId: site.id,
+                  publishedAt: new Date("2026-08-20T00:00:00.000Z"),
+                }
+              : null,
           },
         };
       },
@@ -566,6 +925,17 @@ function createWebhookDatabase(
       create: async (input: unknown) => {
         state.audits.push(input);
       },
+    },
+    domain: {
+      count: async ({
+        where,
+      }: {
+        where: { siteId: string; verified: boolean };
+      }) =>
+        state.domains.filter(
+          (row) =>
+            row.siteId === where.siteId && row.verified === where.verified,
+        ).length,
     },
   };
   const db = {
@@ -665,5 +1035,18 @@ function restoreEnvironment(name: string, value: string | undefined) {
     delete process.env[name];
   } else {
     process.env[name] = value;
+  }
+}
+
+async function withConfiguredBilling(run: () => Promise<void>) {
+  const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
+  const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+  process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
+  process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+  try {
+    await run();
+  } finally {
+    restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
+    restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
   }
 }

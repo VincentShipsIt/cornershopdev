@@ -110,6 +110,26 @@ describe("previewMetadata", () => {
       "https://cornershop.dev/preview/osteria-luna/fr",
     );
   });
+
+  it("uses a reconstructed source favicon when one was authenticated", () => {
+    const metadata = previewMetadata(
+      {
+        ...osteria,
+        faviconUrl: "https://osteria-luna.example/favicon.png",
+      },
+      {
+        isLiveSurface: true,
+        locales: ["en"],
+        verifiedHostname: "osteria-luna.example",
+        factoryOrigin,
+        factoryName: FACTORY_BRAND.name,
+      },
+    );
+
+    expect(metadata.icons).toEqual({
+      icon: [{ url: "https://osteria-luna.example/favicon.png" }],
+    });
+  });
 });
 
 describe("previewOgCard", () => {

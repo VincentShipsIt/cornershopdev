@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr-FR">
+  <head>
+    <title>Maison Safran | Cuisine de quartier</title>
+    <meta property="og:site_name" content="Maison Safran">
+    <meta name="description" content="Une table de quartier à Paris, avec une carte courte inspirée par le marché.">
+    <meta content="#f4d03f" name="theme-color">
+    <meta property="og:image" content="https://cdn.maisonsafran.example/hero.jpg">
+    <link href="/favicon.png" rel="icon">
+    <style>
+      :root {
+        --background: #fff8e8;
+        --text: #fffdf8;
+        --brand-primary: #f4d03f;
+      }
+    </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Restaurant",
+        "name": "Maison Safran",
+        "description": "Une table de quartier à Paris, avec une carte courte inspirée par le marché.",
+        "url": "https://maisonsafran.example/",
+        "telephone": "+33 1 42 00 00 00",
+        "email": "bonjour@maisonsafran.example",
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "12 rue des Fleurs",
+          "postalCode": "75010",
+          "addressLocality": "Paris",
+          "addressCountry": "FR"
+        },
+        "logo": "https://cdn.maisonsafran.example/logo.svg",
+        "openingHoursSpecification": [
+          {
+            "@type": "OpeningHoursSpecification",
+            "dayOfWeek": ["https://schema.org/Tuesday", "https://schema.org/Wednesday", "https://schema.org/Thursday"],
+            "opens": "12:00",
+            "closes": "22:30"
+          }
+        ],
+        "hasMenu": {
+          "@type": "Menu",
+          "hasMenuSection": [
+            {
+              "@type": "MenuSection",
+              "name": "À partager",
+              "description": "Pour commencer",
+              "hasMenuItem": [
+                {
+                  "@type": "MenuItem",
+                  "name": "Poireaux vinaigrette",
+                  "description": "Noisettes torréfiées et moutarde ancienne",
+                  "image": "https://cdn.maisonsafran.example/poireaux.jpg",
+                  "offers": {"@type": "Offer", "price": "11", "priceCurrency": "EUR"}
+                },
+                {
+                  "@type": "MenuItem",
+                  "name": "Œuf mayonnaise",
+                  "description": "Câpres et herbes fraîches",
+                  "offers": {"@type": "Offer", "price": "8.50", "priceCurrency": "EUR"}
+                }
+              ]
+            }
+          ]
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <nav>
+      <a href="/menu">La carte</a>
+      <a href="/a-propos">Notre histoire</a>
+      <a href="https://elsewhere.example/ignore">Ailleurs</a>
+    </nav>
+    <header><img class="brand-logo" src="https://cdn.maisonsafran.example/logo-alt.svg" alt="Logo Maison Safran"></header>
+    <main><h1>Maison Safran</h1><p>Une table de quartier à Paris, avec une carte courte inspirée par le marché.</p></main>
+  </body>
+</html>

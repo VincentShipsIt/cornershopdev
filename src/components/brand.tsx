@@ -14,16 +14,19 @@ export function Brand({
   initials,
   mark,
   href = "/",
+  prefetch,
   inverse = false,
   className,
 }: BrandIdentity & {
   href?: string;
+  prefetch?: boolean;
   inverse?: boolean;
   className?: string;
 }) {
   return (
     <Link
       href={href}
+      prefetch={prefetch}
       className={cn(
         "inline-flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.02em]",
         inverse ? "text-white" : "text-foreground",

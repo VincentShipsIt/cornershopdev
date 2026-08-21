@@ -4,7 +4,22 @@ import {
   type RestaurantDraft,
   type RestaurantSiteDraft,
 } from "@/lib/restaurant";
-import { findSiteView } from "@/lib/sites";
+import {
+  findSiteDraft,
+  findSiteView,
+  type OwnerDraftDto,
+} from "@/lib/sites";
+
+export async function getRestaurantOwnerDraft(
+  slug: string,
+): Promise<OwnerDraftDto<RestaurantDraft> | null> {
+  const site = await findSiteDraft(slug);
+  if (!site || site.vertical !== Vertical.RESTAURANT) return null;
+  return {
+    draft: toRestaurantDraft(site.draft as RestaurantSiteDraft),
+    revision: site.revision,
+  };
+}
 
 /**
  * Flat restaurant-shaped view over the generic site read path. The renderer and the

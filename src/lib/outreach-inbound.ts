@@ -241,7 +241,7 @@ export async function matchInboundOutreachThread(
   const byContact = await db.site.findFirst({
     where: {
       vertical: Vertical.RESTAURANT,
-      email: from,
+      leadContactEmail: from,
     },
     orderBy: { updatedAt: "desc" },
     select: { id: true },

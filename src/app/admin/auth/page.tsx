@@ -59,7 +59,15 @@ export default async function AuthOperationsPage() {
                     <td className="px-5 py-4 font-mono text-xs">{row.account}</td>
                     <td className="px-5 py-4">{row.destination.toLowerCase()}</td>
                     <td className="px-5 py-4">
-                      <Badge variant={row.status === "FAILED" ? "destructive" : "outline"}>
+                      <Badge
+                        variant={
+                          ["FAILED", "BOUNCED", "SUPPRESSED"].includes(
+                            row.status,
+                          )
+                            ? "destructive"
+                            : "outline"
+                        }
+                      >
                         {row.status.toLowerCase()}
                       </Badge>
                     </td>

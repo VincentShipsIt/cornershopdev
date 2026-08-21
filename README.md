@@ -1,14 +1,18 @@
 # Cornershopdev
 
-Cornershopdev turns an existing restaurant website—or just a restaurant name—into a private, prefilled, mobile-first website preview. The restaurant keeps its existing booking, ordering, and delivery providers. It claims the finished preview, subscribes, then connects its domain.
+Cornershopdev turns an existing local-business website—or just a business name—into a private, prefilled, mobile-first website preview. The registered vertical supplies the schema, prompts, providers, templates and language for its trade while the business keeps the ordering, delivery or booking tools it already uses.
 
 ## Product flow
 
 1. Paste a restaurant URL or name.
 2. Import public website content with SSRF-safe fetching and bounded HTML reads.
-3. Recover the menu, contact details, imagery, and external integrations.
-4. Derive the colour palette from the source branding and select a cuisine-aware layout.
-5. Detect the source language, preserve it as canonical, and generate a complete English translation during the same structured AI pass.
+3. Deterministically recover structured business facts, hours, bounded catalog
+   candidates, relevant navigation, authentic source assets, and field-level
+   provenance before any model is considered.
+4. Recover source logos/favicons and CSS/meta brand colours, repairing contrast
+   where necessary before the palette reaches a renderer.
+5. Detect the source language and preserve it as canonical. When OpenRouter is
+   configured, generate a complete English translation in the structured pass.
 6. Preserve first-party photography and optionally enhance exposure, colour, crop, noise, and clarity without changing the food or venue.
 7. Save a private preview through a durable PostgreSQL-backed Workflow.
 8. Verify ownership through a one-time business-domain email invitation or a concierge-approved owner email.
@@ -26,8 +30,9 @@ after the session is revalidated against that site's organization membership.
 `/admin` is the platform operator console. It requires both a database
 `SUPERADMIN` role and an email listed in `SUPERADMIN_EMAILS`. It shows signups,
 subscriptions, request totals, portfolio traffic and conversion summaries, and
-bounded per-site operational rows. Restaurant contact email and outreach status
-are visible only in this dual-gated console. Lead creation never sends mail: an
+bounded per-site operational rows. The private owner/outreach recipient is
+stored separately from the sourced public business email and is visible only in
+this dual-gated console. Lead creation never sends mail: an
 operator must review the persisted preview, confirm the initial Restofront
 email, and can pause every workflow before its next send.
 
@@ -82,9 +87,56 @@ Heritage and fine-dining templates default to a clean text-led menu; casual,
 fresh, coastal, and bold concepts default to a small highlights gallery. Owners
 can show or hide the gallery from the dashboard without deleting any images.
 
+## Food retail vertical
+
+`FOOD_RETAIL` is a bounded vertical for bakeries, pâtisseries, butchers,
+delis, cheesemongers, grocers and similar local food shops. It reuses the shared
+site/catalog/integration engine but deliberately does not inherit table
+reservations or restaurant lead capture. Its primary conversion action is an
+existing preorder, click-and-collect, ordering or delivery link.
+
+The schema supports product ranges, store hours, location and sourced pickup
+details, seasonal availability, preorder notes, approved product photography,
+and allergens only when an exact source URL is stored with the label. Unknown
+products, prices, stock, pickup promises and allergens remain empty. English and
+French storefront copy and translation overlays are included.
+
+FOOD_RETAIL model output is presentation-only: a post-generation evidence
+adapter restores business identity, contact details, hours, products, prices,
+ordering links and factual product attributes from deterministic crawl output.
+Unsupported model claims remain empty or null.
+
+The vertical is registered for private studio imports and owner dashboards but
+is not publicly launched: its marketing hostnames are empty, its domain and
+sender are null, and its server-side publication and rollback capability is
+disabled. Private preview and owner review remain available.
+The implementation contract, test fixture, structured-data mapping and required
+domain/sender/production-config evidence are documented in
+[`docs/verticals/food-retail.md`](docs/verticals/food-retail.md).
+
+## Local-service vertical
+
+`LOCAL_SERVICE` is the bounded vertical for plumbers, electricians, builders,
+repair trades, and artisans. It reuses the shared site/catalog/integration
+engine while modeling services, service areas, explicit availability posture,
+credentials and insurance evidence, trust signals, completed projects, hours,
+and phone, WhatsApp, quote, or existing scheduling links.
+
+Its deterministic no-model path recognizes sourced Schema.org trade subtypes
+and preserves source language, logo/favicon, accessible brand palette, contact
+details, hours, same-origin navigation, structured services, prices, and
+evidence. Missing emergency coverage, credentials, insurance, trust claims,
+projects, prices, or availability remain unstated rather than being inferred.
+
+The vertical is registered for private imports, previews, and revision-safe
+owner editing. Public niche access, claiming, publication, and rollback remain
+disabled until a real domain, exact routed hostname, and matching verified
+sender configuration satisfy the launch-readiness gate. See
+[`docs/verticals/local-service.md`](docs/verticals/local-service.md).
+
 ## Internationalization
 
-Restaurant data uses one canonical source locale plus structured translation
+Site data uses one canonical source locale plus structured translation
 overlays. Prices, currencies, images, addresses, provider names, and external
 booking or ordering URLs remain shared, so translating a site cannot fork its
 operational data. Menu sections, menu items, descriptions, dietary labels, and
@@ -101,7 +153,9 @@ The canonical site is available at `/preview/[slug]`; translations use
 ## Stack
 
 - Next.js 16 App Router and React 19
-- Bun
+- Bun 1.3.14 for installs, Prisma/Workflow migrations, and operator tooling;
+  pinned Node.js 24.19.0 LTS for Next.js builds and the production standalone
+  server
 - Tailwind CSS v4 and shadcn/ui
 - Prisma 7 with PostgreSQL and the `pg` driver adapter
 - Vercel AI SDK 6 with OpenRouter for structured text generation and optional
@@ -138,6 +192,8 @@ and credential rotation are documented in
 The one-price offer, evidence gates, founder-cost worksheet, second-lead
 qualification, and 30-day decision record for the first paid restaurant are in
 [`docs/operations/first-customer-validation.md`](docs/operations/first-customer-validation.md).
+The read-only production evidence command and its fail-closed manifest are in
+[`docs/operations/first-customer-production-exercise.md`](docs/operations/first-customer-production-exercise.md).
 The bearer-authenticated `/api/health/ready` route verifies PostgreSQL, Redis,
 Amazon S3, billing, and the operator-alert outbox without returning secret
 values. Each application
@@ -160,9 +216,23 @@ fails closed when it is absent or invalid.
 
 ### AI generation
 
-Restaurant crawling, same-origin page discovery, SSRF checks, contact recovery,
-and integration detection run locally without a model. OpenRouter is used only
-to normalize recovered content into a structured restaurant draft:
+Restaurant crawling, same-origin page discovery, SSRF checks, and source
+reconstruction run locally without a model. JSON-LD, metadata, explicit contact
+links, semantic address markup, source navigation, logos/favicons, and CSS/meta
+colours are recovered with bounded parsers. Every accepted fact keeps its source
+URL, extraction method, and excerpt; evidence values are capped before draft
+validation and malformed email candidates are skipped. Same-origin navigation
+is persisted as safe internal hrefs, including for HTTP-only source sites.
+Structured menu/product/service candidates
+are accepted only when deterministic schema evidence exists. Each JSON-LD
+entity keeps its owning page URL for provenance and relative asset resolution;
+catalog availability remains unknown unless the source explicitly states it.
+
+The persisted draft keeps the repaired palette, logo, favicon, contact details,
+hours, canonical language, source navigation, authentic asset URLs, and the
+evidence records used to recover them. Customer renderers consume that same
+brand data. OpenRouter is optional and used to normalize or enrich the recovered
+content into a structured vertical draft:
 
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_TEXT_MODEL` defaults to `openrouter/auto`
@@ -184,8 +254,9 @@ allow-list; the default does.
   `PHOTO_ENHANCEMENT_CONCURRENCY`, and `PHOTO_ENHANCEMENT_BATCH_MAX_IMAGES`
   bound crawl/storage/provider fan-out
 
-Without `OPENROUTER_API_KEY` an import still completes: the draft falls back to
-the deterministic composer and hero enhancement is skipped.
+Without `OPENROUTER_API_KEY` an import still completes with the reconstructed
+business identity, branding, contact details, hours, integrations, and any
+bounded structured catalog candidates. Hero enhancement is skipped.
 
 - `WORKFLOW_ENABLED=true`
 - `WORKFLOW_TARGET_WORLD=@workflow/world-postgres`
@@ -256,13 +327,15 @@ Test-mode verification, the exact event allowlist, retry/replay behavior,
 Customer Portal setup, and the production activation blockers are documented
 in [`docs/operations/stripe-billing.md`](docs/operations/stripe-billing.md).
 Checkout requires a valid hashed claim invitation; a public preview URL alone
-cannot authorize billing or ownership.
+cannot authorize billing or ownership. Launch Checkout offers only the Starter
+founding subscription; the deployment-time Stripe preflight proves that it is
+the active, tax-exclusive EUR 49.00 monthly Price.
 
 ### Owner sign-in
 
 - `CLAIM_TOKEN_SECRET` with at least 32 random characters
-- `BETTER_AUTH_SECRET` with at least 32 random characters (preferred; the
-  claim secret is a rollout fallback)
+- `BETTER_AUTH_SECRET` with at least 32 random characters, dedicated to session
+  signing and distinct from `CLAIM_TOKEN_SECRET` in production
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
 
@@ -346,9 +419,9 @@ this same container, where the rewrite fires again — an infinite loop.
 - `/` — marketing and URL intake
 - `/create` — import and preview studio
 - `/claim/[slug]` — pricing and claim checkout
-- `/dashboard` — authenticated restaurant management
+- `/dashboard` — authenticated vertical-aware owner management
 - `/dashboard?demo=1` — local demo dashboard
 - `/admin` — dual-gated superadmin operator console
 - `/api/analytics/events` — first-party cookieless live-site event intake
-- `/preview/[slug]` — private full-screen restaurant preview
-- `/preview/[slug]/[locale]` — translated restaurant preview
+- `/preview/[slug]` — private full-screen site preview
+- `/preview/[slug]/[locale]` — translated site preview

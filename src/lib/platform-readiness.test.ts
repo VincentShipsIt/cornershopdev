@@ -19,7 +19,10 @@ const configuredEnvironment = {
   STRIPE_STARTER_PRICE_ID: "price_starter",
   STRIPE_GROWTH_PRICE_ID: "price_growth",
   RESEND_API_KEY: "re_test_configured",
+  RESEND_WEBHOOK_SECRET: "whsec_resend_configured",
   CLAIM_TOKEN_SECRET: "a-secure-test-secret-that-is-long-enough",
+  BETTER_AUTH_SECRET: "a-distinct-better-auth-secret-long-enough",
+  SUPERADMIN_EMAILS: "ops@example.com",
   OPERATOR_ALERT_EMAILS: "ops@example.com",
 };
 
@@ -29,6 +32,7 @@ function probes(): ReadinessProbes {
     rateLimit: mock(async () => {}),
     storage: mock(async () => {}),
     billing: mock(async () => {}),
+    auth: mock(async () => {}),
     alerting: mock(async () => {}),
   };
 }
@@ -67,6 +71,12 @@ describe("checkPlatformReadiness", () => {
           "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
       },
       {
+        service: "auth",
+        status: "misconfigured",
+        message:
+          "Set a distinct 32-character BETTER_AUTH_SECRET, SUPERADMIN_EMAILS, RESEND_API_KEY, and RESEND_WEBHOOK_SECRET.",
+      },
+      {
         service: "alerting",
         status: "misconfigured",
         message:
@@ -77,6 +87,7 @@ describe("checkPlatformReadiness", () => {
     expect(serviceProbes.rateLimit).not.toHaveBeenCalled();
     expect(serviceProbes.storage).not.toHaveBeenCalled();
     expect(serviceProbes.billing).not.toHaveBeenCalled();
+    expect(serviceProbes.auth).not.toHaveBeenCalled();
     expect(serviceProbes.alerting).not.toHaveBeenCalled();
   });
 
@@ -94,6 +105,7 @@ describe("checkPlatformReadiness", () => {
     expect(serviceProbes.database).toHaveBeenCalledTimes(1);
     expect(serviceProbes.rateLimit).toHaveBeenCalledTimes(1);
     expect(serviceProbes.storage).toHaveBeenCalledTimes(1);
+    expect(serviceProbes.auth).toHaveBeenCalledTimes(1);
     expect(serviceProbes.alerting).toHaveBeenCalledTimes(1);
   });
 
@@ -114,26 +126,32 @@ describe("checkPlatformReadiness", () => {
         "Set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, and a 32-character CLAIM_TOKEN_SECRET.",
     });
     expect(serviceProbes.billing).not.toHaveBeenCalled();
+    expect(serviceProbes.auth).not.toHaveBeenCalled();
     expect(serviceProbes.alerting).not.toHaveBeenCalled();
   });
 
   it("fails deployed environments that point at a local database", async () => {
-    const serviceProbes = probes();
-    const result = await checkPlatformReadiness(
-      {
-        ...configuredEnvironment,
-        DATABASE_URL: "postgresql://localhost:5432/cornershopdev",
-      },
-      serviceProbes,
-    );
+    for (const databaseUrl of [
+      "postgresql://localhost:5432/cornershopdev",
+      "postgresql://127.0.0.1:5432/cornershopdev",
+      "postgresql://127.0.0.2:5432/cornershopdev",
+      "postgresql://[::1]:5432/cornershopdev",
+    ]) {
+      const serviceProbes = probes();
+      const result = await checkPlatformReadiness(
+        { ...configuredEnvironment, DATABASE_URL: databaseUrl },
+        serviceProbes,
+      );
 
-    expect(result.status).toBe("not_ready");
-    expect(result.services[0]).toEqual({
-      service: "database",
-      status: "misconfigured",
-      message: "DATABASE_URL must use a managed host in deployed environments.",
-    });
-    expect(serviceProbes.database).not.toHaveBeenCalled();
+      expect(result.status).toBe("not_ready");
+      expect(result.services[0]).toEqual({
+        service: "database",
+        status: "misconfigured",
+        message:
+          "DATABASE_URL must use a managed host in deployed environments.",
+      });
+      expect(serviceProbes.database).not.toHaveBeenCalled();
+    }
   });
 
   it("does not expose provider errors or credential values", async () => {

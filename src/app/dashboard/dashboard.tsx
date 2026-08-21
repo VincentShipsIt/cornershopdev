@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -71,6 +71,8 @@ import {
   applyRestaurantMenuMutation,
   hasUnreviewedRestaurantTranslations,
   markRestaurantTranslationReviewed,
+  reconcileAcceptedSourceMonitoringDraft,
+  reconcileRegeneratedRestaurantDraft,
   updateRestaurantTranslation,
   validateRestaurantMenuDraft,
   type RestaurantMenuMutation,
@@ -91,6 +93,7 @@ type ClientPublicationHistoryItem = Omit<
  */
 export function Dashboard({
   initialDraft,
+  initialDraftRevision,
   email,
   checkoutComplete,
   demo,
@@ -104,6 +107,7 @@ export function Dashboard({
   platformUrl,
 }: {
   initialDraft: RestaurantDraft;
+  initialDraftRevision: number;
   email: string;
   checkoutComplete: boolean;
   demo: boolean;
@@ -116,10 +120,21 @@ export function Dashboard({
   sourceMonitoring: SourceMonitoringDashboardDto;
   platformUrl: string;
 }) {
-  const [draft, setDraft] = useState(initialDraft);
+  const [draft, setDraftState] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
+  const [persistedDraft, setPersistedDraft] = useState(initialDraft);
+  function setDraft(
+    next:
+      | RestaurantDraft
+      | ((current: RestaurantDraft) => RestaurantDraft),
+  ) {
+    const resolved = typeof next === "function" ? next(draftRef.current) : next;
+    draftRef.current = resolved;
+    setDraftState(resolved);
+  }
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [savedRevision, setSavedRevision] = useState<number | null>(null);
+  const [savedRevision, setSavedRevision] = useState(initialDraftRevision);
   const handlePhotoRevision = useCallback((revision: number) => {
     setSavedRevision(revision);
   }, []);
@@ -260,9 +275,10 @@ export function Dashboard({
     };
   }, [demo, draft.slug]);
 
-  async function save(): Promise<boolean> {
-    const validationIssues = validateRestaurantMenuDraft(draft);
-    const integrationIssues = validateRestaurantIntegrations(draft);
+  async function save(): Promise<number | null> {
+    const requestedDraft = structuredClone(draftRef.current);
+    const validationIssues = validateRestaurantMenuDraft(requestedDraft);
+    const integrationIssues = validateRestaurantIntegrations(requestedDraft);
     setMenuValidationIssues(validationIssues);
     setIntegrationValidationIssues(integrationIssues);
     if (validationIssues.length > 0 || integrationIssues.length > 0) {
@@ -276,7 +292,7 @@ export function Dashboard({
           ? "One or more external links are invalid or incomplete"
           : "Fix the invalid menu fields before saving these links",
       );
-      return false;
+      return null;
     }
     setSaving(true);
     setSaved(false);
@@ -284,15 +300,14 @@ export function Dashboard({
     setMenuSaveError(null);
     setIntegrationSaveError(null);
     try {
+      let persistedRevision = savedRevision;
       if (!demo) {
         const response = await fetch(`/api/sites/${draft.slug}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...draft,
-            ...(savedRevision !== null
-              ? { expectedRevision: savedRevision }
-              : {}),
+            ...requestedDraft,
+            expectedRevision: savedRevision,
           }),
         });
         const result = (await response.json()) as {
@@ -303,7 +318,23 @@ export function Dashboard({
         if (!response.ok) {
           throw new Error(result.error ?? "Save failed");
         }
-        setSavedRevision(result.revision ?? null);
+        if (!Number.isInteger(result.revision) || result.revision === undefined) {
+          throw new Error("Save response did not include a draft revision");
+        }
+        setSavedRevision(result.revision);
+        persistedRevision = result.revision;
+      }
+      setPersistedDraft(requestedDraft);
+      if (
+        JSON.stringify(draftRef.current) !== JSON.stringify(requestedDraft)
+      ) {
+        const message =
+          "New edits were made while saving. Save them before publishing.";
+        setSaved(false);
+        setPublishError(message);
+        setMenuSaveError(message);
+        setIntegrationSaveError(message);
+        return null;
       }
       setSaved(true);
       setThemeDirty(false);
@@ -312,13 +343,13 @@ export function Dashboard({
       setMenuValidationIssues([]);
       setIntegrationValidationIssues([]);
       setPublishedVersion(null);
-      return true;
+      return persistedRevision;
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Save failed";
       setPublishError(message);
       setMenuSaveError(message);
       setIntegrationSaveError(message);
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -353,7 +384,8 @@ export function Dashboard({
     setPublishing(true);
     setPublishError(null);
     try {
-      if (!(await save())) return;
+      const revisionToPublish = await save();
+      if (revisionToPublish === null) return;
       if (demo) {
         setPublishedVersion(1);
         setMenuUndoStack([]);
@@ -364,7 +396,10 @@ export function Dashboard({
       const response = await fetch(`/api/sites/${draft.slug}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changeSummary }),
+        body: JSON.stringify({
+          changeSummary,
+          expectedRevision: revisionToPublish,
+        }),
       });
       const result = (await response.json()) as {
         error?: string;
@@ -540,28 +575,52 @@ export function Dashboard({
     }
     setRegeneratingLocale(locale);
     setMenuSaveError(null);
+    const requestedDraft = structuredClone(draftRef.current);
+    const requestedRevision = savedRevision;
     try {
       const response = await fetch(
         `/api/sites/${draft.slug}/translations/${locale}/regenerate`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedRevision: requestedRevision }),
+        },
       );
       const result = (await response.json()) as {
         error?: string;
         draft?: unknown;
+        revision?: number;
       };
-      if (!response.ok || !result.draft) {
+      if (
+        !response.ok ||
+        !result.draft ||
+        !Number.isInteger(result.revision) ||
+        result.revision === undefined
+      ) {
         throw new Error(result.error ?? "Translation regeneration failed");
       }
       const regenerated = restaurantDraftSchema.parse(result.draft);
-      setDraft((current) => ({
-        ...current,
-        translations: regenerated.translations,
-      }));
-      setSaved(true);
-      setMenuDirty(false);
-      setIntegrationDirty(false);
-      setMenuValidationIssues([]);
-      setIntegrationValidationIssues([]);
+      const reconciled = reconcileRegeneratedRestaurantDraft(
+        requestedDraft,
+        draftRef.current,
+        regenerated,
+      );
+      setPersistedDraft(structuredClone(regenerated));
+      setDraft(reconciled.draft);
+      setSavedRevision(result.revision);
+      if (reconciled.preservedClientEdits) {
+        setSaved(false);
+        setMenuValidationIssues(validateRestaurantMenuDraft(reconciled.draft));
+        setIntegrationValidationIssues(
+          validateRestaurantIntegrations(reconciled.draft),
+        );
+      } else {
+        setSaved(true);
+        setMenuDirty(false);
+        setIntegrationDirty(false);
+        setMenuValidationIssues([]);
+        setIntegrationValidationIssues([]);
+      }
     } catch (error) {
       setMenuSaveError(
         error instanceof Error
@@ -582,6 +641,26 @@ export function Dashboard({
     setSaved(false);
     setMenuSaveError(null);
     setMenuValidationIssues([]);
+  }
+
+  function applyAcceptedSourceMonitoringDraft(input: {
+    revision: number;
+    draft: unknown;
+  }) {
+    const acceptedServerDraft = restaurantDraftSchema.parse(input.draft);
+    const reconciled = reconcileAcceptedSourceMonitoringDraft(
+      persistedDraft,
+      draftRef.current,
+      acceptedServerDraft,
+    );
+    setPersistedDraft(acceptedServerDraft);
+    setDraft(reconciled.draft);
+    setSavedRevision(input.revision);
+    setSaved(!reconciled.preservedClientEdits);
+    setMenuValidationIssues(validateRestaurantMenuDraft(reconciled.draft));
+    setIntegrationValidationIssues(
+      validateRestaurantIntegrations(reconciled.draft),
+    );
   }
 
   function mutateIntegration(
@@ -906,9 +985,9 @@ export function Dashboard({
       ) : null}
 
       <Tabs defaultValue="overview" className="mx-auto max-w-[1500px]">
-        <div className="flex min-h-[calc(100vh-4rem)]">
-          <aside className="hidden w-60 shrink-0 border-r bg-background p-4 lg:block">
-            <TabsList className="flex h-auto w-full flex-col items-stretch bg-transparent">
+        <div className="flex min-h-[calc(100vh-4rem)] flex-col lg:flex-row">
+          <aside className="contents lg:block lg:w-60 lg:shrink-0 lg:border-r lg:bg-background lg:p-4">
+            <TabsList className="mb-6 w-full justify-start overflow-x-auto lg:mb-0 lg:flex lg:h-auto lg:flex-col lg:items-stretch lg:overflow-visible lg:bg-transparent">
               {[
                 ["overview", LayoutDashboard, "Overview"],
                 ["analytics", TrendingUp, "Analytics"],
@@ -924,14 +1003,14 @@ export function Dashboard({
                 <TabsTrigger
                   key={value as string}
                   value={value as string}
-                  className="justify-start gap-2.5 px-3 py-2.5 data-[state=active]:bg-muted"
+                  className="lg:justify-start lg:gap-2.5 lg:px-3 lg:py-2.5 lg:data-[state=active]:bg-muted"
                 >
-                  <Icon className="size-4" />
+                  <Icon className="hidden size-4 lg:block" />
                   {label as string}
                 </TabsTrigger>
               ))}
             </TabsList>
-            <div className="mt-8 rounded-xl border bg-muted/40 p-3">
+            <div className="mt-8 hidden rounded-xl border bg-muted/40 p-3 lg:block">
               <p className="text-xs font-medium">Signed in as</p>
               <p className="mt-1 truncate text-[11px] text-muted-foreground">
                 {email}
@@ -940,18 +1019,6 @@ export function Dashboard({
           </aside>
 
           <div className="min-w-0 flex-1 p-4 md:p-7 lg:p-10">
-            <TabsList className="mb-6 w-full justify-start overflow-x-auto lg:hidden">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-              <TabsTrigger value="leads">Leads</TabsTrigger>
-              <TabsTrigger value="design">Design</TabsTrigger>
-              <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-              <TabsTrigger value="menu">Menu</TabsTrigger>
-              <TabsTrigger value="imagery">Imagery</TabsTrigger>
-              <TabsTrigger value="integrations">Links</TabsTrigger>
-              <TabsTrigger value="domain">Domain</TabsTrigger>
-            </TabsList>
-
             <TabsContent value="overview" className="mt-0">
               <PageHeading
                 eyebrow="Restaurant overview"
@@ -1071,6 +1138,12 @@ export function Dashboard({
                 siteSlug={draft.slug}
                 initial={sourceMonitoring}
                 demo={demo}
+                draftRevision={savedRevision}
+                hasUnsavedChanges={
+                  JSON.stringify(draft) !==
+                  JSON.stringify(persistedDraft)
+                }
+                onAcceptedDraft={applyAcceptedSourceMonitoringDraft}
               />
             </TabsContent>
 
@@ -1596,8 +1669,9 @@ export function Dashboard({
               <Card className="mt-8 max-w-3xl">
                 <CardContent className="grid gap-5 pt-6">
                   <div className="grid gap-2">
-                    <Label>Restaurant name</Label>
+                    <Label htmlFor="restaurant-name">Restaurant name</Label>
                     <Input
+                      id="restaurant-name"
                       value={draft.name}
                       onChange={(event) =>
                         setDraft((current) => ({

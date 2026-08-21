@@ -10,11 +10,15 @@ import {
   storageObjectKeyFromUrl,
 } from "@/lib/storage/images";
 import { deleteAndVerifyObjectVersions } from "@/lib/storage/versioned-cleanup";
+import {
+  imageStorageVerificationFailure,
+  type ImageStorageCleanupStatus,
+} from "@/lib/image-storage-verification";
 
 class SafeVerificationError extends Error {
   constructor(
     readonly code: string,
-    readonly cleanup: "not-required" | "completed" | "failed" | "unknown",
+    readonly cleanup: ImageStorageCleanupStatus | "unknown",
   ) {
     super(code);
     this.name = "SafeVerificationError";
@@ -67,7 +71,7 @@ async function verifyRoundTrip(args: string[]) {
   const keys: string[] = [];
   const checks: Array<{ label: string; digest: string }> = [];
   let failure: string | null = null;
-  let cleanup: "not-required" | "completed" | "failed" = "not-required";
+  let cleanup: ImageStorageCleanupStatus = "not-required";
 
   try {
     const original = await storeImmutableSiteOriginal({
@@ -128,11 +132,17 @@ async function verifyRoundTrip(args: string[]) {
     }
   }
 
-  if (cleanup === "failed") {
-    throw new SafeVerificationError("cleanup_failed", cleanup);
-  }
-  if (failure || checks.length !== 2) {
-    throw new SafeVerificationError(failure ?? "incomplete_roundtrip", cleanup);
+  const verificationFailure = imageStorageVerificationFailure({
+    primaryFailure: failure,
+    cleanup,
+    completedChecks: checks.length,
+    expectedChecks: fixtures.length,
+  });
+  if (verificationFailure) {
+    throw new SafeVerificationError(
+      verificationFailure.failure,
+      verificationFailure.cleanup,
+    );
   }
   return {
     command: "verify-image-storage-roundtrip",

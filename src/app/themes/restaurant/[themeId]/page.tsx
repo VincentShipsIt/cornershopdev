@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { RestaurantThemeRenderer } from "@/components/restaurant-themes/restaurant-theme-renderer";
 import { SiteHeader } from "@/components/site-header";
+import { fullBrandFontVariables } from "@/components/fonts/full-brand-font-scope";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { restaurantThemeGallerySurface } from "@/lib/theme-gallery-surface";
@@ -82,6 +83,7 @@ export default async function RestaurantThemeDetailPage({
           { href: "#preview", label: "Preview" },
         ]}
         createHref="/create?vertical=restaurant"
+        fontVariables={fullBrandFontVariables}
       />
       <main>
         <section

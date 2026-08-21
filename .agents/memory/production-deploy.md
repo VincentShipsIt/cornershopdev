@@ -1,18 +1,28 @@
 ---
-last_verified: 2026-07-26
+last_verified: 2026-08-20
 status: durable
 ---
 
 # Production deploy — mechanism and gotchas
 
-Host `i-00e74422e719396c3` (us-west-1), single container `cornershopdev` behind
-`shipshit-caddy`, single-origin on `cornershop.dev`.
+Host `i-00e74422e719396c3` (us-west-1), single container `api-cornershop-dev`
+behind `shipshit-caddy`. Single-origin: `cornershop.dev`, `restofront.com`,
+their routed storefront hostnames, and customer custom domains hit that container.
+`domains.cornershop.dev` is an intentional Caddy `404` and is not proxied to
+the app (`PUBLIC_APP_IP` `52.8.153.188`). This is not a Vercel frontend. Do not
+split it — see `hosting-single-origin.md`.
 
 Production application data and Workflow state both use the PostgreSQL database
 `cornershopdev` on RDS `api-shipshit-dev`. It was renamed in place from
 `restofront` on 2026-07-26; the original `restofront_app` owner was preserved
 and both encrypted SSM URLs were updated before the same v0.2.0 artifact was
 redeployed.
+
+The image uses Bun 1.3.14 for dependency installation, database and Workflow
+migrations, and bundled operator tools. Both the production Next.js build and
+standalone server run with the fully pinned Node.js 24.19.0 LTS image. CI must
+build and boot that candidate image and verify the public, auth, and dashboard
+runtime contract; building or serving Next under Bun is not production parity.
 
 ## Deploying is a release, never a merge
 
@@ -104,3 +114,14 @@ on 2026-07-26:
 
 Do not treat other `restofront.com` records as cleanup targets. Restofront is
 the active restaurant niche, and its email/DKIM records remain intentional.
+`restofront.com` and `www.restofront.com` A-record to the same Caddy IP as
+`cornershop.dev`. A stale Caddy comment that "restofront.com is served
+elsewhere" is false.
+
+## Vercel is not this app
+
+The leftover Vercel Git project `restofrontcom` was disconnected 2026-08-19.
+The operator reports deleting it on 2026-08-20; that account-side action is
+not independently observable from this repository. It never served
+`restofront.com` or `cornershop.dev`. Do not recreate it. Do not `vercel link` this repo. Detail:
+`hosting-single-origin.md`.

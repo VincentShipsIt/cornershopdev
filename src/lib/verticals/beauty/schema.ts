@@ -1,13 +1,18 @@
 import { z } from "zod";
 import {
-  assertTranslationParity,
+  assertSiteDraftInvariants,
   baseSiteDraftCoreShape,
   baseSiteTranslationSchema,
   catalogItemSchema,
   catalogSectionSchema,
+  integrationSchema,
   translatedCatalogItemSchema,
   translatedCatalogSectionSchema,
 } from "@/lib/verticals/schema";
+
+export const beautyIntegrationSchema = integrationSchema.extend({
+  type: z.enum(["booking", "social"]),
+});
 
 /**
  * Unlike the restaurant's free-text `cuisine`, the service style is a closed set.
@@ -59,6 +64,7 @@ export const beautySiteDraftSchema = z
   .object({
     ...baseSiteDraftCoreShape,
     attributes: beautyAttributesSchema,
+    integrations: z.array(beautyIntegrationSchema).max(12),
     translations: z.array(beautySiteTranslationSchema).max(8).default([]),
     catalogSections: z
       .array(
@@ -75,7 +81,7 @@ export const beautySiteDraftSchema = z
       .min(1)
       .max(12),
   })
-  .superRefine(assertTranslationParity);
+  .superRefine(assertSiteDraftInvariants);
 
 export type ServiceStyle = z.infer<typeof serviceStyleSchema>;
 export type BeautyAttributes = z.infer<typeof beautyAttributesSchema>;

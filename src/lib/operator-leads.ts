@@ -71,7 +71,9 @@ export async function createOrReopenOperatorLead(input: {
         },
         data: {
           status: "PREVIEW_READY",
-          ...(input.contactEmail ? { email: input.contactEmail } : {}),
+          ...(input.contactEmail
+            ? { leadContactEmail: input.contactEmail }
+            : {}),
         },
       });
       if (reopened.count !== 1) {
@@ -120,7 +122,7 @@ export async function createOrReopenOperatorLead(input: {
       siteId: persisted.siteId,
       siteSlug: persisted.draft.slug,
       vertical: input.vertical,
-      photos: extracted.photos,
+      photos: extracted.photos ?? [],
       actor: input.actor,
     }).catch(() => undefined);
     return {

@@ -86,7 +86,7 @@ export async function siteImportWorkflow(
       importJobId,
       vertical,
     );
-    await ingestPhotos(persisted, extracted.photos, vertical);
+    await ingestPhotos(persisted, extracted.photos ?? [], vertical);
     await emitComplete(persisted, vertical);
     console.log(`[site-import] DONE slug=${persisted.draft.slug}`);
     return persisted.draft;
@@ -167,7 +167,7 @@ async function failImport(importJobId: string, message: string): Promise<void> {
 
 async function ingestPhotos(
   persisted: PersistedImport,
-  photos: ExtractedSite["photos"],
+  photos: ExtractedSite["photos"] = [],
   vertical: VerticalId,
 ): Promise<void> {
   "use step";
