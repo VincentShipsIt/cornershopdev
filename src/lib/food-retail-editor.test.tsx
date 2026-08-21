@@ -1,5 +1,18 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+
+mock.module("next/navigation", () => ({
+  useRouter: () => ({
+    push: () => {},
+    replace: () => {},
+    refresh: () => {},
+    back: () => {},
+    prefetch: () => {},
+  }),
+  usePathname: () => "/dashboard",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 import { FoodRetailDashboard } from "@/app/dashboard/food-retail-dashboard";
 import { FACTORY_BRAND } from "@/lib/brand";
 import { normalizeGeneratedTranslationOverlays } from "@/lib/ai/site-generation";
