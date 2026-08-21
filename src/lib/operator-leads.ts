@@ -23,6 +23,7 @@ import {
   mergeLeadEligibilityAttributes,
   mergeOperatorLeadAttributes,
 } from "@/lib/operator-lead-attributes";
+import { ingestDiscoveredSitePhotos } from "@/lib/photo-library";
 
 /**
  * Lead statuses that a site may still be reopened or outreached from.
@@ -178,6 +179,13 @@ export async function createOrReopenOperatorLead(input: {
       contactEmail: input.contactEmail,
       leadIngest: input.leadIngest,
     });
+    await ingestDiscoveredSitePhotos({
+      siteId: persisted.siteId,
+      siteSlug: persisted.draft.slug,
+      vertical: input.vertical,
+      photos: extracted.photos ?? [],
+      actor: input.actor,
+    }).catch(() => undefined);
     return {
       siteSlug: persisted.draft.slug,
       importJobId,

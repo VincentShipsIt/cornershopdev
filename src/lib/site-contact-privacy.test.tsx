@@ -136,5 +136,6 @@ function storedSiteRecord(
       updatedAt: new Date(),
       ...integration,
     })),
+    photos: [],
   } as unknown as PersistedSiteDraftRecord;
 }

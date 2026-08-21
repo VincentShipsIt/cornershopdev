@@ -286,6 +286,7 @@ function persistedSiteRecord(
       createdAt: new Date(),
       updatedAt: new Date(),
     })),
+    photos: [],
   } as unknown as PersistedSiteDraftRecord;
 }
 
@@ -344,5 +345,6 @@ function legacySiteRecord(): PersistedSiteDraftRecord {
       createdAt: new Date(),
       updatedAt: new Date(),
     })),
+    photos: [],
   } as unknown as PersistedSiteDraftRecord;
 }

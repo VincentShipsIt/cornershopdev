@@ -173,15 +173,22 @@ docker exec api-cornershop-dev \
   bun run operator:verify-image-storage --environment production --execute
 ```
 
-The command writes separate `original-hero` and enhanced `hero` fixtures through
-`storeSiteImage`, retrieves both with the configured S3 client, verifies their
-exact SHA-256 content, and deletes both in a `finally` cleanup. Output contains
+The command writes a content-addressed immutable original and its config-addressed
+enhanced derivative through the production photo storage path, retrieves both
+with the configured S3 client, verifies their exact SHA-256 content, proves the
+keys are distinct, and deletes every exact object version and delete marker in a
+`finally` cleanup. It then lists the keys again and refuses to report success if
+any version remains. The scoped runtime role must allow `s3:ListBucketVersions`
+and `s3:DeleteObjectVersion` in addition to `s3:PutObject`, `s3:GetObject`, and
+`s3:DeleteObject`. Output contains
 only fixture labels, digests, cleanup status, environment, and timestamp—never
 bucket names, keys, URLs, credentials, or provider error bodies. A run without
 `--execute` performs no write. When verification and cleanup both fail, the
 output retains the primary write/read or content-mismatch failure and reports
 `cleanup: failed` separately. Do not claim the production round trip until the
-real command succeeds and cleanup is recorded as `completed`.
+real command succeeds and cleanup is recorded as `completed`. Issue #10 remains
+the evidence gate; after an observed role denial, repair and review IAM before an
+authorized retry rather than probing production from a feature branch.
 
 ## Runtime operator alerts
 

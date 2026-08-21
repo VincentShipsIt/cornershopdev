@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import {
-  DeleteObjectsCommand,
   GetObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import {
   getImageStorageConfig,
+  storeImmutableEnhancedPhoto,
+  storeImmutableSiteOriginal,
   storageObjectKeyFromUrl,
-  storeSiteImage,
 } from "@/lib/storage/images";
+import { deleteAndVerifyObjectVersions } from "@/lib/storage/versioned-cleanup";
 import {
   imageStorageVerificationFailure,
   type ImageStorageCleanupStatus,
@@ -52,7 +53,6 @@ async function verifyRoundTrip(args: string[]) {
   const fixtures = [
     {
       label: "original",
-      purpose: "original-hero" as const,
       data: Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X2NDWQAAAABJRU5ErkJggg==",
         "base64",
@@ -60,7 +60,6 @@ async function verifyRoundTrip(args: string[]) {
     },
     {
       label: "enhanced",
-      purpose: "hero" as const,
       data: Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
         "base64",
@@ -75,18 +74,33 @@ async function verifyRoundTrip(args: string[]) {
   let cleanup: ImageStorageCleanupStatus = "not-required";
 
   try {
-    for (const fixture of fixtures) {
-      const storedUrl = await storeSiteImage({
-        siteSlug: `storage-verification-${environment}`,
-        vertical: "RESTAURANT",
-        data: fixture.data,
-        mediaType: "image/png",
-        purpose: fixture.purpose,
-      });
-      const key = storageObjectKeyFromUrl(storedUrl);
-      keys.push(key);
+    const original = await storeImmutableSiteOriginal({
+      siteSlug: `storage-verification-${environment}`,
+      vertical: "RESTAURANT",
+      data: fixtures[0]!.data,
+      mediaType: "image/png",
+    });
+    keys.push(storageObjectKeyFromUrl(original.url));
+    const enhanced = await storeImmutableEnhancedPhoto({
+      siteSlug: `storage-verification-${environment}`,
+      vertical: "RESTAURANT",
+      sourceSha256: original.sha256,
+      configVersion: "f".repeat(16),
+      data: fixtures[1]!.data,
+      mediaType: "image/png",
+    });
+    const enhancedKey = storageObjectKeyFromUrl(enhanced.url);
+    if (keys.includes(enhancedKey)) {
+      throw new SafeVerificationError("duplicate_object_key", "unknown");
+    }
+    keys.push(enhancedKey);
+    const stored = [
+      { ...fixtures[0]!, key: keys[0]! },
+      { ...fixtures[1]!, key: enhancedKey },
+    ];
+    for (const fixture of stored) {
       const response = await client.send(
-        new GetObjectCommand({ Bucket: config.bucket, Key: key }),
+        new GetObjectCommand({ Bucket: config.bucket, Key: fixture.key }),
       );
       const retrieved = await response.Body?.transformToByteArray();
       if (
@@ -106,13 +120,12 @@ async function verifyRoundTrip(args: string[]) {
   } finally {
     if (keys.length > 0) {
       try {
-        const deleted = await client.send(
-          new DeleteObjectsCommand({
-            Bucket: config.bucket,
-            Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
-          }),
-        );
-        cleanup = deleted.Errors?.length ? "failed" : "completed";
+        await deleteAndVerifyObjectVersions({
+          client,
+          bucket: config.bucket,
+          keys,
+        });
+        cleanup = "completed";
       } catch {
         cleanup = "failed";
       }

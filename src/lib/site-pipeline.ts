@@ -5,6 +5,7 @@ import {
   type SiteImageEnhancementRequest,
 } from "@/lib/ai/site-generation";
 import { inspectSource, type ExtractedSite } from "@/lib/importer";
+import { withoutUnreviewedSourcePhotos } from "@/lib/photo-draft-safety";
 import type { PersistableSiteDraft } from "@/lib/site-persistence";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
@@ -31,12 +32,13 @@ export async function generateDraftForVertical(
   source: ExtractedSite,
   vertical: VerticalId,
 ): Promise<PersistableSiteDraft> {
-  return generateSiteDraft(source, resolveVerticalConfig(vertical));
+  const draft = await generateSiteDraft(source, resolveVerticalConfig(vertical));
+  return withoutUnreviewedSourcePhotos(draft);
 }
 
 export async function enhanceSiteHeroImage(
   request: SiteImageEnhancementRequest,
   vertical: VerticalId,
-): Promise<{ data: Uint8Array; mediaType: string }> {
+): Promise<{ data: Uint8Array; mediaType: string; costMicros: number | null }> {
   return enhanceSiteImage(request, resolveVerticalConfig(vertical));
 }

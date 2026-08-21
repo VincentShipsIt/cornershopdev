@@ -37,6 +37,12 @@ export type SiteSourceDataView = {
   }>;
 };
 
+export type SiteGalleryImageView = {
+  url: string;
+  originalUrl: string;
+  provenance: "official" | "owner" | "permissioned-ugc";
+};
+
 export const LEGACY_THEME_VERSION = "legacy-v1";
 
 /**
@@ -119,6 +125,7 @@ export type SiteDraftView = {
   logoUrl?: string | null;
   faviconUrl?: string | null;
   heroImageUrl: string | null;
+  galleryImages: SiteGalleryImageView[];
   palette: SitePaletteView;
   sourceData?: SiteSourceDataView;
   defaultLocale: string;

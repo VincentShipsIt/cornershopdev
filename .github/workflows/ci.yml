@@ -37,7 +37,7 @@ jobs:
       OUTREACH_LEGAL_CONTROLLER: Corner Shop Labs Ltd
       WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
@@ -57,6 +57,10 @@ jobs:
         env:
           SITE_PUBLICATION_POSTGRES_TEST: "1"
         run: bun test src/lib/site-publication.postgres.test.ts
+      - name: Postgres photo library suite
+        env:
+          PHOTO_LIBRARY_POSTGRES_TEST: "1"
+        run: bun test src/lib/photo-library.postgres.test.ts
       - name: Postgres source-monitoring concurrency suite
         env:
           SOURCE_MONITORING_POSTGRES_TEST: "1"
@@ -99,7 +103,7 @@ jobs:
       - name: Show Lighthouse server log
         if: failure()
         run: cat .next/lighthouse-server.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: lighthouseci
