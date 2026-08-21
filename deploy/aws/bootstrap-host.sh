@@ -53,10 +53,25 @@ sed -i \
   cat "$caddy_fragment_source"
 } >"$temporary_caddyfile"
 
-docker run --rm \
-  --volume "$temporary_caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2 \
-  caddy validate --config /etc/caddy/Caddyfile
+# Validate the candidate in the exact context that will load it. A throwaway
+# caddy:2 container cannot resolve other tenants' managed imports — e.g.
+# dailydraft's `import /config/dailydraft-*.caddy` resolves only inside
+# shipshit-caddy, which made every deploy fail closed between 2026-07-29 and
+# this fix. Run the candidate against the running binary beside the real
+# Caddyfile instead, and keep refusing to touch the live file on any failure.
+candidate_config="/etc/caddy/.cornershopdev-candidate.Caddyfile"
+validated=0
+if docker cp "$temporary_caddyfile" "shipshit-caddy:$candidate_config"; then
+  if docker exec shipshit-caddy caddy validate --config "$candidate_config"; then
+    validated=1
+  fi
+  docker exec shipshit-caddy rm -f "$candidate_config" || true
+fi
+if [[ "$validated" != 1 ]]; then
+  echo "Candidate Caddyfile did not validate inside shipshit-caddy; leaving the live config untouched" >&2
+  exit 1
+fi
+
 # Preserve the inode because the shared Caddy container bind-mounts this file.
 cat "$temporary_caddyfile" >"$caddyfile"
 chmod 644 "$caddyfile"

@@ -15,7 +15,7 @@ readonly container="api-cornershop-dev"
 readonly candidate="${container}-candidate"
 readonly previous="${container}-previous"
 readonly deployed_sha="${image_name#cornershopdev:}"
-readonly expected_bootstrap_sha256="6bcc109b5e8d64592d31e56bc39b3881b5b7f62168595388d7c73fd966d8a9a3"
+readonly expected_bootstrap_sha256="257af17d1b20743948bb5d674d8dc12675bf45e47c697f987ed596bdcf802532"
 readonly expected_caddy_fragment_sha256="9f0bb5f0c1d9cc0e4b341b2795c6c63563aff918c4e47a8570fcecc23ec72b70"
 readonly expected_host_launcher_sha256="75aa0e06cf621dd7c9c742b6a73e45a1d8c23dc7720feab08547253f1e934abc"
 
