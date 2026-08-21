@@ -222,9 +222,12 @@ ${JSON.stringify(source)}`,
  * missing file part. Skipping such a provider turns a confusing failure into
  * the caller's existing "enhancement unavailable" path.
  */
-function getImageModel() {
+function getImageModel(model?: string) {
   return getOpenRouter().chat(
-    process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-3.1-flash-image",
+    model ??
+      process.env.PHOTO_ENHANCEMENT_MODEL ??
+      process.env.OPENROUTER_IMAGE_MODEL ??
+      "google/gemini-3.1-flash-image",
     {
       extraBody: {
         modalities: ["image", "text"],
@@ -487,6 +490,7 @@ export type SiteImageEnhancementRequest = {
   sourceImageUrl: string;
   siteName?: string;
   enhancementNotes?: string;
+  model?: string;
 };
 
 function parseSourceImageUrl(value: string): URL {
@@ -503,6 +507,7 @@ export async function enhanceSiteImage(
 ): Promise<{
   data: Uint8Array;
   mediaType: string;
+  costMicros: number | null;
 }> {
   if (!aiIsConfigured()) {
     throw new Error("OPENROUTER_API_KEY is not configured");
@@ -517,7 +522,7 @@ export async function enhanceSiteImage(
     ? `Requested finishing notes: ${request.enhancementNotes}`
     : "";
   const result = await generateText({
-    model: getImageModel(),
+    model: getImageModel(request.model),
     messages: [
       {
         role: "user",
@@ -528,7 +533,7 @@ export async function enhanceSiteImage(
 
 Allowed changes: correct exposure and white balance, recover highlights and shadows, reduce noise, improve sharpness and resolution, straighten, crop subtly, and remove only transient non-material distractions such as sensor dust.
 
-Forbidden changes: do not add, remove, replace, move, restyle, or regenerate any ${enhancement.forbiddenElements}, furniture, architecture, logo, person, or material background element. Do not change camera geometry or ${enhancement.sceneClause}. If a requested adjustment would change ${enhancement.fidelityClause}, leave it unchanged.
+Forbidden changes: never synthesize, add, remove, replace, move, restyle, or regenerate a product, food item, treatment result, person, architecture, logo, ${enhancement.forbiddenElements}, furniture, or any material scene element. Do not change camera geometry or ${enhancement.sceneClause}. If a requested adjustment would change ${enhancement.fidelityClause}, leave it unchanged. When fidelity cannot be preserved, return the source unchanged.
 
 ${enhancement.gradeClause} Return one enhanced image and no text.
 
@@ -554,5 +559,28 @@ ${notes}`,
   return {
     data: image.uint8Array,
     mediaType: image.mediaType ?? "image/png",
+    costMicros: providerCostMicros(result.providerMetadata),
   };
+}
+
+export function providerCostMicros(providerMetadata: unknown): number | null {
+  if (!providerMetadata || typeof providerMetadata !== "object") return null;
+  for (const metadata of Object.values(
+    providerMetadata as Record<string, unknown>,
+  )) {
+    if (!metadata || typeof metadata !== "object") continue;
+    const record = metadata as Record<string, unknown>;
+    const direct = record.costMicros;
+    if (typeof direct === "number" && Number.isFinite(direct) && direct >= 0) {
+      return Math.ceil(direct);
+    }
+    const usage = record.usage;
+    if (!usage || typeof usage !== "object") continue;
+    const cost = (usage as Record<string, unknown>).cost;
+    const dollars = typeof cost === "string" ? Number(cost) : cost;
+    if (typeof dollars === "number" && Number.isFinite(dollars) && dollars >= 0) {
+      return Math.ceil(dollars * 1_000_000);
+    }
+  }
+  return null;
 }

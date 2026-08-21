@@ -56,6 +56,10 @@ jobs:
         env:
           SITE_PUBLICATION_POSTGRES_TEST: "1"
         run: bun test src/lib/site-publication.postgres.test.ts
+      - name: Postgres photo library suite
+        env:
+          PHOTO_LIBRARY_POSTGRES_TEST: "1"
+        run: bun test src/lib/photo-library.postgres.test.ts
       - name: Postgres source-monitoring concurrency suite
         env:
           SOURCE_MONITORING_POSTGRES_TEST: "1"

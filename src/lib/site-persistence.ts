@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { catalogPhotoReplacementPosition } from "@/lib/catalog-photo-reconciliation";
 import { Vertical } from "@/generated/prisma/enums";
 import { getDb } from "@/lib/db";
 import {
@@ -41,6 +42,11 @@ export type PersistableSiteDraft = {
   heroImageUrl: string | null;
   heroOriginalImageUrl?: string | null;
   heroImageProvenance?: "official" | "owner" | "permissioned-ugc" | null;
+  galleryImages?: Array<{
+    url: string;
+    originalUrl: string;
+    provenance: "official" | "owner" | "permissioned-ugc";
+  }>;
   palette: {
     background: string;
     foreground: string;
@@ -105,6 +111,7 @@ export type PersistableSiteDraft = {
 };
 
 export type PersistedSiteImport<TDraft extends PersistableSiteDraft> = {
+  siteId: string;
   draft: TDraft;
   importJobId: string;
   urls: ImportUrls;
@@ -401,6 +408,7 @@ export async function persistSiteImport<TDraft extends PersistableSiteDraft>(inp
             slug: site.slug,
           }) as TDraft;
           return {
+            siteId: site.id,
             draft: canonicalDraft,
             importJobId: input.importJobId,
             urls: buildImportUrls(site.slug),
@@ -561,6 +569,7 @@ export async function createOperatorSiteImport<
           }
 
           return {
+            siteId: site.id,
             draft: config.draftSchema.parse({
               ...draft,
               slug: site.slug,
@@ -619,6 +628,40 @@ export async function updateSiteDraft(
           ) {
             throw new DraftRevisionConflictError(current.draftRevision);
           }
+          // Catalog rows are replaced on a full owner save. Preserve a managed
+          // photo only when section + item names identify one unique replacement;
+          // position alone can silently move a real product photo to another item.
+          const catalogPhotoSelections = await tx.photoAsset.findMany({
+            where: {
+              siteId: current.id,
+              selectedUsage: "CATALOG",
+              selectedCatalogItemId: { not: null },
+            },
+            select: {
+              id: true,
+              originalUrl: true,
+              enhancedUrl: true,
+              enhancedReviewStatus: true,
+              activeVariant: true,
+              provenance: true,
+              selectedCatalogItem: {
+                select: {
+                  name: true,
+                  section: { select: { name: true } },
+                },
+              },
+            },
+          });
+          const catalogPhotoTargets = catalogPhotoSelections.map((selection) => ({
+            selection,
+            position: selection.selectedCatalogItem
+              ? catalogPhotoReplacementPosition({
+                  previousSectionName: selection.selectedCatalogItem.section.name,
+                  previousItemName: selection.selectedCatalogItem.name,
+                  replacementCatalog: parsed.catalogSections,
+                })
+              : null,
+          }));
           const updated = await tx.site.update({
             where: { id: current.id },
             data: {
@@ -628,6 +671,67 @@ export async function updateSiteDraft(
             },
             select: { id: true, draftRevision: true },
           });
+          if (catalogPhotoSelections.length > 0) {
+            const replacementItems = await tx.catalogItem.findMany({
+              where: { section: { siteId: current.id } },
+              select: {
+                id: true,
+                position: true,
+                section: { select: { position: true } },
+              },
+            });
+            for (const { selection, position } of catalogPhotoTargets) {
+              const replacement = position
+                ? replacementItems.find(
+                    (item) =>
+                      item.position === position.itemIndex &&
+                      item.section.position === position.sectionIndex,
+                  )
+                : null;
+              const managedUrls = [selection.originalUrl, selection.enhancedUrl]
+                .filter((url): url is string => Boolean(url));
+              await tx.catalogItem.updateMany({
+                where: {
+                  section: { siteId: current.id },
+                  ...(replacement ? { id: { not: replacement.id } } : {}),
+                  OR: [
+                    { imageUrl: { in: managedUrls } },
+                    { originalImageUrl: { in: managedUrls } },
+                  ],
+                },
+                data: {
+                  imageUrl: null,
+                  originalImageUrl: null,
+                  imageProvenance: null,
+                },
+              });
+              if (replacement) {
+                const imageUrl =
+                  selection.activeVariant === "ENHANCED" &&
+                  selection.enhancedReviewStatus === "APPROVED" &&
+                  selection.enhancedUrl
+                    ? selection.enhancedUrl
+                    : selection.originalUrl;
+                await tx.catalogItem.update({
+                  where: { id: replacement.id },
+                  data: {
+                    imageUrl,
+                    originalImageUrl: selection.originalUrl,
+                    imageProvenance: selection.provenance,
+                  },
+                });
+              }
+              await tx.photoAsset.update({
+                where: { id: selection.id },
+                data: replacement
+                  ? {
+                      selectedCatalogItemId: replacement.id,
+                      selectedUsage: "CATALOG",
+                    }
+                  : { selectedCatalogItemId: null, selectedUsage: null },
+              });
+            }
+          }
           if (options.actor) {
             await tx.auditEvent.create({
               data: {

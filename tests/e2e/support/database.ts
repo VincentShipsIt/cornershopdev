@@ -7,6 +7,8 @@ import { siteDraftScalarData } from "@/lib/site-persistence";
 import { sampleFoodRetailDraft } from "@/lib/verticals/food-retail/fixtures";
 import { e2e } from "./fixtures";
 
+const e2eHeroUrl = `https://assets.example/first-customer/${e2e.targetSlug}/hero.jpg`;
+
 export async function seedFirstCustomerBrowserJourney() {
   await cleanupFirstCustomerBrowserJourney();
   const db = getDb();
@@ -53,8 +55,8 @@ export async function seedFirstCustomerBrowserJourney() {
       phone: sampleSiteDraft.phone,
       email: e2e.ownerEmail,
       sourceUrl: "https://restaurant.example.test/menu",
-      heroImageUrl: sampleSiteDraft.heroImageUrl,
-      heroOriginalImageUrl: sampleSiteDraft.heroOriginalImageUrl,
+      heroImageUrl: e2eHeroUrl,
+      heroOriginalImageUrl: e2eHeroUrl,
       heroImageProvenance: "OWNER",
       autoEnhanceImages: sampleSiteDraft.autoEnhanceImages,
       defaultLocale: sampleSiteDraft.defaultLocale,
@@ -107,6 +109,28 @@ export async function seedFirstCustomerBrowserJourney() {
           }),
         ),
       },
+    },
+  });
+  // The immutable-photo publication gate requires the hero projection to
+  // reference an approved PhotoAsset stored immutably, so the browser journey
+  // seeds the owner hero through the same pipeline a real import uses.
+  await db.photoAsset.create({
+    data: {
+      siteId: e2e.targetId,
+      sourceUrl: `https://restaurant.example.test/hero-${e2e.targetSlug}.jpg`,
+      provenance: "OWNER",
+      sourceKind: "OWNER_UPLOAD",
+      contentSha256: "c".repeat(64),
+      originalStorageKey: `first-customer/${e2e.targetSlug}/hero.jpg`,
+      originalUrl: e2eHeroUrl,
+      mediaType: "image/jpeg",
+      byteLength: 1_024,
+      candidateUsages: ["HERO"],
+      reviewStatus: "APPROVED",
+      reviewedAt: new Date(),
+      reviewedBy: `owner:${e2e.ownerEmail}`,
+      selectedUsage: "HERO",
+      activeVariant: "ORIGINAL",
     },
   });
   const foodDraft = {

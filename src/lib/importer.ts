@@ -39,6 +39,15 @@ export type ExtractedLink = {
   provider: string | null;
 };
 
+export type DiscoveredSourcePhoto = {
+  sourceUrl: string;
+  sourcePageUrl: string;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  candidateUsages: Array<"HERO" | "GALLERY" | "CATALOG">;
+};
+
 export type ExtractedSite = {
   source: string;
   sourceUrl: string | null;
@@ -53,6 +62,7 @@ export type ExtractedSite = {
   logoUrl?: string | null;
   faviconUrl?: string | null;
   heroImageUrl: string | null;
+  photos?: DiscoveredSourcePhoto[];
   palette?: AccessiblePalette | null;
   navigation?: ExtractedNavigationLink[];
   catalogSections?: ExtractedCatalogSection[];
@@ -417,6 +427,182 @@ function decodeHtml(value: string): string {
     .trim();
 }
 
+function metaContent(html: string, key: string): string {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(
+      `<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`,
+      "i",
+    ),
+    new RegExp(
+      `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`,
+      "i",
+    ),
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) return decodeHtml(match[1]);
+  }
+  return "";
+}
+
+function imageAttribute(tag: string, name: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return decodeHtml(
+    tag.match(
+      new RegExp(`\\s${escaped}\\s*=\\s*(?:["']([^"']*)["']|([^\\s>]+))`, "i"),
+    )?.slice(1).find(Boolean) ?? "",
+  );
+}
+
+function positiveImageDimension(value: string): number | null {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 20_000
+    ? parsed
+    : null;
+}
+
+function largestSrcsetCandidate(srcset: string): string {
+  return (
+    srcset
+      .split(",")
+      .map((candidate) => candidate.trim().split(/\s+/)[0])
+      .filter(Boolean)
+      .at(-1) ?? ""
+  );
+}
+
+function classifyPhotoCandidate(haystack: string, isOpenGraph: boolean) {
+  const usages = new Set<"HERO" | "GALLERY" | "CATALOG">(["GALLERY"]);
+  if (isOpenGraph || /\b(hero|banner|cover|masthead|header)\b/i.test(haystack)) {
+    usages.add("HERO");
+  }
+  if (
+    /\b(menu|dish|plate|food|drink|product|catalog|service|treatment|style|hair|nail)\b/i.test(
+      haystack,
+    )
+  ) {
+    usages.add("CATALOG");
+  }
+  return [...usages];
+}
+
+function shouldSkipPhoto(url: URL, haystack: string): boolean {
+  return (
+    !["http:", "https:"].includes(url.protocol) ||
+    /\.(?:svg|gif)(?:$|\?)/i.test(url.pathname) ||
+    /\b(?:logo|icon|favicon|sprite|avatar|badge|pixel|tracking|analytics|map|qr)\b/i.test(
+      haystack,
+    ) ||
+    /(?:facebook|instagram|googleusercontent)\.com$/i.test(url.hostname)
+  );
+}
+
+/**
+ * Discovers only image references published on bounded, same-origin HTML pages.
+ * Classification is deterministic evidence, never generative: the later model
+ * may finish pixels but it never decides that a product, dish, person, or room
+ * existed when the first-party page did not contain it.
+ */
+export function discoverSourcePhotos(
+  pages: Array<{ html: string; url: URL }>,
+  maxImages = 24,
+): DiscoveredSourcePhoto[] {
+  const candidates: Array<DiscoveredSourcePhoto & { score: number }> = [];
+  const seen = new Set<string>();
+
+  for (const [pageIndex, page] of pages.entries()) {
+    const openGraph = metaContent(page.html, "og:image");
+    const entries: Array<{
+      rawUrl: string;
+      alt: string;
+      width: number | null;
+      height: number | null;
+      context: string;
+      openGraph: boolean;
+    }> = openGraph
+      ? [
+          {
+            rawUrl: openGraph,
+            alt: metaContent(page.html, "og:image:alt"),
+            width: positiveImageDimension(metaContent(page.html, "og:image:width")),
+            height: positiveImageDimension(metaContent(page.html, "og:image:height")),
+            context: "open graph hero",
+            openGraph: true,
+          },
+        ]
+      : [];
+    const imagePattern = /<img\b[^>]*>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = imagePattern.exec(page.html)) !== null) {
+      const tag = match[0];
+      const srcset =
+        imageAttribute(tag, "srcset") || imageAttribute(tag, "data-srcset");
+      entries.push({
+        rawUrl:
+          largestSrcsetCandidate(srcset) ||
+          imageAttribute(tag, "src") ||
+          imageAttribute(tag, "data-src") ||
+          imageAttribute(tag, "data-lazy-src"),
+        alt: imageAttribute(tag, "alt"),
+        width: positiveImageDimension(imageAttribute(tag, "width")),
+        height: positiveImageDimension(imageAttribute(tag, "height")),
+        context: `${imageAttribute(tag, "class")} ${imageAttribute(tag, "id")}`,
+        openGraph: false,
+      });
+    }
+
+    for (const entry of entries) {
+      if (!entry.rawUrl) continue;
+      try {
+        const url = new URL(entry.rawUrl, page.url);
+        url.hash = "";
+        const normalized = url.toString();
+        const haystack = `${normalized} ${entry.alt} ${entry.context}`;
+        if (
+          seen.has(normalized) ||
+          shouldSkipPhoto(url, haystack) ||
+          (entry.width !== null &&
+            entry.height !== null &&
+            (entry.width < 320 || entry.height < 240))
+        ) {
+          continue;
+        }
+        seen.add(normalized);
+        const candidateUsages = classifyPhotoCandidate(haystack, entry.openGraph);
+        candidates.push({
+          sourceUrl: normalized,
+          sourcePageUrl: page.url.toString(),
+          alt: entry.alt || null,
+          width: entry.width,
+          height: entry.height,
+          candidateUsages,
+          score:
+            (entry.openGraph ? 100 : 0) +
+            (candidateUsages.includes("HERO") ? 20 : 0) +
+            (candidateUsages.includes("CATALOG") ? 10 : 0) -
+            pageIndex,
+        });
+      } catch {
+        // Ignore malformed image references from otherwise valid first-party pages.
+      }
+    }
+  }
+
+  return candidates
+    .sort((left, right) => right.score - left.score)
+    .slice(0, Math.max(0, Math.min(maxImages, 50)))
+    .map((photo) => ({
+      sourceUrl: photo.sourceUrl,
+      sourcePageUrl: photo.sourcePageUrl,
+      alt: photo.alt,
+      width: photo.width,
+      height: photo.height,
+      candidateUsages: photo.candidateUsages,
+    }));
+}
+
 function stripMarkup(html: string): string {
   return decodeHtml(
     html
@@ -568,6 +754,7 @@ export async function inspectSource(
       logoUrl: null,
       faviconUrl: null,
       heroImageUrl: null,
+      photos: [],
       palette: null,
       navigation: [],
       catalogSections: [],
@@ -606,6 +793,10 @@ export async function inspectSource(
   ]
     .join("\n\n")
     .slice(0, MAX_SOURCE_TEXT_CHARS);
+  const photos = discoverSourcePhotos([
+    { html, url: finalUrl },
+    ...discoveredPages.map((page) => ({ html: page.html, url: page.url })),
+  ]);
   const links = [html, ...discoveredPages.map((page) => page.html)]
     .flatMap((pageHtml) =>
       extractSourceLinks(
@@ -643,6 +834,7 @@ export async function inspectSource(
     source,
     sourceUrl: finalUrl.toString(),
     ...reconstructed,
+    photos,
     pageText,
     links,
   };

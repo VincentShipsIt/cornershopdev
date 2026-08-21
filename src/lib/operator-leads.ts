@@ -18,6 +18,7 @@ import {
   generateDraftForVertical,
 } from "@/lib/site-pipeline";
 import type { VerticalId } from "@/lib/verticals/types";
+import { ingestDiscoveredSitePhotos } from "@/lib/photo-library";
 
 /**
  * Lead statuses that a site may still be reopened or outreached from.
@@ -117,6 +118,13 @@ export async function createOrReopenOperatorLead(input: {
       actor: input.actor,
       contactEmail: input.contactEmail,
     });
+    await ingestDiscoveredSitePhotos({
+      siteId: persisted.siteId,
+      siteSlug: persisted.draft.slug,
+      vertical: input.vertical,
+      photos: extracted.photos ?? [],
+      actor: input.actor,
+    }).catch(() => undefined);
     return {
       siteSlug: persisted.draft.slug,
       importJobId,
