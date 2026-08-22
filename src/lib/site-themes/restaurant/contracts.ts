@@ -7,6 +7,9 @@ export const restaurantThemeIdSchema = z.enum([
   "terroir-editorial",
   "counter-service",
   "after-dark",
+  "neighborhood-table",
+  "daylight-cafe",
+  "family-feast",
 ]);
 
 export const restaurantServiceModelSchema = z.enum([

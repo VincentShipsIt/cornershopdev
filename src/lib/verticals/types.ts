@@ -205,8 +205,27 @@ export type VerticalMarketing = {
     createLabel: string;
     createHref: string;
   };
-  /** Optional public library powered by the vertical's registered site themes. */
-  themeGallery?: { href: string; label: string };
+  /**
+   * Optional public theme library. The niche top nav scrolls to `#themes` on
+   * the storefront; `href` is the dedicated gallery reached from that section
+   * (and other intentional CTAs), not from peer nav items.
+   */
+  themeGallery?: {
+    href: string;
+    label: string;
+    section: {
+      eyebrow: string;
+      headline: string;
+      copy: string;
+      ctaLabel: string;
+    };
+    previews: Array<{
+      id: string;
+      name: string;
+      blurb: string;
+      href: string;
+    }>;
+  };
   steps: { number: string; title: string; copy: string }[];
   valueProps: {
     eyebrow: string;
