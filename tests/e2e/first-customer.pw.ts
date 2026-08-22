@@ -7,32 +7,46 @@ import {
 import { execFileSync } from "node:child_process";
 import { e2e } from "./support/fixtures";
 
-test("private food-retail preview exposes no claim page, invitation, or checkout", async ({
+test("food-retail factory preview issues ownership and starts the one-plan checkout", async ({
   page,
   request,
 }) => {
   const claimPage = await page.goto(`/claim/${e2e.foodSlug}`);
-  expect(claimPage?.status()).toBe(404);
-  await expect(page.getByText(e2e.foodName)).not.toBeVisible();
+  expect(claimPage?.status()).toBe(200);
+  await expect(page.getByText(e2e.foodName)).toBeVisible();
 
   const invitation = await request.post("/api/claim-invitations", {
     headers: { Origin: "http://127.0.0.1:3100" },
     data: { siteSlug: e2e.foodSlug, email: e2e.foodOwnerEmail },
   });
-  expect(invitation.status()).toBe(409);
+  expect(invitation.status()).toBe(200);
+  const claimLink = await latestMailboxLink(request, e2e.foodOwnerEmail);
+  const invitationToken = new URL(claimLink).hash.replace(/^#claim_token=/, "");
 
   const checkout = await request.post("/api/checkout", {
     headers: { Origin: "http://127.0.0.1:3100" },
     data: {
       plan: "founding",
       siteSlug: e2e.foodSlug,
-      invitationToken: e2e.foodInvitationToken,
+      invitationToken,
     },
   });
-  expect(checkout.status()).toBe(409);
+  expect(checkout.status()).toBe(200);
   expect(await checkout.json()).toMatchObject({
-    error: "This site already has an owner or is not available to claim.",
+    url: expect.stringMatching(
+      /^http:\/\/127\.0\.0\.1:4100\/checkout\/cs_test_/,
+    ),
   });
+
+  const replacedToken = await request.post("/api/checkout", {
+    headers: { Origin: "http://127.0.0.1:3100" },
+    data: {
+      plan: "founding",
+      siteSlug: e2e.foodSlug,
+      invitationToken: e2e.foodSupersededInvitationToken,
+    },
+  });
+  expect(replacedToken.status()).toBe(403);
 });
 
 test("claim, paid webhook, sign-in, workspace selection, private save, atomic publish, and live routing", async ({
@@ -56,7 +70,9 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   ).toBeVisible();
   await page.getByRole("button", { name: "Claim and continue" }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:4100\/checkout\/cs_test_/);
-  await expect(page.getByText("€43.00 local presentment for the $49 monthly plan")).toBeVisible();
+  await expect(
+    page.getByText("€43.00 local presentment for the $49 monthly plan"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Pay €43 in test mode" }).click();
 
   await expect(page).toHaveURL(/\/workspace\/select$/);

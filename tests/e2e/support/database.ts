@@ -74,10 +74,7 @@ export async function seedFirstCustomerBrowserJourney() {
       integrations: {
         create: sampleSiteDraft.integrations.map((integration, position) => ({
           type: integration.type.toUpperCase() as
-            | "BOOKING"
-            | "ORDERING"
-            | "DELIVERY"
-            | "SOCIAL",
+            "BOOKING" | "ORDERING" | "DELIVERY" | "SOCIAL",
           label: integration.label,
           provider: integration.provider,
           url: integration.url,
@@ -144,8 +141,7 @@ export async function seedFirstCustomerBrowserJourney() {
     catalogSections: [
       {
         name: "Product ranges",
-        description:
-          "No sourced products in this private billing-gate fixture.",
+        description: "No sourced products in this factory claim fixture.",
         items: [],
       },
     ],
@@ -161,7 +157,9 @@ export async function seedFirstCustomerBrowserJourney() {
       claimInvitations: {
         create: {
           email: e2e.foodOwnerEmail,
-          tokenHash: hashClaimInvitationToken(e2e.foodInvitationToken),
+          tokenHash: hashClaimInvitationToken(
+            e2e.foodSupersededInvitationToken,
+          ),
           proofMethod: "DOMAIN_EMAIL",
           expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
         },
