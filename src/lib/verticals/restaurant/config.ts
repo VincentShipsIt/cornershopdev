@@ -111,6 +111,7 @@ export const restaurantConfig = {
     item: "Dish",
   },
   marketing: restaurantMarketing,
+  claimMode: "niche",
   publicationEnabled: true,
   integrationTypes: ["booking", "ordering", "delivery", "social"],
   attributesSchema: restaurantAttributesSchema,

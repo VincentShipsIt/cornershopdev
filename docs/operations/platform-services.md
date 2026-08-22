@@ -10,15 +10,15 @@ Never copy production database or AWS credentials into pull-request builds.
 CI uses non-connecting placeholders; runtime credentials are loaded from
 encrypted SSM parameters on the EC2 host.
 
-| Service | Production isolation | Runtime variables |
-| --- | --- | --- |
-| PostgreSQL | Dedicated database and login on the existing private RDS instance | `DATABASE_URL` |
-| Workflow | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency | `WORKFLOW_*` |
-| Redis | Dedicated container and persistent Docker volume, not published to the host | `REDIS_URL` |
-| Images | Private versioned S3 bucket served through CloudFront OAC | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL` |
-| Billing | Stripe Checkout, signed webhooks, and Customer Portal | `STRIPE_*`, `CLAIM_TOKEN_SECRET` |
-| Operator alerts | Durable PostgreSQL outbox delivered through Resend | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY` |
-| Niche outreach | Explicit operator send, Workflow follow-up, separately signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`, `WORKFLOW_*` |
+| Service         | Production isolation                                                                             | Runtime variables                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| PostgreSQL      | Dedicated database and login on the existing private RDS instance                                | `DATABASE_URL`                                                                           |
+| Workflow        | PostgreSQL World with a Cornershopdev job prefix and bounded concurrency                         | `WORKFLOW_*`                                                                             |
+| Redis           | Dedicated container and persistent Docker volume, not published to the host                      | `REDIS_URL`                                                                              |
+| Images          | Private versioned S3 bucket served through CloudFront OAC                                        | `AWS_REGION`, `S3_BUCKET`, `S3_PUBLIC_BASE_URL`                                          |
+| Billing         | Stripe Checkout, signed webhooks, and Customer Portal                                            | `STRIPE_*`, `CLAIM_TOKEN_SECRET`                                                         |
+| Operator alerts | Durable PostgreSQL outbox delivered through Resend                                               | `OPERATOR_ALERT_EMAILS`, `RESEND_API_KEY`                                                |
+| Niche outreach  | Explicit operator send, Workflow follow-up, separately signed Resend delivery and inbound events | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_INBOUND_WEBHOOK_SECRET`, `WORKFLOW_*` |
 
 Preview database provisioning is still an external infrastructure gate. Do not
 mark it complete because a Preview URL exists in a local file or CI placeholder.
@@ -146,10 +146,12 @@ previewable but cannot deliver mail.
 
 Restofront uses two Resend domains on the same niche:
 
-| Resend domain | DNS | Role |
-|---------------|-----|------|
-| `send.restofront.com` | `send.send.restofront.com` MX/TXT + DKIM | Outbound `from` |
-| `restofront.com` | root MX + `resend._domainkey` TXT; receiving only | Inbound `replyTo` (`vincent@restofront.com`) |
+| Resend domain          | DNS                                               | Role                                                           |
+| ---------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
+| `send.restofront.com`  | `send.send.restofront.com` MX/TXT + DKIM          | Outbound `from`                                                |
+| `restofront.com`       | root MX + `resend._domainkey` TXT; receiving only | Inbound `replyTo` (`vincent@restofront.com`)                   |
+| `send.cornershop.dev`  | `send.send.cornershop.dev` MX/TXT + DKIM          | Factory SMB outbound `from`                                    |
+| `reply.cornershop.dev` | receiving MX + DKIM                               | Factory SMB inbound `replyTo` (`vincent@reply.cornershop.dev`) |
 
 Inbound mail is webhook-driven (`email.received`); there is no IMAP mailbox.
 Operator threads live in the admin outreach panel and in Postgres, not in a
@@ -172,7 +174,7 @@ migrations, required tables/columns/indexes (including the private
 `leadContactEmail` boundary), application database, and Workflow database;
 lists Resend delivery/inbound webhook metadata and domain capabilities;
 requires both endpoint-specific secrets to be present and unequal; and
-validates every launched niche's configured sender and reply-to identity plus
+validates every outreach-enabled niche's configured niche or factory sender and reply-to identity plus
 the approved lead-enumeration provider. It performs no database writes,
 configuration changes, or email sends. Output contains only check names,
 booleans, public endpoints, niche names, and timestamps—never database URLs,

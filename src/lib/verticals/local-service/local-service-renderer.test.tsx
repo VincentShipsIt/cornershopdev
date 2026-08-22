@@ -12,10 +12,7 @@ import {
   type SiteDraftGenerationDependencies,
 } from "@/lib/ai/site-generation";
 import { FACTORY_BRAND } from "@/lib/brand";
-import {
-  extractSourceLinks,
-  type ExtractedSite,
-} from "@/lib/importer";
+import { extractSourceLinks, type ExtractedSite } from "@/lib/importer";
 import { reconstructSource } from "@/lib/source-reconstruction";
 import { Vertical } from "@/generated/prisma/enums";
 import { localServiceConfig } from "@/lib/verticals/local-service/config";
@@ -64,7 +61,7 @@ describe("local-service surfaces", () => {
     expect(html).toContain("trade website or business name");
   });
 
-  it("ships a revision-safe private owner editor without publication controls", () => {
+  it("ships a revision-safe owner editor with reviewed publication controls", () => {
     const html = renderToStaticMarkup(
       <LocalServiceDashboard
         initialDraft={sampleLocalServiceSiteDraft}
@@ -72,14 +69,16 @@ describe("local-service surfaces", () => {
         email="owner@harbourelectrical.example"
         brand={FACTORY_BRAND}
         canSwitchWorkspace={false}
+        initiallyPublished={false}
+        platformUrl="https://harbour-electrical.cornershop.dev"
       />,
     );
 
     expect(html).toContain("Draft revision 7");
-    expect(html).toContain("Private pilot · publishing disabled");
+    expect(html).toContain("Private draft");
     expect(html).toContain("Services, proof and contact.");
     expect(html).toContain("Show project gallery");
-    expect(html).not.toContain(">Publish<");
+    expect(html).toContain(">Publish<");
   });
 
   it("preserves post-dispatch edits and advances the revision after a deferred save", async () => {
@@ -127,7 +126,10 @@ describe("local-service surfaces", () => {
     });
     const sourceUrl = new URL("https://atelier-riviere.example/");
     const fixture = await Bun.file(
-      new URL("../../__fixtures__/importer/french-plumber.html", import.meta.url),
+      new URL(
+        "../../__fixtures__/importer/french-plumber.html",
+        import.meta.url,
+      ),
     ).text();
     const reconstructed = reconstructSource({
       homepage: { html: fixture, url: sourceUrl },
@@ -255,7 +257,10 @@ describe("local-service surfaces", () => {
     expect(draft.sourceData.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ field: "business.type", value: "plumber" }),
-        expect.objectContaining({ field: "catalog.item", value: "Recherche de fuite" }),
+        expect.objectContaining({
+          field: "catalog.item",
+          value: "Recherche de fuite",
+        }),
       ]),
     );
     expect(html).toContain('lang="fr"');

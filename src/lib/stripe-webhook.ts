@@ -1,10 +1,7 @@
 import type Stripe from "stripe";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { normalizeAccountEmail } from "@/lib/account-email";
-import {
-  configuredBillingPlan,
-  RESTOFRONT_FOUNDING_PRICE,
-} from "@/lib/billing-plans";
+import { configuredBillingPlan, FOUNDING_PRICE } from "@/lib/billing-plans";
 import {
   claimSite,
   hasValidClaimApprovalEvidence,
@@ -30,10 +27,7 @@ const subscriptionEventTypes = new Set<Stripe.Event.Type>([
 ]);
 
 export type StripeWebhookResult =
-  | "processed"
-  | "duplicate"
-  | "ignored"
-  | "rejected";
+  "processed" | "duplicate" | "ignored" | "rejected";
 
 type StripeWebhookDatabase = Pick<
   PrismaClient,
@@ -69,7 +63,12 @@ export async function processStripeWebhookEvent(
       : await retrieveSubscription(event, stripe);
   } catch (error) {
     if (!(error instanceof StripeWebhookValidationError)) throw error;
-    return persistRejectedEvent(db, event, error.message, eventInvitationId(event));
+    return persistRejectedEvent(
+      db,
+      event,
+      error.message,
+      eventInvitationId(event),
+    );
   }
 
   try {
@@ -218,7 +217,9 @@ async function provisionCheckout(
   }
   const invitationId = session.metadata?.claimInvitationId;
   if (!invitationId || session.client_reference_id !== invitationId) {
-    throw new StripeWebhookValidationError("Checkout claim metadata is invalid");
+    throw new StripeWebhookValidationError(
+      "Checkout claim metadata is invalid",
+    );
   }
 
   const invitation = await tx.claimInvitation.findUnique({
@@ -259,8 +260,8 @@ async function provisionCheckout(
     throw new StripeWebhookValidationError("Checkout price is not configured");
   }
   if (
-    session.currency?.toLowerCase() !== RESTOFRONT_FOUNDING_PRICE.currency ||
-    session.amount_subtotal !== RESTOFRONT_FOUNDING_PRICE.unitAmount ||
+    session.currency?.toLowerCase() !== FOUNDING_PRICE.currency ||
+    session.amount_subtotal !== FOUNDING_PRICE.unitAmount ||
     (session.total_details?.amount_discount ?? 0) !== 0
   ) {
     throw new StripeWebhookValidationError(

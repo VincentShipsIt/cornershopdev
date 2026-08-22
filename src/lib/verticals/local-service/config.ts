@@ -91,11 +91,13 @@ export const localServiceDictionaryExtensions = {
     language: "Language",
     reservationsVia: "Contact via",
     bookingPartner: "our scheduling partner",
-    seasonalNotice: "Service coverage and availability may change. Confirm before booking work.",
+    seasonalNotice:
+      "Service coverage and availability may change. Confirm before booking work.",
     heroImageAlt: "Image for",
     bookingHeading: "Contact",
     bookingRequestHeading: "Request the work",
-    bookingRequestIntro: "Use the listed phone, WhatsApp or quote tool to describe the job.",
+    bookingRequestIntro:
+      "Use the listed phone, WhatsApp or quote tool to describe the job.",
     serviceAreasHeading: "Service areas",
     credentialsHeading: "Credentials and cover",
     trustHeading: "Why customers call",
@@ -147,9 +149,14 @@ function tradeTypeFromSource(
 
 export const localServiceConfig = {
   id: Vertical.LOCAL_SERVICE,
-  vocabulary: { catalog: "Services", section: "Service group", item: "Service" },
+  vocabulary: {
+    catalog: "Services",
+    section: "Service group",
+    item: "Service",
+  },
   marketing: localServiceMarketing,
-  publicationEnabled: false,
+  claimMode: "factory",
+  publicationEnabled: true,
   draftGenerationStrategy: "deterministic-only",
   integrationTypes: ["quote", "contact", "booking", "social"],
   attributesSchema: localServiceAttributesSchema,
@@ -191,8 +198,10 @@ export const localServiceConfig = {
     contextLabel: "Trade business",
     forbiddenElements:
       "completed work, wiring, pipework, joinery, finish, defect, damage, safety equipment, credential, certification mark",
-    sceneClause: "make unfinished work look complete or make the job look like a different trade",
-    fidelityClause: "the condition, quality, safety or outcome of the work actually shown",
+    sceneClause:
+      "make unfinished work look complete or make the job look like a different trade",
+    fidelityClause:
+      "the condition, quality, safety or outcome of the work actually shown",
     gradeClause:
       "Use a neutral documentary colour grade. Avoid fake before-and-after contrast, removed defects, fabricated finishes, exaggerated sharpness, artificial dust or sparks, and stock-photo polish.",
   },

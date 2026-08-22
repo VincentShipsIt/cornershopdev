@@ -6,29 +6,29 @@ Production truth is not a single checkbox. Cornershopdev tracks these states
 separately so a green merge cannot be reported as a configured, deployed, or
 customer-accepted release.
 
-| State | Meaning | Required evidence |
-| --- | --- | --- |
-| Code merged | The exact release SHA is contained in `origin/main` and CI verification passed. | Stable `vX.Y.Z` tag, merge ancestry check, successful `verify` job. |
-| Production configured | The reviewed Caddy bundle is installed, every required SSM value is present, and the candidate passes semantic outreach and platform checks. | Immutable bundle checksums and candidate preflight output; no screenshots or secret values. |
-| Migrations applied | The candidate image's complete committed migration set is applied to production. | `prisma migrate status` from the exact candidate after its entrypoint migration. |
-| Production deployed | Caddy routes to a healthy container whose Docker image tag is the exact release SHA. | Systems Manager command, immutable deploy-script checksum, deployed-SHA sentinel, public liveness. |
-| Acceptance proven | A real owner/payment/publish/customer-domain journey satisfies #20 and #47. | Customer-authorized evidence listed in `first-customer-validation.md`. Release automation never sets this state. |
+| State                 | Meaning                                                                                                                                      | Required evidence                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Code merged           | The exact release SHA is contained in `origin/main` and CI verification passed.                                                              | Stable `vX.Y.Z` tag, merge ancestry check, successful `verify` job.                                              |
+| Production configured | The reviewed Caddy bundle is installed, every required SSM value is present, and the candidate passes semantic outreach and platform checks. | Immutable bundle checksums and candidate preflight output; no screenshots or secret values.                      |
+| Migrations applied    | The candidate image's complete committed migration set is applied to production.                                                             | `prisma migrate status` from the exact candidate after its entrypoint migration.                                 |
+| Production deployed   | Caddy routes to a healthy container whose Docker image tag is the exact release SHA.                                                         | Systems Manager command, immutable deploy-script checksum, deployed-SHA sentinel, public liveness.               |
+| Acceptance proven     | A real owner/payment/publish/customer-domain journey satisfies #20 and #47.                                                                  | Customer-authorized evidence listed in `first-customer-validation.md`. Release automation never sets this state. |
 
 ## 2026-08-20 production audit
 
-| Check | Evidence | Verdict |
-| --- | --- | --- |
-| Latest merged code | `origin/main` = `3f398556a7b849aceb222a1cca12a6663b468681`; refresh this SHA and its required CI once more immediately before cutting the release. | `CODE_MERGED`, not deployed. |
-| Running production image | SSM inspection `6a4d128d-5f53-4f3c-af67-b8c683da74c5` found `cornershopdev:feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, healthy since 2026-07-27. | 15 commits behind main. |
-| Published release | Latest stable release is `v0.2.0` at `2abae11cb4205a2ca600d73ca9389be98637e6f2`. Later production changes were manual workflow dispatches. | Release history alone does not identify the running image. |
-| Schema | The running image reports 15 migrations and “up to date”; main contains 18. | Up to date only for the old image, not for main. |
-| Outreach | The running image has no `operator:preflight-outreach` command. Metadata-only SSM checks find neither `RESEND_WEBHOOK_SECRET` nor `RESEND_INBOUND_WEBHOOK_SECRET`; the configured sender is `Vincent from Restofront`, not the required `Vincent from Restofrontapp`. | Not configured or deployed. |
-| Authentication secret | SSM lacks `BETTER_AUTH_SECRET`; the old image uses the claim-secret rollout fallback. | Explicit production auth configuration not ready. |
-| First-customer evidence | SSM has `SUPERADMIN_EMAILS`, but lacks `FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY`. | Evidence verification configuration not ready. |
-| Photo policy | SSM lacks `OPENROUTER_IMAGE_MODEL`, `PHOTO_ENHANCEMENT_MODEL`, and all documented `PHOTO_*` cost/concurrency controls. | The next image would silently use code defaults unless the reviewed policy is pinned. |
-| Platform wildcard DNS | Random labels under `*.restofront.com` and `*.cornershop.dev` return no A records; neither hosted zone contains a wildcard. | Not ready. |
-| Caddy on-demand TLS | Caddy validates successfully and its loaded JSON uses `http://api-cornershop-dev:3000/api/domains/authorize` as the on-demand permission endpoint. | Caddy policy ready; wildcard DNS and new application authorization are not. |
-| Customer acceptance | No settled first payment, owner edit/publish, owner-authorized custom domain, second qualified lead, or +30-day decision record is attached to #20/#47. | Not proven. |
+| Check                    | Evidence                                                                                                                                                                                                                                                              | Verdict                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Latest merged code       | `origin/main` = `3f398556a7b849aceb222a1cca12a6663b468681`; refresh this SHA and its required CI once more immediately before cutting the release.                                                                                                                    | `CODE_MERGED`, not deployed.                                                          |
+| Running production image | SSM inspection `6a4d128d-5f53-4f3c-af67-b8c683da74c5` found `cornershopdev:feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, healthy since 2026-07-27.                                                                                                                       | 15 commits behind main.                                                               |
+| Published release        | Latest stable release is `v0.2.0` at `2abae11cb4205a2ca600d73ca9389be98637e6f2`. Later production changes were manual workflow dispatches.                                                                                                                            | Release history alone does not identify the running image.                            |
+| Schema                   | The running image reports 15 migrations and “up to date”; main contains 18.                                                                                                                                                                                           | Up to date only for the old image, not for main.                                      |
+| Outreach                 | The running image has no `operator:preflight-outreach` command. Metadata-only SSM checks find neither `RESEND_WEBHOOK_SECRET` nor `RESEND_INBOUND_WEBHOOK_SECRET`; the configured sender is `Vincent from Restofront`, not the required `Vincent from Restofrontapp`. | Not configured or deployed.                                                           |
+| Authentication secret    | SSM lacks `BETTER_AUTH_SECRET`; the old image uses the claim-secret rollout fallback.                                                                                                                                                                                 | Explicit production auth configuration not ready.                                     |
+| First-customer evidence  | SSM has `SUPERADMIN_EMAILS`, but lacks `FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY`.                                                                                                                                                                                          | Evidence verification configuration not ready.                                        |
+| Photo policy             | SSM lacks `OPENROUTER_IMAGE_MODEL`, `PHOTO_ENHANCEMENT_MODEL`, and all documented `PHOTO_*` cost/concurrency controls.                                                                                                                                                | The next image would silently use code defaults unless the reviewed policy is pinned. |
+| Platform wildcard DNS    | Random labels under `*.restofront.com` and `*.cornershop.dev` return no A records; neither hosted zone contains a wildcard.                                                                                                                                           | Not ready.                                                                            |
+| Caddy on-demand TLS      | Caddy validates successfully and its loaded JSON uses `http://api-cornershop-dev:3000/api/domains/authorize` as the on-demand permission endpoint.                                                                                                                    | Caddy policy ready; wildcard DNS and new application authorization are not.           |
+| Customer acceptance      | No settled first payment, owner edit/publish, owner-authorized custom domain, second qualified lead, or +30-day decision record is attached to #20/#47.                                                                                                               | Not proven.                                                                           |
 
 This audit authorizes no production deploy, DNS change, email, customer charge,
 or customer-domain change.
@@ -130,16 +130,27 @@ PHOTO_ENHANCEMENT_PER_SITE_CEILING_MICROS=500000
 PHOTO_POLICY
 ```
 
-### 4. Correct the production sender identity
+### 4. Configure the factory sender identity
 
 ```bash
 aws ssm put-parameter \
   --region us-east-1 \
   --name /shipshit/production/cornershopdev/EMAIL_FROM \
   --type String \
-  --value 'Vincent from Restofrontapp <vincent@send.restofront.com>' \
+  --value 'Vincent from Cornershopdev <vincent@send.cornershop.dev>' \
+  --overwrite
+
+aws ssm put-parameter \
+  --region us-east-1 \
+  --name /shipshit/production/cornershopdev/EMAIL_REPLY_TO \
+  --type String \
+  --value 'vincent@reply.cornershop.dev' \
   --overwrite
 ```
+
+Restofront keeps its niche-specific `send.restofront.com` / `restofront.com`
+identity. Factory-claimed Food Retail and Local Service sites use the
+generic Cornershopdev sender and receiving-only reply subdomain above.
 
 In Resend, enable both exact HTTPS endpoints:
 
@@ -183,12 +194,12 @@ publishing a replacement tag solely to hide a failed gate is not.
 
 The evidence above implies these issue states:
 
-| Issue | Correct state | Reason |
-| --- | --- | --- |
-| #47 | Open / In Progress | The offer is documented, but no first settled payment, published custom domain, support-cost record, second qualified lead, or scheduled/completed review is proven. |
-| #98 | Open / In Progress | Code is merged, but wildcard DNS, production deployment, and valid-TLS site evidence are absent. |
-| #20 | Open / Todo | The paid-owner end-to-end exit has not begun with an authorized customer. |
-| #10 | Open / In Progress | Production services run, but Preview DB isolation and the production image round trip remain unproven; current alert code is not deployed. |
-| #16 | Open / In Progress | Main contains substantial auth work, but production config/deployment and a real owner receive/use exercise remain open. |
-| #17 | Open / In Progress | Main contains operator/outreach work, but the production operator journey and blocker rollup acceptance remain unproven. |
-| #88 | Closed | PR #87 merged as `09e2e73`, main CI passed, the security reviewer passed, and every referenced review thread is resolved. |
+| Issue | Correct state      | Reason                                                                                                                                                               |
+| ----- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #47   | Open / In Progress | The offer is documented, but no first settled payment, published custom domain, support-cost record, second qualified lead, or scheduled/completed review is proven. |
+| #98   | Open / In Progress | Code is merged, but wildcard DNS, production deployment, and valid-TLS site evidence are absent.                                                                     |
+| #20   | Open / Todo        | The paid-owner end-to-end exit has not begun with an authorized customer.                                                                                            |
+| #10   | Open / In Progress | Production services run, but Preview DB isolation and the production image round trip remain unproven; current alert code is not deployed.                           |
+| #16   | Open / In Progress | Main contains substantial auth work, but production config/deployment and a real owner receive/use exercise remain open.                                             |
+| #17   | Open / In Progress | Main contains operator/outreach work, but the production operator journey and blocker rollup acceptance remain unproven.                                             |
+| #88   | Closed             | PR #87 merged as `09e2e73`, main CI passed, the security reviewer passed, and every referenced review thread is resolved.                                            |

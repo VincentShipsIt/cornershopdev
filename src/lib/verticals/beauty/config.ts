@@ -77,6 +77,7 @@ export const beautyConfig = {
     item: "Service",
   },
   marketing: beautyMarketing,
+  claimMode: "disabled",
   publicationEnabled: true,
   integrationTypes: ["booking", "social"],
   attributesSchema: beautyAttributesSchema,
@@ -119,7 +120,11 @@ export const beautyConfig = {
         badges.push(`${attributes.durationMinutes} min`);
       }
       if (attributes.anyStylist) {
-        badges.push(locale.toLowerCase().startsWith("fr") ? "Tout praticien" : "With any stylist");
+        badges.push(
+          locale.toLowerCase().startsWith("fr")
+            ? "Tout praticien"
+            : "With any stylist",
+        );
       }
       return badges;
     },

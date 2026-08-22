@@ -1,10 +1,9 @@
 import type { VerticalMarketing } from "@/lib/verticals/types";
 
 /**
- * Built and sellable, but not yet launched on its own domain — hence no
- * `hostnames` and a null `domain`. The factory homepage lists it as upcoming and
- * routes its leads through cornershop.dev's own studio; the day a domain exists
- * it is two strings here and a DNS record, with no route to add.
+ * Built for public preview, but owner claim stays disabled until its dedicated
+ * dashboard and evidence review are complete. It has no standalone domain —
+ * hence no `hostnames` and a null `domain`.
  *
  * `heroVisual: "none"` because the restaurant transformation mock is a menu PDF
  * turning into a menu — dressing it up as a salon would be a lie about what the

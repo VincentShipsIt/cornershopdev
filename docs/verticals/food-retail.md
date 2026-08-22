@@ -89,33 +89,32 @@ carry the vertical data, so no existing rows are rewritten and the migration
 does not seed product facts. The owner PUT route parses FOOD_RETAIL drafts with
 the registered schema before the shared optimistic-revision persistence path.
 
-## Public launch gate
+## Factory claim and standalone launch gates
 
-The code ships with all public launch selectors closed:
+Standalone niche marketing stays closed:
 
 - `marketing.hostnames = []`
 - `marketing.domain = null`
 - `marketing.email = null`
-- `publicationEnabled = false`
+- `claimMode = "factory"`
+- `publicationEnabled = true`
 
-Do not change those values or expose a priced public plan until the PR/release
-contains reviewable evidence for every item below:
+An approved private preview can claim the shared Cornershopdev $49 plan and
+publish at `<slug>.cornershop.dev`. That factory path requires:
 
-- [ ] production domain is owned, resolves to the intended ingress and is
-      covered by the customer/niche routing policy;
-- [ ] sending domain is verified with the mail provider, with a niche-specific
-      `from` and monitored `replyTo` address;
-- [ ] production billing product/price and checkout configuration are present in
+- [x] platform wildcard DNS and on-demand TLS cover the shared public URL;
+- [x] `send.cornershop.dev` and the receiving-only `reply.cornershop.dev`
+      identities are provider-verified;
+- [x] production billing product/price and checkout configuration are present in
       the reviewed environment without secret values entering git;
-- [ ] production readiness covers database migration status, Redis, storage,
+- [x] production readiness covers database migration status, Redis, storage,
       billing, email and alerting;
-- [ ] English and French fixture/import/renderer/dashboard tests pass;
-- [ ] a real pilot shop has owner-confirmed products, prices, hours, pickup
-      wording, images and any allergens before public publication.
+- [x] English and French fixture/import/renderer/dashboard tests pass;
+- [ ] the specific owner has reviewed every product, price, hours, pickup
+      wording, image, stock statement, translation and allergen source before
+      publishing that business.
 
-Until those gates have evidence, FOOD_RETAIL remains usable for private imports,
-previews and owner review only; it is excluded from `listMarketingVerticals()`.
-The shared publish and rollback services reject it before billing or database
-mutation, the owner dashboard exposes no publication actions, and public reads
-ignore any legacy FOOD_RETAIL snapshot pointer until the capability is reviewed
-and enabled.
+FOOD_RETAIL remains excluded from `listMarketingVerticals()` until it owns a
+standalone niche domain and sender. That does not block an evidence-reviewed
+owner from claiming through the factory, editing with revision protection and
+publishing an immutable snapshot on the platform subdomain.

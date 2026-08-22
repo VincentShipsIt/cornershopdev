@@ -1,6 +1,6 @@
-export const RESTOFRONT_FOUNDING_PLAN_ID = "founding" as const;
+export const FOUNDING_PLAN_ID = "founding" as const;
 
-export type BillingPlanId = typeof RESTOFRONT_FOUNDING_PLAN_ID;
+export type BillingPlanId = typeof FOUNDING_PLAN_ID;
 
 type BillingEnvironment = Record<string, string | undefined>;
 
@@ -9,7 +9,7 @@ export type BillingPlan = {
   priceId: string;
 };
 
-export const RESTOFRONT_FOUNDING_PRICE = {
+export const FOUNDING_PRICE = {
   currency: "usd",
   unitAmount: 4_900,
   interval: "month",
@@ -44,7 +44,7 @@ export function configuredBillingPlan(
   env: BillingEnvironment = process.env,
 ): BillingPlan {
   return {
-    id: RESTOFRONT_FOUNDING_PLAN_ID,
+    id: FOUNDING_PLAN_ID,
     priceId: validatePriceId(env.STRIPE_PRICE_ID, "STRIPE_PRICE_ID"),
   };
 }
@@ -67,7 +67,7 @@ export function configuredBillingPriceId(
  * resource immediately before Checkout and in the operator preflight so a
  * wrong mode, amount, cadence, tax treatment, or archived Product fails closed.
  */
-export function validateRestofrontFoundingPrice(
+export function validateFoundingPrice(
   price: StripePriceConfiguration,
   input: { expectedPriceId: string; expectedLivemode: boolean },
 ): void {
@@ -81,16 +81,16 @@ export function validateRestofrontFoundingPrice(
     price.livemode === input.expectedLivemode &&
     price.active &&
     price.type === "recurring" &&
-    price.currency.toLowerCase() === RESTOFRONT_FOUNDING_PRICE.currency &&
-    price.unit_amount === RESTOFRONT_FOUNDING_PRICE.unitAmount &&
-    price.tax_behavior === RESTOFRONT_FOUNDING_PRICE.taxBehavior &&
-    recurring?.interval === RESTOFRONT_FOUNDING_PRICE.interval &&
-    recurring.interval_count === RESTOFRONT_FOUNDING_PRICE.intervalCount &&
+    price.currency.toLowerCase() === FOUNDING_PRICE.currency &&
+    price.unit_amount === FOUNDING_PRICE.unitAmount &&
+    price.tax_behavior === FOUNDING_PRICE.taxBehavior &&
+    recurring?.interval === FOUNDING_PRICE.interval &&
+    recurring.interval_count === FOUNDING_PRICE.intervalCount &&
     recurring.usage_type !== "metered" &&
     productActive;
   if (!valid) {
     throw new BillingConfigurationError(
-      "The Restofront founding Stripe price does not match the approved offer",
+      "The Cornershopdev founding Stripe price does not match the approved offer",
     );
   }
 }
@@ -106,18 +106,13 @@ export function isStripeTestApiKey(secret: string | undefined): boolean {
   return STRIPE_TEST_KEY_PREFIXES.some((prefix) => secret?.startsWith(prefix));
 }
 
-export function stripeLivemodeForSecret(
-  secret: string | undefined,
-): boolean {
+export function stripeLivemodeForSecret(secret: string | undefined): boolean {
   if (isStripeLiveApiKey(secret)) return true;
   if (isStripeTestApiKey(secret)) return false;
   throw new BillingConfigurationError("STRIPE_SECRET_KEY is not configured");
 }
 
-function validatePriceId(
-  value: string | undefined,
-  variable: string,
-): string {
+function validatePriceId(value: string | undefined, variable: string): string {
   if (!value?.startsWith("price_") || value.length < 8) {
     throw new BillingConfigurationError(`${variable} is not configured`);
   }

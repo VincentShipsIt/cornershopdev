@@ -5,7 +5,7 @@ import {
   configuredBillingPlan,
   configuredBillingPriceId,
   stripeLivemodeForSecret,
-  validateRestofrontFoundingPrice,
+  validateFoundingPrice,
 } from "@/lib/billing-plans";
 
 const configured = { STRIPE_PRICE_ID: "price_founding" };
@@ -24,7 +24,7 @@ describe("configuredBillingPlan", () => {
   });
 });
 
-describe("Restofront founding Stripe price", () => {
+describe("Cornershopdev founding Stripe price", () => {
   const price = {
     id: "price_founding",
     active: true,
@@ -43,7 +43,7 @@ describe("Restofront founding Stripe price", () => {
 
   it("accepts only the approved live $49 USD monthly exclusive-tax offer", () => {
     expect(() =>
-      validateRestofrontFoundingPrice(price, {
+      validateFoundingPrice(price, {
         expectedPriceId: "price_founding",
         expectedLivemode: true,
       }),
@@ -60,7 +60,7 @@ describe("Restofront founding Stripe price", () => {
       { ...price, product: "prod_unexpanded" },
     ]) {
       expect(() =>
-        validateRestofrontFoundingPrice(candidate, {
+        validateFoundingPrice(candidate, {
           expectedPriceId: "price_founding",
           expectedLivemode: true,
         }),

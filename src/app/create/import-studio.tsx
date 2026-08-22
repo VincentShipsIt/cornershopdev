@@ -112,13 +112,13 @@ const verticalCopy = {
     placeholder: "trade website or business name",
     opening: "Opening the trade business",
     idlePrompt:
-      "Paste a plumber, electrician, builder, repair trade or artisan website. The result remains a private pilot preview; claiming and payment are not available yet.",
+      "Paste a plumber, electrician, builder, repair trade or artisan website. The first draft is deterministic and stays private until the owner claims it.",
     recovering:
       "The shape is already here. We are recovering sourced services, branding, hours, service evidence and existing contact links now.",
     emptyStatePrompt:
       "Start with a trade website or business name. No account is needed to see the result.",
     claimHint:
-      "Review every service, availability statement, credential, project and contact link in this private pilot preview.",
+      "Review every service, availability statement, credential, project and contact link, then claim the $49 founding plan.",
     catalogStage: "Recover services and evidence",
     integrationsStage: "Preserve phone, WhatsApp and quote links",
     previewCatalogLabel: "Services",
@@ -134,13 +134,13 @@ const verticalCopy = {
     placeholder: "bakery.com or shop name",
     opening: "Opening the shop",
     idlePrompt:
-      "Paste a bakery, pâtisserie, butcher, deli or local food shop website. The result remains a private pilot preview; claiming and payment are not available yet.",
+      "Paste a bakery, pâtisserie, butcher, deli or local food shop website. The first storefront stays private until the owner claims it.",
     recovering:
       "The shape is already here. We are recovering real product ranges, seasonal notes, hours, pickup details and existing order links now.",
     emptyStatePrompt:
       "Start with a food shop website or name. No account is needed to see the result.",
     claimHint:
-      "Review every product, price, availability note, allergen source and ordering link in this private pilot preview.",
+      "Review every product, price, availability note, allergen source and ordering link, then claim the $49 founding plan.",
     catalogStage: "Recover product ranges and prices",
     integrationsStage: "Preserve preorder, pickup and delivery links",
     previewCatalogLabel: "Product ranges",

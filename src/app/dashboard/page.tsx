@@ -43,13 +43,18 @@ export default async function DashboardPage({
   if (session?.purpose === "ADMIN") redirect("/admin");
   if (session && session.purpose !== "SITE") redirect("/sign-in");
 
-  const access =
-    session?.siteSlug ? await getSiteAccess(session.siteSlug) : null;
+  const access = session?.siteSlug
+    ? await getSiteAccess(session.siteSlug)
+    : null;
   if (session && (!access || !access.ok)) redirect("/sign-in");
 
   if (access?.ok && access.site.vertical === Vertical.FOOD_RETAIL) {
-    const loaded = await findSiteDraft(access.site.slug);
-    if (!loaded || loaded.vertical !== Vertical.FOOD_RETAIL) redirect("/sign-in");
+    const [loaded, publicationHistory] = await Promise.all([
+      findSiteDraft(access.site.slug),
+      getSitePublicationHistory(access.site.id),
+    ]);
+    if (!loaded || loaded.vertical !== Vertical.FOOD_RETAIL)
+      redirect("/sign-in");
     return (
       <EditorialFontScope>
         <FoodRetailDashboard
@@ -57,15 +62,21 @@ export default async function DashboardPage({
           brand={await resolveRequestBrand()}
           initialDraft={loaded.draft as FoodRetailSiteDraft}
           initialRevision={loaded.revision}
+          initiallyPublished={publicationHistory.some((item) => item.current)}
+          platformUrl={publicSiteOrigin({
+            slug: access.site.slug,
+            vertical: access.site.vertical,
+          })}
         />
       </EditorialFontScope>
     );
   }
 
   if (access?.ok && access.site.vertical === Vertical.LOCAL_SERVICE) {
-    const [loaded, workspaces] = await Promise.all([
+    const [loaded, workspaces, publicationHistory] = await Promise.all([
       findSiteDraft(access.site.slug),
       listAccountWorkspaces(access.session.userId),
+      getSitePublicationHistory(access.site.id),
     ]);
     if (!loaded || loaded.vertical !== Vertical.LOCAL_SERVICE) {
       redirect("/sign-in");
@@ -78,6 +89,11 @@ export default async function DashboardPage({
           initialDraft={loaded.draft as LocalServiceSiteDraft}
           initialRevision={loaded.revision}
           canSwitchWorkspace={workspaces.length > 1}
+          initiallyPublished={publicationHistory.some((item) => item.current)}
+          platformUrl={publicSiteOrigin({
+            slug: access.site.slug,
+            vertical: access.site.vertical,
+          })}
         />
       </EditorialFontScope>
     );

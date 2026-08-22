@@ -100,6 +100,8 @@ describe("food-retail bilingual dashboard editing", () => {
         brand={FACTORY_BRAND}
         initialDraft={draftWithUiAdditions()}
         initialRevision={7}
+        initiallyPublished={false}
+        platformUrl="https://bakery.cornershop.dev"
       />,
     );
 

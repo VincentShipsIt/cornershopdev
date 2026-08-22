@@ -51,9 +51,9 @@ describe("vertical registry", () => {
   });
 
   it("requires one vertical-specific lead discovery adapter per enum entry", () => {
-    expect(listLeadDiscoveryAdapters().map((adapter) => adapter.vertical)).toEqual(
-      listVerticalIds(),
-    );
+    expect(
+      listLeadDiscoveryAdapters().map((adapter) => adapter.vertical),
+    ).toEqual(listVerticalIds());
     expect(
       new Set(listLeadDiscoveryAdapters().map((adapter) => adapter.adapterId))
         .size,
@@ -312,18 +312,18 @@ describe("niche routing", () => {
     expect(isVerticalPubliclyAccessible(Vertical.FOOD_RETAIL)).toBe(false);
   });
 
-  it("enables claim checkout only for a fully launched vertical", () => {
+  it("enables niche or factory checkout only when the vertical opts in", () => {
     expect(isVerticalClaimEnabled(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalClaimEnabled(Vertical.BEAUTY)).toBe(false);
-    expect(isVerticalClaimEnabled(Vertical.LOCAL_SERVICE)).toBe(false);
-    expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(false);
+    expect(isVerticalClaimEnabled(Vertical.LOCAL_SERVICE)).toBe(true);
+    expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(true);
   });
 
-  it("keeps publication explicit while food retail remains private", () => {
+  it("enables reviewed publication for every registered SMB vertical", () => {
     expect(isVerticalPublicationEnabled(Vertical.RESTAURANT)).toBe(true);
     expect(isVerticalPublicationEnabled(Vertical.BEAUTY)).toBe(true);
-    expect(isVerticalPublicationEnabled(Vertical.LOCAL_SERVICE)).toBe(false);
-    expect(isVerticalPublicationEnabled(Vertical.FOOD_RETAIL)).toBe(false);
+    expect(isVerticalPublicationEnabled(Vertical.LOCAL_SERVICE)).toBe(true);
+    expect(isVerticalPublicationEnabled(Vertical.FOOD_RETAIL)).toBe(true);
   });
 
   it("keeps local service gated until public access, domain, routing and sender are real", () => {

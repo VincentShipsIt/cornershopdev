@@ -173,7 +173,8 @@ jobs:
       STRIPE_API_BASE_URL: http://127.0.0.1:4100
       RESEND_API_KEY: re_test_first_customer_e2e
       RESEND_API_BASE_URL: http://127.0.0.1:4100
-      EMAIL_FROM: Restofront Test <test@restaurant.example.test>
+      EMAIL_FROM: Cornershopdev Test <test@send.cornershop.example.test>
+      EMAIL_REPLY_TO: test@reply.cornershop.example.test
       WORKFLOW_ENABLED: "false"
       WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
     steps:

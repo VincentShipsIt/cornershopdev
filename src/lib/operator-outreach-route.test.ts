@@ -472,14 +472,22 @@ describe("explicit operator outreach action", () => {
     ]);
   });
 
-  it.each(["BEAUTY", "FOOD_RETAIL", "LOCAL_SERVICE"])(
-    "never dispatches the private %s vertical",
-    async (privateVertical) => {
-      vertical = privateVertical;
+  it("never dispatches a claim-disabled vertical", async () => {
+    vertical = "BEAUTY";
+    const response = await POST(request("https://cornershop.dev"), context());
+
+    expect(response.status).toBe(409);
+    expect(workflowStart).not.toHaveBeenCalled();
+  });
+
+  it.each(["FOOD_RETAIL", "LOCAL_SERVICE"])(
+    "dispatches reviewed factory claims for %s",
+    async (factoryVertical) => {
+      vertical = factoryVertical;
       const response = await POST(request("https://cornershop.dev"), context());
 
-      expect(response.status).toBe(409);
-      expect(workflowStart).not.toHaveBeenCalled();
+      expect(response.status).toBe(202);
+      expect(workflowStart).toHaveBeenCalledTimes(1);
     },
   );
 
