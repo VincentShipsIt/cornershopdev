@@ -2,8 +2,8 @@
 
 **Runbook version:** 2026-08-20
 
-**Issues:** [#20](https://github.com/VincentShipsIt/cornershopdev/issues/20)
-and [#47](https://github.com/VincentShipsIt/cornershopdev/issues/47)
+**Issues:** [#20](https://github.com/cornershopdev/cornershop.dev/issues/20)
+and [#47](https://github.com/cornershopdev/cornershop.dev/issues/47)
 
 **Candidate:** Le Petit Meunier
 
