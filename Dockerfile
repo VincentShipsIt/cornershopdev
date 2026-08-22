@@ -42,6 +42,14 @@ RUN bun build scripts/import-le-petit-meunier.ts \
   --target=bun \
   --packages=external \
   --outfile=.operator-scripts/import-le-petit-meunier.ts
+RUN bun build scripts/import-servizo.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/import-servizo.ts
+RUN bun build scripts/issue-servizo-claim-invitation.ts \
+  --target=bun \
+  --packages=external \
+  --outfile=.operator-scripts/issue-servizo-claim-invitation.ts
 RUN bun build scripts/verify-environment-isolation.ts \
   --target=bun \
   --packages=external \

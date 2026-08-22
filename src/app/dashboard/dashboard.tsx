@@ -50,6 +50,11 @@ import type { BrandIdentity } from "@/lib/brand";
 import type { AnalyticsSummaryDto } from "@/lib/analytics-contract";
 import type { BookingRequestInboxDto } from "@/lib/booking-request-inbox";
 import type { BillingAccess } from "@/lib/billing-access";
+import {
+  isCornershopProClient,
+  ownerPreviewHref,
+  proAppPath,
+} from "@/lib/cornershop-pro";
 import type { SitePublicationHistoryItem } from "@/lib/site-publication";
 import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
 import type { SourceMonitoringDashboardDto } from "@/lib/source-monitoring";
@@ -219,7 +224,15 @@ export function Dashboard({
     domainSetup?.verified && domainSetup.hostname
       ? `https://${domainSetup.hostname}`
       : platformUrl;
-  const siteHref = isPublished ? liveUrl : `/preview/${draft.slug}`;
+  const siteHref = isPublished ? liveUrl : ownerPreviewHref(draft.slug);
+  // Ordering integrations are the portable hook for optional owner apps
+  // (e.g. Servizo Pulse). Keep them generic so demos can leave the factory.
+  const connectedApps = draft.integrations.filter(
+    (integration) =>
+      integration.enabled !== false &&
+      integration.type === "ordering" &&
+      Boolean(integration.url),
+  );
 
   const themeManifests = listRestaurantThemeManifests();
   const currentThemeSelection = parseRestaurantThemeSelection(
@@ -1057,6 +1070,27 @@ export function Dashboard({
                         <Button variant="outline" size="sm">
                           Edit homepage
                         </Button>
+                        {connectedApps.map((app) => (
+                          <Button
+                            key={`${app.type}-${app.url}`}
+                            render={
+                              <a
+                                href={
+                                  isCornershopProClient(draft.slug)
+                                    ? proAppPath(draft.slug)
+                                    : app.url
+                                }
+                                target="_blank"
+                                rel="noreferrer noopener"
+                              />
+                            }
+                            nativeButton={false}
+                            variant="outline"
+                            size="sm"
+                          >
+                            {app.label} <ExternalLink />
+                          </Button>
+                        ))}
                       </div>
                     </div>
                     <div className="relative min-h-64">

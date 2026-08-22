@@ -5,6 +5,18 @@ status: durable
 
 # Production deploy — mechanism and gotchas
 
+## 2026-08-21 — Caddy validation blocker fixed, v0.3.1 released
+
+Every release deploy between 2026-07-29 and 2026-08-21 failed closed at the
+Caddy step: `bootstrap-host.sh` validated the candidate Caddyfile in a
+throwaway `caddy:2` container, where dailydraft's managed import
+(`/config/dailydraft-*.caddy`, added to the shared host Caddyfile 2026-07-29)
+does not resolve. Fixed in #119 (`v0.3.1`): the candidate is validated inside
+`shipshit-caddy` with the live binary; failure still aborts without touching
+the running config. `v0.3.1` (`b44a0c3`) is the first deployable artifact since
+v0.3.0. Verify actual production state via the release evidence artifact or an
+SSM image inspection before claiming the running SHA changed.
+
 ## Release truth audit (2026-08-20)
 
 Production runs `feb674d6a39ea716ab8287aab6eeb42c183cb7b9`, not current main

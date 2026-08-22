@@ -88,3 +88,32 @@ function matchesWhere(
     return false;
   });
 }
+
+
+describe("servizo portable demo import identity", () => {
+  const servizoSlug = "servizo";
+  const servizoLegacy = "product-servizo";
+  const servizoDraft = leadSiteDrafts[servizoSlug];
+  const servizoIdentity = buildOperatorImportIdentity(
+    servizoDraft,
+    servizoDraft.sourceUrl!,
+    [servizoLegacy],
+  );
+
+  it("derives the Servizo fixture identity used by dry-run and execute", () => {
+    expect(servizoIdentity).toMatchObject({
+      slug: servizoSlug,
+      sourceKey: "url:servizo.com",
+      sourceUrl: "https://www.servizo.com/",
+      forbiddenSlugs: [servizoSlug, servizoLegacy],
+    });
+  });
+
+  it("keeps Pulse as an ordering integration on the portable demo", () => {
+    const pulse = servizoDraft.integrations.find(
+      (integration) => integration.type === "ordering",
+    );
+    expect(pulse?.url).toBe("https://appservizocom.vercel.app/");
+    expect(pulse?.label).toBe("Open Servizo Pulse");
+  });
+});

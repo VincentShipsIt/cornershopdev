@@ -297,6 +297,39 @@ docker exec api-cornershop-dev \
   bun run operator:import:le-petit-meunier --execute
 ```
 
+Servizo is the portable product-brand demo (marketing site + Pulse ordering
+link). It stays on the shared restaurant site model — no Tradefront vertical —
+so it can leave Cornershopdev later. Canonical slug `servizo`:
+
+**Cornershop Pro URLs (direct link, not factory-listed):**
+
+- Site: `https://cornershop.dev/pro/servizo`
+- App: `https://cornershop.dev/pro/servizo/app` (redirects to the owner app)
+
+```bash
+docker exec api-cornershop-dev \
+  bun run operator:import:servizo
+```
+
+```bash
+docker exec api-cornershop-dev \
+  bun run operator:import:servizo --execute
+```
+
+Issue a claim invitation for the owner (father-in-law / operator-approved
+email) after the site is `PREVIEW_READY`:
+
+```bash
+docker exec api-cornershop-dev \
+  bun run operator:claim:servizo --email owner@example.com
+```
+
+```bash
+docker exec api-cornershop-dev \
+  bun run operator:claim:servizo --email owner@example.com --execute \
+    --evidence-ref private-crm:servizo-owner-consent
+```
+
 The importer writes the site, catalog, integrations, version snapshot, import
 job, and audit event in one serializable transaction. It verifies the expected
 relation counts before commit and reads the canonical row back afterward.
