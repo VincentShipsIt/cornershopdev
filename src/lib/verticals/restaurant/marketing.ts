@@ -19,8 +19,8 @@ export const restaurantMarketing = {
       appleTouchIconSrc: "/brand/restofrontapp/apple-touch-icon.png",
     },
   },
-  // send.restofront.com is the verified sending domain; nobody reads it, so
-  // replies are pointed at the bare domain instead.
+  // send.restofront.com is the verified sending subdomain; replies land on the
+  // niche root domain, which is the Resend receiving domain for this vertical.
   email: {
     from: "Vincent from Restofrontapp <vincent@send.restofront.com>",
     replyTo: "vincent@restofront.com",
