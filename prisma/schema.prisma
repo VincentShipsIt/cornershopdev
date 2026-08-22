@@ -44,6 +44,11 @@ enum ImportStatus {
   FAILED
 }
 
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+}
+
 enum IntegrationType {
   BOOKING
   ORDERING
@@ -291,6 +296,60 @@ model Site {
   sourceMonitorSuggestions SourceMonitorSuggestion[]
   photos                   PhotoAsset[]
   photoEnhancementRuns     PhotoEnhancementRun[]
+  articles                 Article[]
+  articleBatches           ArticleBatch[]
+}
+
+/// One locally relevant, indexable page for a claimed site. Articles are
+/// generated in batches from the site's own facts (catalog, location, hours)
+/// so content stays specific; nothing here may assert a fact the site does
+/// not carry. Published articles render on the customer's live surfaces.
+model Article {
+  id                String        @id @default(cuid())
+  siteId            String
+  site              Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  batchId           String?
+  batch             ArticleBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  slug              String
+  locale            String
+  title             String
+  excerpt           String
+  bodyMarkdown      String
+  status            ArticleStatus @default(DRAFT)
+  publishedAt       DateTime?
+  publishedBy       String?
+  /// Stable key naming which topic slot this fills (e.g. `seasonal-menu`),
+  /// used to avoid repeating topics across consecutive batches per site.
+  topicKey          String
+  topicTitle        String
+  generatedByModel  String?
+  sourceBatchId     String?
+  unpublishReason   String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([siteId, slug])
+  @@index([siteId, status, publishedAt])
+  @@index([siteId, topicKey, createdAt])
+}
+
+/// One generation run against one site. Exists so an operator can see what
+/// produced an article set and so dedupe checks can read "what did the last
+/// batch cover" without scanning every article ever generated.
+model ArticleBatch {
+  id             String   @id @default(cuid())
+  siteId         String
+  site           Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  requestedCount Int
+  producedCount  Int
+  model          String?
+  requestedBy    String
+  completedAt    DateTime?
+  createdAt       DateTime @default(now())
+
+  articles Article[]
+
+  @@index([siteId, createdAt])
 }
 
 model PhotoAsset {

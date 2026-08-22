@@ -111,6 +111,8 @@ describe("customer host isolation", () => {
       "/preview/other-site/opengraph-image",
       "/api/domains",
       "/api/sites/another/booking-requests",
+      "/blog/a/b",
+      "/blog/a/b/c",
     ]) {
       expect(
         decideCustomerHostRoute({
@@ -120,6 +122,34 @@ describe("customer host isolation", () => {
         }),
       ).toEqual({ kind: "not_found" });
     }
+  });
+
+  it("serves the blog index and single-segment article slugs", () => {
+    const records = livePair();
+    expect(
+      decideCustomerHostRoute({
+        hostname: "example.com",
+        pathname: "/blog",
+        records,
+      }),
+    ).toEqual({
+      kind: "blog",
+      slug: "chez-lea",
+      versionId: "version_1",
+      articleSlug: null,
+    });
+    expect(
+      decideCustomerHostRoute({
+        hostname: "example.com",
+        pathname: "/blog/seasonal-menu-update",
+        records,
+      }),
+    ).toEqual({
+      kind: "blog",
+      slug: "chez-lea",
+      versionId: "version_1",
+      articleSlug: "seasonal-menu-update",
+    });
   });
 
   it("permanently canonicalizes a verified www alias", () => {

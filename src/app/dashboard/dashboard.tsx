@@ -18,6 +18,7 @@ import {
   LoaderCircle,
   Mail,
   MoreHorizontal,
+  Newspaper,
   Palette,
   RefreshCcw,
   RotateCcw,
@@ -30,6 +31,7 @@ import {
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { AccountActions } from "@/components/account-actions";
+import { ArticlesPanel } from "@/components/articles-panel";
 import {
   ClientAnalyticsPanel,
   ClientBookingRequestInbox,
@@ -992,6 +994,7 @@ export function Dashboard({
                 ["overview", LayoutDashboard, "Overview"],
                 ["analytics", TrendingUp, "Analytics"],
                 ["leads", Mail, "Leads"],
+                ["articles", Newspaper, "Articles"],
                 ["design", Palette, "Design"],
                 ["monitoring", RefreshCcw, "Monitoring"],
                 ["menu", BookOpenText, "Menu"],
@@ -1131,6 +1134,17 @@ export function Dashboard({
                 initialInbox={bookingInbox}
                 demo={demo}
               />
+            </TabsContent>
+
+            <TabsContent value="articles" className="mt-0">
+              <PageHeading
+                eyebrow="Search content"
+                title="Articles that bring locals in."
+                copy="Fresh, locally relevant articles written from your own menu and neighbourhood — reviewed by you before anything goes live."
+              />
+              <div className="mt-8">
+                <ArticlesPanel siteSlug={draft.slug} />
+              </div>
             </TabsContent>
 
             <TabsContent value="monitoring" className="mt-0">

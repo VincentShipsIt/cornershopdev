@@ -110,9 +110,8 @@ export const beautyConfig = {
       `${serviceStyleLabels[attributes.serviceStyle]} · ${site.address ?? "Local"}`,
     /**
      * Duration is the badge a service list needs — it is what a customer checks
-     * before price. Rendered in English regardless of locale because
-     * `itemBadges` receives no locale (see `VerticalConfig`); the unit is short
-     * and numeric, so this reads acceptably in `fr` until the contract grows one.
+     * before price. The renderer passes the page locale, so the any-stylist
+     * phrase localizes while the duration unit stays numeric.
      */
     itemBadges: (attributes, locale) => {
       const badges: string[] = [];
