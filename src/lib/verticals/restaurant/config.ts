@@ -57,6 +57,14 @@ export const restaurantDictionaryExtensions = {
     afterDarkMenuIntro:
       "House drinks and late plates, presented plainly enough to choose in low light.",
     afterDarkClosing: "A table, a drink, then one more song.",
+    neighborhoodMenuHeading: "What’s on the table.",
+    neighborhoodVisitEyebrow: "Come by",
+    neighborhoodVisitHeading: "A familiar room. A reserved seat.",
+    daylightMenuEyebrow: "From the counter",
+    daylightMenuHeading: "Baked today. Ready now.",
+    daylightVisitHeading: "Drop in while the light is good.",
+    familyMenuEyebrow: "The full menu",
+    familyMenuHeading: "Something for everyone.",
   },
   fr: {
     language: "Langue",
@@ -84,6 +92,14 @@ export const restaurantDictionaryExtensions = {
     afterDarkMenuIntro:
       "Cocktails maison et assiettes tardives, présentés clairement même en lumière tamisée.",
     afterDarkClosing: "Une table, un verre, puis une chanson de plus.",
+    neighborhoodMenuHeading: "Ce qu’il y a sur la table.",
+    neighborhoodVisitEyebrow: "Passez nous voir",
+    neighborhoodVisitHeading: "Une salle familière. Une place réservée.",
+    daylightMenuEyebrow: "Au comptoir",
+    daylightMenuHeading: "Cuit aujourd’hui. Prêt maintenant.",
+    daylightVisitHeading: "Passez pendant qu’il fait jour.",
+    familyMenuEyebrow: "Toute la carte",
+    familyMenuHeading: "De quoi contenter tout le monde.",
   },
 } satisfies Record<string, Record<string, string>>;
 

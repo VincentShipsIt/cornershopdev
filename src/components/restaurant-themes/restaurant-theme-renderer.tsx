@@ -1,5 +1,8 @@
 import { AfterDarkTheme } from "@/components/restaurant-themes/after-dark";
 import { CounterServiceTheme } from "@/components/restaurant-themes/counter-service";
+import { DaylightCafeTheme } from "@/components/restaurant-themes/daylight-cafe";
+import { FamilyFeastTheme } from "@/components/restaurant-themes/family-feast";
+import { NeighborhoodTableTheme } from "@/components/restaurant-themes/neighborhood-table";
 import {
   RestaurantStructuredData,
   type RestaurantThemeRendererInputProps,
@@ -18,6 +21,9 @@ const renderers = {
   "terroir-editorial": TerroirEditorialTheme,
   "counter-service": CounterServiceTheme,
   "after-dark": AfterDarkTheme,
+  "neighborhood-table": NeighborhoodTableTheme,
+  "daylight-cafe": DaylightCafeTheme,
+  "family-feast": FamilyFeastTheme,
 } satisfies Record<RestaurantThemeId, RestaurantThemeRenderer>;
 
 export function hasRestaurantThemeRenderer(id: RestaurantThemeId): boolean {

@@ -29,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${origin}/themes/restaurant`,
       lastModified: new Date(),
       changeFrequency: "monthly",
-      priority: 0.8,
+      priority: 0.7,
     });
     routes.push(
       ...listRestaurantThemeManifests().map(({ id }) => ({

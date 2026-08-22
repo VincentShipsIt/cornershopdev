@@ -146,7 +146,7 @@ export default async function NichePage({
   const headerLinks = [
     { href: "#how-it-works", label: "How it works" },
     ...(marketing.themeGallery
-      ? [{ ...marketing.themeGallery, prefetch: false }]
+      ? [{ href: "#themes", label: marketing.themeGallery.label }]
       : []),
     { href: "#features", label: "What stays yours" },
     { href: "#pricing", label: "Pricing" },
@@ -199,8 +199,7 @@ export default async function NichePage({
               <ImportForm className="mt-9" {...formCopy} />
               {marketing.themeGallery ? (
                 <Link
-                  href={marketing.themeGallery.href}
-                  prefetch={false}
+                  href="#themes"
                   className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary"
                 >
                   {marketing.themeGallery.label}
@@ -253,6 +252,64 @@ export default async function NichePage({
             </div>
           </div>
         </section>
+
+        {marketing.themeGallery ? (
+          <section
+            id="themes"
+            className="border-y bg-card/40"
+          >
+            <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
+              <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                    {marketing.themeGallery.section.eyebrow}
+                  </p>
+                  <h2 className="font-display mt-4 max-w-lg text-6xl leading-[0.92] tracking-[-0.045em]">
+                    {marketing.themeGallery.section.headline}
+                  </h2>
+                </div>
+                <div className="max-w-xl lg:justify-self-end">
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {marketing.themeGallery.section.copy}
+                  </p>
+                  <Link
+                    href={marketing.themeGallery.href}
+                    prefetch={false}
+                    className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary"
+                  >
+                    {marketing.themeGallery.section.ctaLabel}
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-12 grid gap-4 md:grid-cols-3">
+                {marketing.themeGallery.previews.map((theme, index) => (
+                  <Link
+                    key={theme.id}
+                    href={theme.href}
+                    prefetch={false}
+                    className="group flex min-h-48 flex-col border bg-background p-6 transition-colors hover:border-primary/40"
+                  >
+                    <span className="font-mono text-[11px] text-primary">
+                      0{index + 1} · {theme.id}
+                    </span>
+                    <h3 className="font-display mt-6 text-3xl leading-[0.95] tracking-[-0.04em]">
+                      {theme.name}
+                    </h3>
+                    <p className="mt-3 flex-1 text-sm leading-6 text-muted-foreground">
+                      {theme.blurb}
+                    </p>
+                    <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-foreground transition-colors group-hover:text-primary">
+                      View theme
+                      <ArrowRight className="size-3.5" />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section id="features" className="bg-[#1d241f] text-white">
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">

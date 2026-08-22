@@ -275,9 +275,9 @@ describe("Lighthouse CI environment", () => {
       'Bun.spawn(["node", ".next/standalone/server.js"]',
     );
     expect(packageJson).toContain("node .next/standalone/server.js");
-    expect(nichePage).toContain("prefetch: false");
+    expect(nichePage).toContain('href="#themes"');
     expect(nichePage).toContain(
-      'href={marketing.themeGallery.href}\n                  prefetch={false}',
+      'href={marketing.themeGallery.href}\n                    prefetch={false}',
     );
   });
 });

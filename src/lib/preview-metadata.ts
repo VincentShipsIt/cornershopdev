@@ -22,6 +22,12 @@ export type PreviewMetadataOptions = {
   verifiedHostname: string | null;
   factoryOrigin: string;
   factoryName: string;
+  /** When set, canonical/alternate paths use this base instead of `/preview/[slug]`. */
+  privateSurfaceBasePath?: string;
+  /** Brand shown in unpublished preview metadata (defaults to `factoryName`). */
+  privateSurfaceBrandName?: string;
+  /** Suffix for unpublished preview titles (defaults to "Private preview"). */
+  privateSurfaceTitleSuffix?: string;
 };
 
 export type PreviewOgDraft = {
@@ -49,6 +55,7 @@ export type UnpublishedPreviewOgCard = {
 export type PreviewOgCard = LivePreviewOgCard | UnpublishedPreviewOgCard;
 
 const PRIVATE_PREVIEW_SUFFIX = "Private preview";
+const CORNERSHOP_PRO_PREVIEW_SUFFIX = "Cornershop Pro preview";
 
 /**
  * Customer-site metadata. Nested `openGraph` / `twitter` objects merge
@@ -60,9 +67,14 @@ export function previewMetadata(
   site: PreviewMetadataDraft,
   options: PreviewMetadataOptions,
 ): Metadata {
+  const unpublishedSuffix =
+    options.privateSurfaceTitleSuffix ??
+    (options.privateSurfaceBasePath
+      ? CORNERSHOP_PRO_PREVIEW_SUFFIX
+      : PRIVATE_PREVIEW_SUFFIX);
   const title = options.isLiveSurface
     ? site.name
-    : `${site.name} — ${PRIVATE_PREVIEW_SUFFIX}`;
+    : `${site.name} — ${unpublishedSuffix}`;
   const description = site.description.trim() || site.name;
   const metadataBase = new URL(
     liveCustomerOrigin(options.verifiedHostname, options.isLiveSurface) ??
@@ -70,7 +82,9 @@ export function previewMetadata(
   );
   const canonicalPath = previewCanonicalPath(site, options);
   const canonicalUrl = new URL(canonicalPath, metadataBase).href;
-  const siteName = options.isLiveSurface ? site.name : options.factoryName;
+  const siteName = options.isLiveSurface
+    ? site.name
+    : (options.privateSurfaceBrandName ?? options.factoryName);
 
   return {
     // Absolute so the root "| Cornershopdev" template stays off a live
@@ -175,7 +189,7 @@ function previewCanonicalPath(
   site: PreviewMetadataDraft,
   options: Pick<
     PreviewMetadataOptions,
-    "isLiveSurface" | "locale" | "verifiedHostname"
+    "isLiveSurface" | "locale" | "verifiedHostname" | "privateSurfaceBasePath"
   >,
 ): string {
   const locale = options.locale ?? site.defaultLocale;
@@ -184,9 +198,9 @@ function previewCanonicalPath(
     return isDefaultLocale ? "/" : `/${locale}`;
   }
 
-  return isDefaultLocale
-    ? `/preview/${site.slug}`
-    : `/preview/${site.slug}/${locale}`;
+  const base =
+    options.privateSurfaceBasePath ?? `/preview/${site.slug}`;
+  return isDefaultLocale ? base : `${base}/${locale}`;
 }
 
 function previewTagline(site: PreviewOgDraft): string {

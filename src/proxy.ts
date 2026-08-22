@@ -73,7 +73,8 @@ export async function proxy(request: NextRequest) {
     const response = NextResponse.next({
       request: { headers: upstreamHeaders },
     });
-    return request.nextUrl.pathname.startsWith("/preview/")
+    return request.nextUrl.pathname.startsWith("/preview/") ||
+      request.nextUrl.pathname.startsWith("/pro/")
       ? withEmbedFrameCsp(response)
       : response;
   }

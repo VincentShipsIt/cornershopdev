@@ -32,14 +32,29 @@ import {
 } from "@/lib/restaurant";
 
 describe("restaurant theme registry", () => {
-  it("publishes exactly three complete and uniquely versioned themes", () => {
+  it("publishes six complete themes with three featured ranks for the homepage", () => {
     const manifests = listRestaurantThemeManifests();
     expect(manifests.map(({ id }) => id)).toEqual([
       "terroir-editorial",
       "counter-service",
       "after-dark",
+      "neighborhood-table",
+      "daylight-cafe",
+      "family-feast",
     ]);
     expect(new Set(manifests.map(({ id }) => id)).size).toBe(manifests.length);
+
+    const featured = manifests
+      .filter((manifest) => manifest.featuredRank !== null)
+      .sort(
+        (left, right) =>
+          (left.featuredRank ?? 0) - (right.featuredRank ?? 0),
+      );
+    expect(featured.map(({ id }) => id)).toEqual([
+      "terroir-editorial",
+      "counter-service",
+      "after-dark",
+    ]);
 
     for (const manifest of manifests) {
       expect(restaurantThemeIdSchema.parse(manifest.id)).toBe(manifest.id);
@@ -47,6 +62,7 @@ describe("restaurant theme registry", () => {
       expect(manifest.bestFor.length).toBeGreaterThan(0);
       expect(manifest.avoidWhen.length).toBeGreaterThan(0);
       expect(manifest.aiBrief.length).toBeGreaterThan(20);
+      expect(manifest.marketReferences.length).toBeGreaterThan(0);
       expect(manifest.previewFixtureId).toBe(
         restaurantThemeFixtures[manifest.id].slug,
       );
@@ -185,9 +201,13 @@ describe("bounded restaurant theme selection", () => {
       confidence: 1,
       rendererVersion: 1,
     });
+    const nextAlternative = automatic.alternatives.find(
+      (id) => id !== selected.themeId,
+    );
+    expect(nextAlternative).toBeDefined();
     expect(selected.alternatives).toEqual([
-      "counter-service",
-      "after-dark",
+      automatic.themeId,
+      nextAlternative!,
     ]);
     expect(selected.tokens).toEqual(
       getRestaurantThemeManifest("terroir-editorial").safeDefaultTokens,
@@ -348,6 +368,9 @@ describe("restaurant theme renderers", () => {
       if (manifest.id === "counter-service") {
         expect(html).toContain('aria-label="Menu categories"');
         expect(html).toContain('data-menu-experience="commerce"');
+      } else if (manifest.id === "family-feast") {
+        expect(html).toContain('aria-label="Menu categories"');
+        expect(html).toContain('data-menu-experience="catalog"');
       } else {
         expect(html).not.toContain('aria-label="Menu categories"');
         expect(html).not.toContain('data-menu-experience="commerce"');
@@ -360,6 +383,9 @@ describe("restaurant theme renderers", () => {
       "terroir-editorial": "Guidé par la saison.",
       "counter-service": "Choisissez votre commande.",
       "after-dark": "Prolongez la soirée.",
+      "neighborhood-table": "Ce qu’il y a sur la table.",
+      "daylight-cafe": "Cuit aujourd’hui. Prêt maintenant.",
+      "family-feast": "De quoi contenter tout le monde.",
     } as const;
 
     for (const manifest of listRestaurantThemeManifests()) {

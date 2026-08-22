@@ -1,3 +1,4 @@
+import { listFeaturedRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
 import type { VerticalMarketing } from "@/lib/verticals/types";
 
 /**
@@ -6,6 +7,15 @@ import type { VerticalMarketing } from "@/lib/verticals/types";
  * restofront.com should never see the factory's name, the same way a visitor to
  * a generated site never sees either.
  */
+const restaurantThemePreviews = listFeaturedRestaurantThemeManifests().map(
+  (theme) => ({
+    id: theme.id,
+    name: theme.name,
+    blurb: theme.bestFor[0] ?? theme.description,
+    href: `/themes/restaurant/${theme.id}`,
+  }),
+);
+
 export const restaurantMarketing = {
   publiclyAccessible: true,
   hostnames: ["restofront.com", "www.restofront.com"],
@@ -51,8 +61,15 @@ export const restaurantMarketing = {
     createHref: "/create?vertical=restaurant",
   },
   themeGallery: {
-    href: "/themes/restaurant",
-    label: "Browse themes",
+    href: "/themes",
+    label: "Themes",
+    section: {
+      eyebrow: "Theme library",
+      headline: "Three starting points. A full gallery next.",
+      copy: "The homepage shows the strongest general fits. Open the gallery for every registered restaurant system—shaped by patterns diners already recognize from the best hospitality storefronts.",
+      ctaLabel: "Open the full gallery",
+    },
+    previews: restaurantThemePreviews,
   },
   steps: [
     {

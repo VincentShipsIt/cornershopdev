@@ -31,7 +31,9 @@
     "operator:preflight-outreach": "bun scripts/preflight-outreach.ts",
     "operator:preflight-platform-edge": "bun scripts/preflight-platform-edge.ts",
     "workflow:migrate": "bun node_modules/@workflow/world-postgres/bin/setup.js",
-    "postinstall": "bunx --bun prisma generate"
+    "postinstall": "bunx --bun prisma generate",
+    "operator:import:servizo": "bun scripts/import-servizo.ts",
+    "operator:claim:servizo": "bun scripts/issue-servizo-claim-invitation.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1113.0",

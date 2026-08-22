@@ -53,7 +53,7 @@ export default async function RestaurantThemeGalleryPage() {
               variant="secondary"
               className="rounded-full border border-primary/15 bg-primary/8 text-primary"
             >
-              Three service models. Three original systems.
+              Six service models. One bounded library.
             </Badge>
             <div className="mt-7 grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
               <h1 className="font-display max-w-4xl text-[clamp(4.2rem,9vw,8rem)] leading-[0.82] tracking-[-0.06em]">
@@ -63,7 +63,9 @@ export default async function RestaurantThemeGalleryPage() {
                 <p className="text-lg leading-8 text-muted-foreground">
                   {surface.brand.name} matches service model, customer intent,
                   menu shape, brand character and photography—not cuisine
-                  stereotypes.
+                  stereotypes. Systems are original, but the patterns are
+                  prescreened against highly reviewed WordPress and Shopify
+                  restaurant storefronts diners already trust.
                 </p>
                 <div className="mt-6 flex items-start gap-3 rounded-2xl border bg-card p-4 text-sm leading-6 text-muted-foreground">
                   <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
@@ -135,6 +137,9 @@ export default async function RestaurantThemeGalleryPage() {
                     <p className="font-mono text-[11px] text-primary">
                       0{index + 1} · {manifest.id} · v
                       {manifest.rendererVersion}
+                      {manifest.featuredRank
+                        ? ` · featured ${manifest.featuredRank}`
+                        : ""}
                     </p>
                     <h3 className="font-display mt-3 text-4xl leading-[0.9] tracking-[-0.04em]">
                       {manifest.name}

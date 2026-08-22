@@ -386,9 +386,137 @@ const lePetitMeunier: RestaurantSiteDraft = fromRestaurantDraft(
   }),
 );
 
+
+const servizo: RestaurantSiteDraft = fromRestaurantDraft(
+  restaurantDraftSchema.parse({
+  slug: "servizo",
+  name: "Servizo",
+  eyebrow: "Guest-call systems · Hospitality",
+  description:
+    "Servizo builds wireless guest-call and paging systems for hotels, restaurants, beach clubs, yachts and casinos — buttons at every table or lounger, receivers on every wrist, no Wi-Fi and no monthly software fees.",
+  cuisine: "Hospitality service systems",
+  address: "Malta · Mauritius",
+  phone: "",
+  sourceUrl: "https://www.servizo.com/",
+  heroImageUrl:
+    "https://www.servizo.com/wp-content/uploads/slider/cache/8ef3db6c7850d35c204deecfd67fb879/IMG_32081.jpg",
+  heroOriginalImageUrl:
+    "https://www.servizo.com/wp-content/uploads/slider/cache/8ef3db6c7850d35c204deecfd67fb879/IMG_32081.jpg",
+  heroImageProvenance: "official",
+  palette: {
+    background: "#f4f1ec",
+    foreground: "#14181f",
+    accent: "#b85a2f",
+  },
+  showMenuImages: false,
+  autoEnhanceImages: true,
+  defaultLocale: "en",
+  translations: [],
+  menuSections: [
+    {
+      name: "Call buttons",
+      description: "Discreet transmitters for tables, loungers, cabins and gaming floors",
+      items: [
+        {
+          name: "Servizo Bell SE5",
+          description: "Signature indoor call button — 50 m+ range, ~10,000 calls per charge",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+        {
+          name: "Servizo Premium Bell SE7",
+          description: "Waterproof, UV-resistant outdoor calling with LED alert and night base flash",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+        {
+          name: "Beach Club SE30B",
+          description: "Per-umbrella calling with colour-coded location ID and anti-theft protection",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+      ],
+    },
+    {
+      name: "Receivers",
+      description: "Wrist and staff receivers that route every press to the right person",
+      items: [
+        {
+          name: "Watch Receiver SE201",
+          description: "Flagship receiver for large and outdoor venues — up to 2,000 call points, IP67",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+      ],
+    },
+    {
+      name: "Solutions",
+      description: "One platform tailored to how the venue serves",
+      items: [
+        {
+          name: "Hotels & resorts",
+          description: "Estate-wide guest reach and room-ready notification without guest apps",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+        {
+          name: "Restaurants & bars",
+          description: "Table-side calling that removes dead time between ready and noticed",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+        {
+          name: "Beach & pool clubs",
+          description: "Lounger-precise service across sprawling outdoor floors",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+        {
+          name: "Yachts & casinos",
+          description: "Marine-ready and floor-calm calling for cabins, decks and VIP rooms",
+          price: null,
+          currency: "EUR",
+          dietaryLabels: [],
+          imageUrl: null,
+        },
+      ],
+    },
+  ],
+  integrations: [
+    {
+      type: "ordering",
+      label: "Open Servizo Pulse",
+      provider: null,
+      url: "https://appservizocom.vercel.app/",
+    },
+    {
+      type: "booking",
+      label: "Start a free trial",
+      provider: null,
+      url: "https://servizocom.vercel.app/",
+    },
+  ],
+  }),
+);
+
 export const leadSiteDrafts: Record<string, RestaurantSiteDraft> = {
   [lePetitMeunier.slug]: lePetitMeunier,
   "restaurant-le-petit-meunier": lePetitMeunier,
+  [servizo.slug]: servizo,
 };
 
 export const leadDrafts: Record<string, RestaurantDraft> = Object.fromEntries(
