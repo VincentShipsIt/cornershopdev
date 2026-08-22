@@ -5,6 +5,18 @@ status: durable
 
 # Production deploy — mechanism and gotchas
 
+## 2026-08-22 — Org transfer + Vercel Pro wiring
+
+Factory repo is `cornershopdev/cornershop.dev`; studio apps live in private
+`cornershopdev/pro`. Vercel projects `servizocom` and `appservizocom` (team
+`shipshitdev`) are connected to `cornershopdev/pro` — pushes to `master`
+deploy Pulse and the Servizo marketing app.
+
+Production deploy for v0.4.0 is blocked on **Stripe**: SSM
+`/shipshit/production/cornershopdev/STRIPE_SECRET_KEY` is a 26-character
+placeholder (`sk_live_…`), not a real secret. Stripe returns 401; live
+`operator:preflight-stripe` fails until a full live key is stored.
+
 ## 2026-08-22 — Restofront inbound receiving verified
 
 `restofront.com` is registered in Resend with receiving enabled (sending
@@ -103,13 +115,13 @@ checks its workflow-supplied SHA-256 digest, and emits a verification sentinel
 before executing it. The workflow requires that sentinel, so a stale launcher
 or unverified script fails closed instead of producing a false-green deploy.
 
-## Gotcha 2 — the OIDC trust policy embeds the repo name
+## Gotcha 2 — the OIDC trust policy embeds the repo owner
 
 `cornershopdev-github-production-deploy` is assumed via GitHub OIDC. GitHub
 emits the immutable-ID subject form:
 
 ```
-repo:VincentShipsIt@1998775/cornershopdev@1304834723:environment:Production
+repo:cornershopdev@319722721/cornershop.dev@1304834723:environment:Production
 ```
 
 The numeric owner ID and repo ID survive a rename; the **name segment does
@@ -117,15 +129,20 @@ not**. The restofront→cornershopdev rename silently invalidated the trust
 policy, and the next deploy failed with `Not authorized to perform
 sts:AssumeRoleWithWebIdentity`.
 
-The policy now wildcards only the name segment via `StringLike`, keeping owner
-ID, repo ID, and the `Production` environment pinned:
+The VincentShipsIt→cornershopdev **org transfer** (2026-08-22) did the same:
+owner ID changed from `1998775` to `319722721` while repo ID `1304834723`
+stayed the same. Update the trust policy when the owner changes.
+
+The policy wildcards only the repo name segment via `StringLike`, keeping
+owner ID, repo ID, and the `Production` environment pinned:
 
 ```
-repo:VincentShipsIt@1998775/*@1304834723:environment:Production
+repo:cornershopdev@319722721/*@1304834723:environment:Production
 ```
 
-A future rename cannot break deploys the same way. Nothing in the repo defines
-this role — it is console/CLI-managed, so it will not show up in a code search.
+A future rename within the org cannot break deploys the same way. Nothing in
+the repo defines this role — it is console/CLI-managed, so it will not show
+up in a code search.
 
 ## Reaching the host
 

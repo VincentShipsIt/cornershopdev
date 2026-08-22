@@ -106,7 +106,6 @@ write_pro_readme() {
   fi
   local workdir
   workdir="$(mktemp -d)"
-  trap 'rm -rf "${workdir}"' EXIT
   gh repo clone "${PRO_TARGET}" "${workdir}/pro" -- --depth=1
   if [[ ! -f "${workdir}/pro/README.md" ]] || ! grep -q "Cornershop Pro" "${workdir}/pro/README.md" 2>/dev/null; then
     cat >"${workdir}/pro/README.md" <<'EOF'
@@ -130,6 +129,7 @@ EOF
     git -C "${workdir}/pro" commit -m "docs: Cornershop Pro monorepo orientation" || true
     git -C "${workdir}/pro" push origin HEAD || true
   fi
+  rm -rf "${workdir}"
 }
 
 main() {

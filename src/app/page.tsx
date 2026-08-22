@@ -22,7 +22,7 @@ import { factoryProductCatalog } from "@/lib/factory-products";
 import { listRestaurantThemeManifests } from "@/lib/site-themes/restaurant/registry";
 import styles from "./factory-home.module.css";
 
-const REPO_URL = "https://github.com/VincentShipsIt/cornershopdev";
+const REPO_URL = "https://github.com/cornershopdev/cornershop.dev";
 
 export const metadata: Metadata = {
   title: "Cornershopdev — one factory for every local business",
