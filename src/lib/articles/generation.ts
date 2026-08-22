@@ -247,19 +247,25 @@ export async function loadGenerationInputs(siteId: string): Promise<{
       select: { label: true },
       orderBy: { label: "asc" },
     }),
-    db.article.findMany({
-      where: { siteId },
+    // The dedupe contract is "topics covered by the two most recent batches",
+    // so read batches first and expand from there — scanning articles by
+    // recency would let a site with many old articles dilute the window.
+    db.articleBatch.findMany({
+      where: { siteId, completedAt: { not: null } },
       orderBy: { createdAt: "desc" },
-      take: 16,
-      select: { topicKey: true, createdAt: true, batchId: true },
+      take: 2,
+      select: {
+        articles: {
+          where: { status: { in: ["DRAFT", "PUBLISHED"] } },
+          select: { topicKey: true },
+        },
+      },
     }),
   ]);
 
-  // Recent = the two most recent batches' topic keys, newest batch first.
-  const recentTopicKeys = recentBatches
-    .filter((article) => article.batchId)
-    .map((article) => article.topicKey)
-    .slice(0, 8);
+  const recentTopicKeys = [
+    ...new Set(recentBatches.flatMap((batch) => batch.articles.map((a) => a.topicKey))),
+  ];
 
   const businessHours = Array.isArray(site.businessHours)
     ? (site.businessHours as Array<{ days?: unknown; hours?: unknown }>).flatMap(

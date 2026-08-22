@@ -4,8 +4,10 @@ import {
   accessFailureResponse,
   getSiteAccess,
 } from "@/lib/authorization";
+import { articleCacheTagFor } from "@/lib/articles/public-articles";
 import { getDb } from "@/lib/db";
 import { isSameOriginMutation } from "@/lib/request-origin";
+import { revalidateTag } from "next/cache";
 
 const actionSchema = z.object({
   articleId: z.string().min(1),
@@ -84,6 +86,9 @@ export async function POST(
         unpublishReason: null,
       },
     });
+    // Same immediate-expiry policy as site publication: the owner expects
+    // /blog to show the article on their very next request.
+    revalidateTag(articleCacheTagFor(slug), { expire: 0 });
     return Response.json({ ok: true, status: "PUBLISHED" });
   }
 
@@ -102,6 +107,7 @@ export async function POST(
       unpublishReason: `Unpublished by ${access.user.id}`,
     },
   });
+  revalidateTag(articleCacheTagFor(slug), { expire: 0 });
   return Response.json({ ok: true, status: "DRAFT" });
 }
 

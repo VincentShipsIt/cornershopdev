@@ -98,8 +98,9 @@ export async function getPublishedArticle(input: {
 }
 
 /**
- * Cache tag shared with the preview-site tag so publishing/unpublishing an
- * article invalidates alongside the site's own snapshot invalidation.
+ * Cache tag for a site's published-article surfaces. Publish/unpublish
+ * invalidates it with `{ expire: 0 }`, mirroring how
+ * `previewCacheTagFor` busts the live site snapshot.
  */
 export function articleCacheTagFor(slug: string): string {
   return `${previewCacheTagFor(slug)}:articles`;

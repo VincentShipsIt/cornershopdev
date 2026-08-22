@@ -2,8 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { ArticleMarkdown } from "@/components/article-markdown";
-import { getPublishedArticle } from "@/lib/articles/public-articles";
+import {
+  articleCacheTagFor,
+  getPublishedArticle,
+  type PublishedArticle,
+} from "@/lib/articles/public-articles";
 import { liveSiteVersionId } from "@/lib/site-surface";
 
 type PageProps = {
@@ -17,7 +22,7 @@ export async function generateMetadata({
   const requestHeaders = await headers();
   const versionId = liveSiteVersionId(requestHeaders, slug);
   if (!versionId) return { robots: { index: false, follow: false } };
-  const article = await getPublishedArticle({ slug, versionId, articleSlug });
+  const article = await loadCachedArticle(slug, versionId, articleSlug);
   if (!article) return { robots: { index: false, follow: false } };
   return {
     title: article.title,
@@ -39,7 +44,7 @@ export default async function ArticlePage({ params }: PageProps) {
   const versionId = liveSiteVersionId(requestHeaders, slug);
   if (!versionId) notFound();
 
-  const article = await getPublishedArticle({ slug, versionId, articleSlug });
+  const article = await loadCachedArticle(slug, versionId, articleSlug);
   if (!article) notFound();
 
   const jsonLd = {
@@ -83,4 +88,21 @@ export default async function ArticlePage({ params }: PageProps) {
       </p>
     </main>
   );
+}
+
+/** Tag-invalidated mirror of the blog index cache; see that page's note. */
+function loadCachedArticle(
+  slug: string,
+  versionId: string,
+  articleSlug: string,
+): Promise<PublishedArticle | null> {
+  const cached = unstable_cache(
+    () => getPublishedArticle({ slug, versionId, articleSlug }),
+    ["published-article", slug, articleSlug],
+    {
+      revalidate: 30,
+      tags: [articleCacheTagFor(slug)],
+    },
+  );
+  return cached();
 }

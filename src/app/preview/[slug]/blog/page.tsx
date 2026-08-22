@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { listPublishedArticles } from "@/lib/articles/public-articles";
+import { unstable_cache } from "next/cache";
+import {
+  articleCacheTagFor,
+  listPublishedArticles,
+  type PublishedArticle,
+} from "@/lib/articles/public-articles";
 import { liveSiteVersionId } from "@/lib/site-surface";
 
 type PageProps = {
@@ -24,7 +29,7 @@ export default async function BlogIndexPage({ params }: PageProps) {
   // articles are a published-site feature, so previews get nothing.
   if (!versionId) notFound();
 
-  const articles = await listPublishedArticles({ slug, versionId });
+  const articles = await loadCachedArticles(slug, versionId);
   if (!articles.length) notFound();
 
   return (
@@ -55,4 +60,25 @@ export default async function BlogIndexPage({ params }: PageProps) {
       </ul>
     </main>
   );
+}
+
+/**
+ * Same ISR-equivalent pattern as `getCachedPublishedSiteView`: content for a
+ * published article list is cheap to recompute and must react to
+ * publish/unpublish immediately, so the cache window is short and the tag is
+ * what carries invalidation.
+ */
+function loadCachedArticles(
+  slug: string,
+  versionId: string,
+): Promise<PublishedArticle[]> {
+  const cached = unstable_cache(
+    () => listPublishedArticles({ slug, versionId, limit: 50 }),
+    ["published-articles", slug],
+    {
+      revalidate: 30,
+      tags: [articleCacheTagFor(slug)],
+    },
+  );
+  return cached();
 }
