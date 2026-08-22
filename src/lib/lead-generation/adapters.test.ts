@@ -1,16 +1,26 @@
 import { describe, expect, it } from "bun:test";
+import { Vertical } from "@/generated/prisma/enums";
 import { foodRetailLeadDiscovery } from "@/lib/lead-generation/food-retail";
 import { localServiceLeadDiscovery } from "@/lib/lead-generation/local-service";
+import { listOutreachVerticals } from "@/lib/lead-generation/registry";
 
 describe("incoming SMB lead discovery adapters", () => {
+  it("enables reviewed outreach for every registered SMB vertical", () => {
+    expect(listOutreachVerticals()).toEqual([
+      Vertical.RESTAURANT,
+      Vertical.LOCAL_SERVICE,
+      Vertical.FOOD_RETAIL,
+    ]);
+  });
+
   it("models food retailers as product-and-pickup storefronts", () => {
     expect(foodRetailLeadDiscovery.placeSearch.googleQuery("Valletta")).toBe(
       "bakeries, pastry shops, butchers, delis, cheesemongers and grocers in Valletta",
     );
     expect(foodRetailLeadDiscovery.placeSearch.googleIncludedType).toBeNull();
-    expect(foodRetailLeadDiscovery.eligibility.categoryPattern.test("bakery")).toBe(
-      true,
-    );
+    expect(
+      foodRetailLeadDiscovery.eligibility.categoryPattern.test("bakery"),
+    ).toBe(true);
     expect(
       foodRetailLeadDiscovery.homepage.catalogPattern.test(
         '<a href="/products">Today’s breads and pastries</a>',

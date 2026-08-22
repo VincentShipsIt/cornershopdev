@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type Stripe from "stripe";
-import { preflightRestofrontBilling } from "@/lib/stripe-billing-preflight";
+import { preflightFoundingBilling } from "@/lib/stripe-billing-preflight";
 
 const environment = {
   STRIPE_SECRET_KEY: "sk_live_example",
@@ -36,7 +36,7 @@ function stripePrice(
 
 describe("Stripe billing preflight", () => {
   it("returns redacted evidence for the exact live founding offer", async () => {
-    const result = await preflightRestofrontBilling({
+    const result = await preflightFoundingBilling({
       stripe: stripePrice(),
       environment,
       requiredMode: "live",
@@ -56,14 +56,14 @@ describe("Stripe billing preflight", () => {
 
   it("fails closed for mode and provider-resource drift", async () => {
     await expect(
-      preflightRestofrontBilling({
+      preflightFoundingBilling({
         stripe: stripePrice(),
         environment,
         requiredMode: "test",
       }),
     ).rejects.toThrow("mode");
     await expect(
-      preflightRestofrontBilling({
+      preflightFoundingBilling({
         stripe: stripePrice({ unit_amount: 2_500 }),
         environment,
         requiredMode: "live",

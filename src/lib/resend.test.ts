@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Vertical } from "@/generated/prisma/enums";
-import { emailReplyTo, emailSender } from "@/lib/resend";
+import { emailReplyTo, emailSender } from "@/lib/email-identity";
 import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 
 /**

@@ -2,9 +2,9 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import {
   configuredBillingPlan,
-  RESTOFRONT_FOUNDING_PLAN_ID,
+  FOUNDING_PLAN_ID,
   stripeLivemodeForSecret,
-  validateRestofrontFoundingPrice,
+  validateFoundingPrice,
 } from "@/lib/billing-plans";
 import { alertCheckoutStartFailure } from "@/lib/billing-operator-alerts";
 import {
@@ -31,7 +31,7 @@ import { secureCookieRequired } from "@/lib/first-customer-test-mode";
 import { isVerticalClaimEnabled } from "@/lib/verticals/registry";
 
 const requestSchema = z.object({
-  plan: z.literal(RESTOFRONT_FOUNDING_PLAN_ID),
+  plan: z.literal(FOUNDING_PLAN_ID),
   siteSlug: z.string().trim().min(2).max(80),
   invitationToken: z
     .string()
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     const price = await stripe.prices.retrieve(priceId, {
       expand: ["product"],
     });
-    validateRestofrontFoundingPrice(price, {
+    validateFoundingPrice(price, {
       expectedPriceId: priceId,
       expectedLivemode: stripeLivemodeForSecret(process.env.STRIPE_SECRET_KEY),
     });

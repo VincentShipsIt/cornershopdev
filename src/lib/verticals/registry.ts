@@ -130,11 +130,7 @@ export function isVerticalPubliclyLaunched(id: VerticalId): boolean {
 export type VerticalLaunchReadiness = {
   ready: boolean;
   issues: Array<
-    | "public-access"
-    | "domain"
-    | "sender"
-    | "hostname"
-    | "sender-domain"
+    "public-access" | "domain" | "sender" | "hostname" | "sender-domain"
   >;
 };
 
@@ -164,12 +160,14 @@ export function verticalLaunchReadiness(
 }
 
 /**
- * Claim invitations and subscription checkout exist only for a fully launched
- * niche with its own domain, routing and sender. Public factory-route access is
- * deliberately insufficient: previewing Beauty must not sell Restofront's plan.
+ * Claim invitations and checkout are an explicit product capability. A niche
+ * claim still requires the niche's complete launch contract; a factory claim
+ * uses Cornershopdev's verified runtime sender and the platform subdomain.
  */
 export function isVerticalClaimEnabled(id: VerticalId): boolean {
-  return isVerticalPubliclyLaunched(id);
+  const mode = resolveVerticalConfig(id).claimMode;
+  if (mode === "disabled") return false;
+  return mode === "factory" || isVerticalPubliclyLaunched(id);
 }
 
 /**

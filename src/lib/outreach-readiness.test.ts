@@ -19,6 +19,8 @@ const configuredEnvironment = {
   OUTREACH_LEGAL_CONTROLLER: "Corner Shop Labs Ltd",
   GOOGLE_PLACES_API_KEY: "test-google-places-key",
   NEXT_PUBLIC_APP_URL: "https://cornershop.dev",
+  EMAIL_FROM: "Vincent from Cornershopdev <vincent@send.cornershop.dev>",
+  EMAIL_REPLY_TO: "vincent@reply.cornershop.dev",
   WORKFLOW_ENABLED: "true",
   WORKFLOW_TARGET_WORLD: "@workflow/world-postgres",
   WORKFLOW_POSTGRES_URL: "postgresql://workflow:private@example.test/workflow",
@@ -59,6 +61,18 @@ describe("outreach environment readiness", () => {
         {
           vertical: "RESTAURANT",
           brand: "Restofrontapp",
+          senderConfigured: true,
+          replyToConfigured: true,
+        },
+        {
+          vertical: "LOCAL_SERVICE",
+          brand: "Tradefront",
+          senderConfigured: true,
+          replyToConfigured: true,
+        },
+        {
+          vertical: "FOOD_RETAIL",
+          brand: "Shopfront Food",
           senderConfigured: true,
           replyToConfigured: true,
         },
@@ -106,6 +120,24 @@ describe("outreach environment readiness", () => {
     );
   });
 
+  it("requires the generic factory identity for claim-enabled SMB verticals", () => {
+    const readiness = evaluateOutreachEnvironment({
+      ...configuredEnvironment,
+      EMAIL_FROM: undefined,
+      EMAIL_REPLY_TO: undefined,
+    });
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.checks.sender).toBe(false);
+    expect(readiness.checks.replyTo).toBe(false);
+    expect(readiness.missingOrInvalid).toEqual(
+      expect.arrayContaining([
+        "VERTICAL_OR_FACTORY_EMAIL_FROM",
+        "VERTICAL_OR_FACTORY_EMAIL_REPLY_TO",
+      ]),
+    );
+  });
+
   it("rejects a shared delivery and inbound signing secret without exposing it", () => {
     const readiness = evaluateOutreachEnvironment({
       ...configuredEnvironment,
@@ -120,7 +152,9 @@ describe("outreach environment readiness", () => {
     expect(readiness.missingOrInvalid).toContain(
       "RESEND_INBOUND_WEBHOOK_SECRET (present and distinct)",
     );
-    expect(serialized).not.toContain(configuredEnvironment.RESEND_WEBHOOK_SECRET);
+    expect(serialized).not.toContain(
+      configuredEnvironment.RESEND_WEBHOOK_SECRET,
+    );
   });
 
   it("rejects a preview origin when production requires the canonical origin", () => {
@@ -305,32 +339,58 @@ describe("production outreach deployment", () => {
 describe("Resend niche identity readiness", () => {
   it("requires verified sending and receiving capabilities without sending mail", () => {
     expect(
-      hasRequiredResendDomains([
-        {
-          name: "send.restofront.com",
-          status: "verified",
-          capabilities: { sending: "enabled", receiving: "disabled" },
-        },
-        {
-          name: "restofront.com",
-          status: "verified",
-          capabilities: { sending: "disabled", receiving: "enabled" },
-        },
-      ]),
+      hasRequiredResendDomains(
+        [
+          {
+            name: "send.restofront.com",
+            status: "verified",
+            capabilities: { sending: "enabled", receiving: "disabled" },
+          },
+          {
+            name: "restofront.com",
+            status: "verified",
+            capabilities: { sending: "disabled", receiving: "enabled" },
+          },
+          {
+            name: "send.cornershop.dev",
+            status: "verified",
+            capabilities: { sending: "enabled", receiving: "disabled" },
+          },
+          {
+            name: "reply.cornershop.dev",
+            status: "verified",
+            capabilities: { sending: "disabled", receiving: "enabled" },
+          },
+        ],
+        configuredEnvironment,
+      ),
     ).toBe(true);
     expect(
-      hasRequiredResendDomains([
-        {
-          name: "send.restofront.com",
-          status: "verified",
-          capabilities: { sending: "enabled", receiving: "disabled" },
-        },
-        {
-          name: "restofront.com",
-          status: "pending",
-          capabilities: { sending: "disabled", receiving: "enabled" },
-        },
-      ]),
+      hasRequiredResendDomains(
+        [
+          {
+            name: "send.restofront.com",
+            status: "verified",
+            capabilities: { sending: "enabled", receiving: "disabled" },
+          },
+          {
+            name: "restofront.com",
+            status: "pending",
+            capabilities: { sending: "disabled", receiving: "enabled" },
+          },
+          {
+            name: "send.cornershop.dev",
+            status: "verified",
+            capabilities: { sending: "enabled", receiving: "disabled" },
+          },
+          {
+            name: "reply.cornershop.dev",
+            status: "verified",
+            capabilities: { sending: "disabled", receiving: "enabled" },
+          },
+        ],
+        configuredEnvironment,
+      ),
     ).toBe(false);
   });
 });

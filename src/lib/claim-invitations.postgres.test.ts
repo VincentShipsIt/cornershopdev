@@ -8,8 +8,8 @@ const suffix = randomUUID();
 const siteId = `claim-retry-site-${suffix}`;
 const slug = `claim-retry-${suffix}`;
 const email = `owner@claim-retry-${suffix}.example.test`;
-const foodSiteId = `claim-food-private-site-${suffix}`;
-const foodSlug = `claim-food-private-${suffix}`;
+const foodSiteId = `claim-food-factory-site-${suffix}`;
+const foodSlug = `claim-food-factory-${suffix}`;
 const outreachSiteId = `claim-outreach-site-${suffix}`;
 const outreachSlug = `claim-outreach-${suffix}`;
 const outreachEmail = `owner@claim-outreach-${suffix}.example.test`;
@@ -39,8 +39,8 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
       data: {
         id: foodSiteId,
         slug: foodSlug,
-        name: "Private food-retail claim fixture",
-        description: "An unlaunched food-retail claim gate fixture.",
+        name: "Factory food-retail claim fixture",
+        description: "A reviewed food-retail factory claim fixture.",
         email: `owner@${foodSlug}.example.test`,
         sourceUrl: `https://${foodSlug}.example.test/`,
         vertical: "FOOD_RETAIL",
@@ -85,18 +85,45 @@ describe.skipIf(!enabled)("claim invitation PostgreSQL replacement CAS", () => {
     }
   });
 
-  test("rejects FOOD_RETAIL invitation issuance before any claim can charge", async () => {
-    await expect(
+  test("serializes concurrent FOOD_RETAIL factory claims to one active invitation", async () => {
+    const invitations = await Promise.all([
       claim.issueClaimInvitation({
         siteSlug: foodSlug,
         email: `owner@${foodSlug}.example.test`,
         proofMethod: "DOMAIN_EMAIL",
-        actor: "claimant:self-serve",
+        actor: "claimant:first-tab",
       }),
-    ).rejects.toMatchObject({ code: "not_claimable", status: 409 });
+      claim.issueClaimInvitation({
+        siteSlug: foodSlug,
+        email: `owner@${foodSlug}.example.test`,
+        proofMethod: "DOMAIN_EMAIL",
+        actor: "claimant:second-tab",
+      }),
+    ]);
+
+    expect(invitations).toHaveLength(2);
     expect(
-      await db.claimInvitation.count({ where: { siteId: foodSiteId } }),
-    ).toBe(0);
+      invitations.every(
+        (invitation) => invitation.site.vertical === "FOOD_RETAIL",
+      ),
+    ).toBe(true);
+    const stored = await db.claimInvitation.findMany({
+      where: { siteId: foodSiteId },
+      select: {
+        id: true,
+        acceptedAt: true,
+        revokedAt: true,
+        checkoutSessionId: true,
+      },
+    });
+    expect(stored).toHaveLength(2);
+    expect(stored.filter((invitation) => !invitation.revokedAt)).toHaveLength(
+      1,
+    );
+    expect(stored.every((invitation) => !invitation.acceptedAt)).toBe(true);
+    expect(stored.every((invitation) => !invitation.checkoutSessionId)).toBe(
+      true,
+    );
   });
 
   test("rechecks channel evidence before outreach claim issuance", async () => {

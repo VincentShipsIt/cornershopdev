@@ -11,12 +11,7 @@ export type CatalogVocabulary = {
 };
 
 export type IntegrationLinkType =
-  | "booking"
-  | "ordering"
-  | "delivery"
-  | "social"
-  | "quote"
-  | "contact";
+  "booking" | "ordering" | "delivery" | "social" | "quote" | "contact";
 
 export type VerticalProject = {
   title: string;
@@ -265,6 +260,12 @@ export type VerticalConfig<
   vocabulary: CatalogVocabulary;
   /** The niche's own marketing site. See `VerticalMarketing`. */
   marketing: VerticalMarketing;
+  /**
+   * How an approved owner reaches checkout. A niche launch uses its own domain
+   * and sender; a factory claim uses Cornershopdev's verified sender and the
+   * site's platform subdomain; disabled keeps a review-only vertical private.
+   */
+  claimMode: "disabled" | "factory" | "niche";
   /**
    * Whether owner-reviewed drafts may create or roll back public snapshots.
    * This is explicit and server-enforced: a registered vertical can support

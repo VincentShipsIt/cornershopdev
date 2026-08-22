@@ -134,7 +134,8 @@ export const foodRetailConfig = {
     item: "Product",
   },
   marketing: foodRetailMarketing,
-  publicationEnabled: false,
+  claimMode: "factory",
+  publicationEnabled: true,
   integrationTypes: ["ordering", "delivery", "social"],
   attributesSchema: foodRetailAttributesSchema,
   attributeDefaults: {

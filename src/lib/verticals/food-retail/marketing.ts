@@ -1,9 +1,10 @@
 import type { VerticalMarketing } from "@/lib/verticals/types";
 
 /**
- * Built but deliberately private. A real domain, a verified sender and the
- * production checkout/configuration evidence must exist before these null launch
- * gates are replaced. Until then it is available only in the factory studio.
+ * Discovery stays operator-only, while approved previews can be claimed through
+ * Cornershopdev's factory identity and published on the platform subdomain.
+ * A future niche domain can replace that factory surface without changing the
+ * vertical's evidence and review rules.
  */
 export const foodRetailMarketing = {
   publiclyAccessible: false,
@@ -103,9 +104,9 @@ export const foodRetailMarketing = {
     ],
   },
   pricing: {
-    eyebrow: "Launch after evidence",
+    eyebrow: "One founding offer",
     headline: "A maintained local storefront.",
-    copy: "The one $49 founding offer becomes claimable after the domain, sender and production configuration are verified. Local currency is shown at checkout.",
+    copy: "Claim the reviewed preview for $49/month through Cornershopdev. Local currency is shown at checkout.",
     plans: [
       {
         name: "Founding",

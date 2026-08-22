@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Vertical } from "@/generated/prisma/enums";
 import {
   extractPlusTags,
   inboundThreadTokens,
@@ -21,15 +22,20 @@ describe("outreach thread identifiers", () => {
     );
   });
 
+  it("uses the factory sender domain for an SMB without a niche domain", () => {
+    expect(
+      outboundRfcMessageId("outreach_trade", Vertical.LOCAL_SERVICE, {
+        EMAIL_FROM: "Vincent from Cornershopdev <vincent@send.cornershop.dev>",
+      }),
+    ).toBe("<outreach_trade@send.cornershop.dev>");
+  });
+
   it("parses In-Reply-To and References tokens", () => {
     expect(
       parseRfcMessageIds(
         "<outreach_abc@send.restofront.com> <other@example.test>",
       ),
-    ).toEqual([
-      "outreach_abc@send.restofront.com",
-      "other@example.test",
-    ]);
+    ).toEqual(["outreach_abc@send.restofront.com", "other@example.test"]);
   });
 
   it("extracts plus-address tags from recipients", () => {

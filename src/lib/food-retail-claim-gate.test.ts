@@ -12,7 +12,7 @@ const checkoutRoute = await Bun.file(
   new URL("../app/api/checkout/route.ts", import.meta.url),
 ).text();
 
-describe("food retail public claim gate", () => {
+describe("food retail factory claim gate", () => {
   it("keeps the unpersisted food demo inside Import Studio", () => {
     expect(importStudio).toContain(
       "setExternalPreviewAvailable(previewAvailable)",
@@ -26,8 +26,8 @@ describe("food retail public claim gate", () => {
     );
   });
 
-  it("cannot expose Food checkout while retaining the Restaurant flow", () => {
-    expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(false);
+  it("exposes the reviewed factory checkout through the shared claim guards", () => {
+    expect(isVerticalClaimEnabled(Vertical.FOOD_RETAIL)).toBe(true);
     expect(isVerticalClaimEnabled(Vertical.RESTAURANT)).toBe(true);
     expect(importStudio).toContain(
       "{isVerticalClaimEnabled(site.vertical) ? (",

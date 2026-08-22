@@ -9,6 +9,9 @@ const dashboardPage = await Bun.file(
 const foodRetailDashboard = await Bun.file(
   new URL("../app/dashboard/food-retail-dashboard.tsx", import.meta.url),
 ).text();
+const localServiceDashboard = await Bun.file(
+  new URL("../app/dashboard/local-service-dashboard.tsx", import.meta.url),
+).text();
 const restaurantSaveRoute = await Bun.file(
   new URL("../app/api/sites/[slug]/route.ts", import.meta.url),
 ).text();
@@ -60,36 +63,33 @@ describe("dashboard tab and settings surface", () => {
       "initialDraftRevision={ownerDraft?.revision ?? 0}",
     );
     expect(dashboardPage).toContain("initialRevision={loaded.revision}");
-    expect(dashboard).toContain(
-      "useState(initialDraftRevision)",
-    );
+    expect(dashboard).toContain("useState(initialDraftRevision)");
     expect(dashboard).toContain("expectedRevision: savedRevision");
     expect(restaurantSaveRoute).toContain("saveAuthorizedSiteDraft");
     expect(ownerSiteSave).toContain('code: "EXPECTED_REVISION_REQUIRED"');
     expect(dashboard).toContain("expectedRevision: revisionToPublish");
     expect(foodRetailDashboard).toContain("expectedRevision: revision");
-    expect(restaurantPublishRoute).toContain(
-      'code: "DRAFT_REVISION_CONFLICT"',
-    );
+    expect(restaurantPublishRoute).toContain('code: "DRAFT_REVISION_CONFLICT"');
   });
 
-  it("keeps food retail review private at the UI, API and service boundaries", () => {
+  it("publishes reviewed food-retail and local-service drafts through the guarded route", () => {
+    expect(foodRetailDashboard).toContain("publishDraft");
+    expect(foodRetailDashboard).toContain("/publish");
     expect(foodRetailDashboard).toContain(
-      "Public publishing and rollback stay unavailable",
+      "hasUnreviewedFoodRetailTranslations",
     );
-    expect(foodRetailDashboard).not.toContain("publishDraft");
-    expect(foodRetailDashboard).not.toContain("/publish");
+    expect(localServiceDashboard).toContain("async function publish()");
+    expect(localServiceDashboard).toContain("/publish");
     expect(restaurantPublishRoute).toContain(
       "publicationCapabilityFailureResponse",
     );
-    expect(rollbackRoute).toContain(
-      "publicationCapabilityFailureResponse",
-    );
-    expect(sitePublication.match(/assertVerticalPublicationEnabled\(input\.vertical\)/g))
-      .toHaveLength(2);
-    expect(sites).toContain(
-      "!isVerticalPublicationEnabled(version.vertical)",
-    );
+    expect(rollbackRoute).toContain("publicationCapabilityFailureResponse");
+    expect(
+      sitePublication.match(
+        /assertVerticalPublicationEnabled\(input\.vertical\)/g,
+      ),
+    ).toHaveLength(2);
+    expect(sites).toContain("!isVerticalPublicationEnabled(version.vertical)");
   });
 
   it("carries the universal draft revision through auxiliary owner mutations", () => {
@@ -106,9 +106,7 @@ describe("dashboard tab and settings surface", () => {
     expect(sourceMonitoringReviewRoute).toContain(
       "expectedRevision: z.number().int().min(0)",
     );
-    expect(sourceMonitoringPanel).toContain(
-      "expectedRevision: draftRevision",
-    );
+    expect(sourceMonitoringPanel).toContain("expectedRevision: draftRevision");
     expect(dashboard).toContain(
       "onAcceptedDraft={applyAcceptedSourceMonitoringDraft}",
     );

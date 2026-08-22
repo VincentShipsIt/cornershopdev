@@ -109,7 +109,7 @@ describe("isLeadEligibleForOutreach", () => {
   });
 });
 
-describe("reviewed niche delivery eligibility", () => {
+describe("reviewed claim-enabled delivery eligibility", () => {
   const reviewedAt = "2026-08-19T08:01:00.000Z";
   const site = {
     status: "PREVIEW_READY",
@@ -135,7 +135,7 @@ describe("reviewed niche delivery eligibility", () => {
     auditEvents: [{ createdAt: new Date("2026-08-19T08:01:00.000Z") }],
   };
 
-  it("binds delivery to the current reviewed restaurant and recipient", () => {
+  it("binds delivery to the current reviewed claim-enabled vertical and recipient", () => {
     expect(isReviewedLead(site, false, "owner@example.com", reviewedAt)).toBe(
       true,
     );
@@ -147,7 +147,17 @@ describe("reviewed niche delivery eligibility", () => {
         reviewedAt,
       ),
     ).toBe(false);
-    for (const vertical of ["BEAUTY", "FOOD_RETAIL", "LOCAL_SERVICE"]) {
+    for (const vertical of ["FOOD_RETAIL", "LOCAL_SERVICE"]) {
+      expect(
+        isReviewedLead(
+          { ...site, vertical },
+          false,
+          "owner@example.com",
+          reviewedAt,
+        ),
+      ).toBe(true);
+    }
+    for (const vertical of ["BEAUTY"]) {
       expect(
         isReviewedLead(
           { ...site, vertical },

@@ -15,8 +15,8 @@ The deployment requires all of:
 - `CLAIM_TOKEN_SECRET`
 - `RESEND_API_KEY`
 
-The launch Checkout offers exactly one plan: the Restofront founding
-subscription at USD 49.00 per month. Its Stripe Price and Product must be live,
+The launch Checkout offers exactly one plan for every claim-enabled vertical:
+the Cornershopdev founding subscription at USD 49.00 per month. Its Stripe Price and Product must be live,
 active, non-metered, tax-exclusive, and recurring monthly. Test mode and live mode have separate keys,
 prices, Customer Portal configurations, webhook endpoints, and signing secrets.
 Never copy a test identifier into Production or a live identifier into local
@@ -159,6 +159,7 @@ durable release evidence:
    ```
 
    Select only the seven event types listed above.
+
 4. Store the live secret key, endpoint signing secret, the one live Price ID, and
    a randomly generated claim-token secret of at least 32 characters as
    encrypted Production parameters under
@@ -228,6 +229,7 @@ migration itself.
   WHERE "status" = 'REJECTED'
   ORDER BY "processedAt" DESC;
   ```
+
 - Infrastructure and Stripe API failures return `500`, leaving no committed
   event-ledger row so a retry can process the event.
 - Those runtime failures also create a deduplicated durable operator alert.

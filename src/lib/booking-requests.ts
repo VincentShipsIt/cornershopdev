@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { emailSender, getResend } from "@/lib/resend";
+import { emailSender } from "@/lib/email-identity";
+import { getResend } from "@/lib/resend";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 

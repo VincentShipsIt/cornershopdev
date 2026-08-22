@@ -1,9 +1,9 @@
 import { Vertical } from "@/generated/prisma/enums";
-import { resolveVerticalConfig } from "@/lib/verticals/registry";
+import { emailSender } from "@/lib/email-identity";
 import type { VerticalId } from "@/lib/verticals/types";
 
 export const OUTREACH_THREAD_PREFIX = "lead:";
-export const OUTBOUND_RFC_MESSAGE_DOMAIN = "send.restofront.com";
+export const OUTBOUND_RFC_MESSAGE_DOMAIN = "send.cornershop.dev";
 
 export type InboundAddressFields = {
   from: string;
@@ -21,9 +21,9 @@ export function outreachThreadKey(siteId: string): string {
 export function outboundRfcMessageId(
   messageId: string,
   vertical: VerticalId = Vertical.RESTAURANT,
+  environment: Record<string, string | undefined> = process.env,
 ): string {
-  const from = resolveVerticalConfig(vertical).marketing.email?.from;
-  const address = from ? extractEmailAddress(from) : null;
+  const address = extractEmailAddress(emailSender(vertical, environment));
   const domain = address?.slice(address.lastIndexOf("@") + 1);
   return `<${messageId}@${domain || OUTBOUND_RFC_MESSAGE_DOMAIN}>`;
 }
@@ -89,10 +89,7 @@ export function inboundThreadTokens(input: InboundAddressFields): string[] {
       ...parseRfcMessageIds(input.inReplyTo),
       ...parseRfcMessageIds(input.references),
       ...parseRfcMessageIds(input.rfcMessageId),
-      ...extractPlusTags([
-        ...input.to,
-        ...(input.receivedFor ?? []),
-      ]),
+      ...extractPlusTags([...input.to, ...(input.receivedFor ?? [])]),
     ]),
   ];
 }

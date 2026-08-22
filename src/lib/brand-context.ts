@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { FACTORY_BRAND, type BrandIdentity } from "@/lib/brand";
-import { emailReplyTo, emailSender } from "@/lib/resend";
+import { emailReplyTo, emailSender } from "@/lib/email-identity";
 import { requestHostname, type HeaderReader } from "@/lib/request-hostname";
 import {
   resolveVerticalByHostname,
@@ -36,9 +36,7 @@ export type BrandContext = BrandIdentity & {
 export function brandContextForVertical(
   vertical: VerticalId | null,
 ): BrandContext {
-  const marketing = vertical
-    ? resolveVerticalConfig(vertical).marketing
-    : null;
+  const marketing = vertical ? resolveVerticalConfig(vertical).marketing : null;
   // No launched domain means no storefront to speak as: hand back the
   // factory as one complete identity rather than mixing a registered
   // vertical's (already-designed) wordmark with the factory's own URL and

@@ -1,4 +1,4 @@
-import { emailReplyTo, emailSender } from "@/lib/resend";
+import { emailReplyTo, emailSender } from "@/lib/email-identity";
 import { listOutreachVerticals } from "@/lib/lead-generation/registry";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
@@ -85,15 +85,18 @@ export function evaluateOutreachEnvironment(
   );
   const verticals = listOutreachVerticals().map((vertical) => {
     const marketing = resolveVerticalConfig(vertical).marketing;
+    const declaredSender = marketing.email?.from ?? env.EMAIL_FROM?.trim();
+    const declaredReplyTo =
+      marketing.email?.replyTo ?? env.EMAIL_REPLY_TO?.trim();
     return {
       vertical,
       brand: marketing.brand.name,
       senderConfigured:
-        Boolean(marketing.email?.from) &&
-        emailSender(vertical, env) === marketing.email?.from,
+        Boolean(declaredSender) &&
+        emailSender(vertical, env) === declaredSender,
       replyToConfigured:
-        Boolean(marketing.email?.replyTo) &&
-        emailReplyTo(vertical, env) === marketing.email?.replyTo,
+        Boolean(declaredReplyTo) &&
+        emailReplyTo(vertical, env) === declaredReplyTo,
     };
   });
   const checks = {
@@ -140,8 +143,8 @@ export function evaluateOutreachEnvironment(
       "GOOGLE_PLACES_API_KEY|LEAD_DISCOVERY_NOMINATIM_BASE_URL",
     workflow: "WORKFLOW_*",
     appOrigin: "NEXT_PUBLIC_APP_URL",
-    sender: "VERTICAL_MARKETING_EMAIL_FROM",
-    replyTo: "VERTICAL_MARKETING_EMAIL_REPLY_TO",
+    sender: "VERTICAL_OR_FACTORY_EMAIL_FROM",
+    replyTo: "VERTICAL_OR_FACTORY_EMAIL_REPLY_TO",
   } satisfies Record<keyof typeof checks, string>;
   const missingOrInvalid = Object.entries(checks).flatMap(([name, ready]) =>
     ready ? [] : [variableByCheck[name as keyof typeof variableByCheck]],
@@ -159,12 +162,12 @@ export function evaluateOutreachEnvironment(
 
 export function hasRequiredResendDomains(
   domains: ResendDomainSummary[],
+  env: Environment = process.env,
 ): boolean {
   return listOutreachVerticals().every((vertical) => {
-    const email = resolveVerticalConfig(vertical).marketing.email;
-    if (!email) return false;
-    const senderDomain = emailDomain(email.from);
-    const replyDomain = emailDomain(email.replyTo);
+    const senderDomain = emailDomain(emailSender(vertical, env));
+    const replyTo = emailReplyTo(vertical, env);
+    const replyDomain = replyTo ? emailDomain(replyTo) : null;
     if (!senderDomain || !replyDomain) return false;
     return (
       domains.some(

@@ -13,7 +13,7 @@ import {
   type InboundAddressFields,
 } from "@/lib/outreach-thread";
 import { fetchReceivedResendEmail } from "@/lib/resend-receiving";
-import { emailReplyTo } from "@/lib/resend";
+import { emailReplyTo } from "@/lib/email-identity";
 import { listOutreachVerticals } from "@/lib/lead-generation/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 import { lockOutreachDelivery, lockOutreachSite } from "@/lib/outreach-lock";

@@ -1,11 +1,11 @@
 import { getStripe } from "@/lib/stripe";
-import { preflightRestofrontBilling } from "@/lib/stripe-billing-preflight";
+import { preflightFoundingBilling } from "@/lib/stripe-billing-preflight";
 
 let requiredMode: "test" | "live" | "invalid" = "invalid";
 
 try {
   requiredMode = parseArguments(process.argv.slice(2));
-  const evidence = await preflightRestofrontBilling({
+  const evidence = await preflightFoundingBilling({
     stripe: getStripe(),
     requiredMode,
   });
@@ -13,7 +13,7 @@ try {
 } catch {
   console.error(
     JSON.stringify({
-      check: "restofront-founding-billing",
+      check: "cornershop-founding-billing",
       ready: false,
       mode: requiredMode,
       failure: "configuration_or_provider_resource_mismatch",

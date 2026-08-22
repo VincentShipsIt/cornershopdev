@@ -7,7 +7,7 @@ import {
   brandContextForSiteVertical,
   brandContextForVertical,
 } from "@/lib/brand-context";
-import { emailReplyTo, emailSender } from "@/lib/resend";
+import { emailReplyTo, emailSender } from "@/lib/email-identity";
 import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 
 /**
