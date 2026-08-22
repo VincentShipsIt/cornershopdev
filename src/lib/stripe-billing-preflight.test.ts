@@ -5,8 +5,7 @@ import { preflightRestofrontBilling } from "@/lib/stripe-billing-preflight";
 const environment = {
   STRIPE_SECRET_KEY: "sk_live_example",
   STRIPE_WEBHOOK_SECRET: "whsec_example",
-  STRIPE_STARTER_PRICE_ID: "price_starter",
-  STRIPE_GROWTH_PRICE_ID: "price_growth",
+  STRIPE_PRICE_ID: "price_founding",
 };
 
 function stripePrice(
@@ -16,9 +15,9 @@ function stripePrice(
     prices: {
       retrieve: async () =>
         ({
-          id: "price_starter",
+          id: "price_founding",
           active: true,
-          currency: "eur",
+          currency: "usd",
           unit_amount: 4_900,
           type: "recurring",
           livemode: true,
@@ -47,12 +46,12 @@ describe("Stripe billing preflight", () => {
       ready: true,
       mode: "live",
       amount: 4_900,
-      currency: "eur",
+      currency: "usd",
       interval: "month",
       taxBehavior: "exclusive",
     });
     expect(result.priceFingerprint).toHaveLength(64);
-    expect(JSON.stringify(result)).not.toContain("price_starter");
+    expect(JSON.stringify(result)).not.toContain("price_founding");
   });
 
   it("fails closed for mode and provider-resource drift", async () => {

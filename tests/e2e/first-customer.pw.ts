@@ -24,7 +24,7 @@ test("private food-retail preview exposes no claim page, invitation, or checkout
   const checkout = await request.post("/api/checkout", {
     headers: { Origin: "http://127.0.0.1:3100" },
     data: {
-      plan: "starter",
+      plan: "founding",
       siteSlug: e2e.foodSlug,
       invitationToken: e2e.foodInvitationToken,
     },
@@ -56,8 +56,8 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
   ).toBeVisible();
   await page.getByRole("button", { name: "Claim and continue" }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:4100\/checkout\/cs_test_/);
-  await expect(page.getByText("€49.00 per month")).toBeVisible();
-  await page.getByRole("button", { name: "Pay €49 in test mode" }).click();
+  await expect(page.getByText("€43.00 local presentment for the $49 monthly plan")).toBeVisible();
+  await page.getByRole("button", { name: "Pay €43 in test mode" }).click();
 
   await expect(page).toHaveURL(/\/workspace\/select$/);
   await expect(page.getByText(e2e.targetName)).toBeVisible();
@@ -84,7 +84,7 @@ test("claim, paid webhook, sign-in, workspace selection, private save, atomic pu
       "Content-Type": "application/json",
     },
     data: {
-      plan: "starter",
+      plan: "founding",
       siteSlug: e2e.targetSlug,
       invitationToken: claimToken,
     },

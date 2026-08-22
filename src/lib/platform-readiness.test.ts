@@ -16,8 +16,7 @@ const configuredEnvironment = {
   AWS_REGION: "us-west-1",
   STRIPE_SECRET_KEY: "sk_test_configured",
   STRIPE_WEBHOOK_SECRET: "whsec_configured",
-  STRIPE_STARTER_PRICE_ID: "price_starter",
-  STRIPE_GROWTH_PRICE_ID: "price_growth",
+  STRIPE_PRICE_ID: "price_founding",
   RESEND_API_KEY: "re_test_configured",
   RESEND_WEBHOOK_SECRET: "whsec_resend_configured",
   CLAIM_TOKEN_SECRET: "a-secure-test-secret-that-is-long-enough",
@@ -68,7 +67,7 @@ describe("checkPlatformReadiness", () => {
         service: "billing",
         status: "misconfigured",
         message:
-          "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
+          "Set STRIPE_PRICE_ID to the approved founding Stripe price.",
       },
       {
         service: "auth",

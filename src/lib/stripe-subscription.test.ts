@@ -37,7 +37,7 @@ describe("Stripe subscription lifecycle mapping", () => {
     expect(snapshot).toEqual({
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
-      stripePriceId: "price_growth",
+      stripePriceId: "price_founding",
       status: "PAST_DUE",
       currentPeriodEnd: new Date("2026-08-26T00:00:00.000Z"),
       cancelAtPeriodEnd: true,
@@ -69,7 +69,7 @@ function subscription(
           id: "si_1",
           current_period_end:
             new Date("2026-08-26T00:00:00.000Z").getTime() / 1000,
-          price: { id: "price_growth" },
+          price: { id: "price_founding" },
         },
       ],
     },

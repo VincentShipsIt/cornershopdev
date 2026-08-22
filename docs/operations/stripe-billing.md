@@ -11,30 +11,20 @@ The deployment requires all of:
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_STARTER_PRICE_ID`
-- `STRIPE_GROWTH_PRICE_ID`
-- `STRIPE_LEGACY_PRICE_IDS` (optional comma-separated retired price IDs)
+- `STRIPE_PRICE_ID`
 - `CLAIM_TOKEN_SECRET`
 - `RESEND_API_KEY`
 
-The launch Checkout offers exactly one plan: the Restofront founding Starter
-subscription at EUR 49.00 per month. Its Stripe Price and Product must be live,
-active, non-metered, tax-exclusive, and recurring monthly. Growth remains a
-distinct configured ID for existing access and future migration safety, but the
-public Checkout route rejects it. Test mode and live mode have separate keys,
+The launch Checkout offers exactly one plan: the Restofront founding
+subscription at USD 49.00 per month. Its Stripe Price and Product must be live,
+active, non-metered, tax-exclusive, and recurring monthly. Test mode and live mode have separate keys,
 prices, Customer Portal configurations, webhook endpoints, and signing secrets.
 Never copy a test identifier into Production or a live identifier into local
 development.
 
-Checkout disables promotion codes for this offer, requires billing-address and
+Checkout enables Adaptive Pricing so eligible customers see and pay in local currency while the durable integration contract remains USD 49. Checkout disables promotion codes for this offer, requires billing-address and
 tax-ID collection, and provisions only when Stripe reports
 `payment_status=paid`. A completed zero-payment session cannot create ownership.
-
-When rotating a price, add the retiring price ID to
-`STRIPE_LEGACY_PRICE_IDS` and deploy that access allowlist before changing the
-current plan price ID. Existing subscribers then retain publishing access while
-new Checkout Sessions use only the new price. Remove the legacy ID only after
-all affected subscriptions have migrated or ended.
 
 Checkout also requires an unexpired, unused `ClaimInvitation` whose SHA-256
 token hash, intended email, and site all match. The secure-claim dependency
@@ -155,12 +145,11 @@ membership, or owner.
 
 ## Production activation blockers
 
-These are deliberate production changes and require Vincent's explicit
-authority. This implementation does not perform them:
+These are deliberate production changes and require explicit authority plus
+durable release evidence:
 
-1. Create or approve the live founding Starter Product and Price plus the
-   separately configured Growth access Price. Record the approved founding
-   offer, amount, currency, interval, tax behavior, and live Price IDs.
+1. Create or approve the one live founding Product and USD 49 Price. Record
+   the approved amount, currency, interval, tax behavior, and live Price ID.
 2. Configure and test the live Customer Portal. Enable only the intended
    payment-method, cancellation, invoice, and plan-change features.
 3. Create the live webhook endpoint:
@@ -170,13 +159,13 @@ authority. This implementation does not perform them:
    ```
 
    Select only the seven event types listed above.
-4. Store the live secret key, endpoint signing secret, both live Price IDs, and
+4. Store the live secret key, endpoint signing secret, the one live Price ID, and
    a randomly generated claim-token secret of at least 32 characters as
    encrypted Production parameters under
    `/shipshit/production/cornershopdev/`.
 5. Deploy the reviewed release. Before cutover, deployment runs
    `operator:preflight-stripe --mode live`; it fails if the live founding Price
-   drifts from EUR 49.00 monthly or its Product/mode/tax contract. The frequent
+   drifts from USD 49.00 monthly or its Product/mode/tax contract. The frequent
    `/api/health/ready` probe remains provider-read-free and reports missing
    billing configuration without returning any credential or identifier.
 6. Complete one explicitly authorized low-risk live Checkout, then verify one

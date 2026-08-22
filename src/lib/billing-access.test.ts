@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { evaluateBillingAccess } from "@/lib/billing-access";
 
-const configuredPrices = new Set(["price_starter", "price_growth"]);
+const configuredPrice = "price_founding";
 
 describe("paid feature access", () => {
   it("allows an active subscription on a configured price", () => {
@@ -9,10 +9,10 @@ describe("paid feature access", () => {
       evaluateBillingAccess(
         {
           status: "ACTIVE",
-          stripePriceId: "price_growth",
+          stripePriceId: "price_founding",
           stripeCustomerId: "cus_1",
         },
-        configuredPrices,
+        configuredPrice,
       ).ok,
     ).toBe(true);
   });
@@ -23,10 +23,10 @@ describe("paid feature access", () => {
       const access = evaluateBillingAccess(
         {
           status,
-          stripePriceId: "price_growth",
+          stripePriceId: "price_founding",
           stripeCustomerId: "cus_1",
         },
-        configuredPrices,
+        configuredPrice,
       );
       expect(access.ok).toBe(false);
       if (!access.ok) expect(access.status).toBe(402);
@@ -34,7 +34,7 @@ describe("paid feature access", () => {
   );
 
   it("blocks missing and unconfigured-price subscriptions", () => {
-    expect(evaluateBillingAccess(null, configuredPrices).ok).toBe(false);
+    expect(evaluateBillingAccess(null, configuredPrice).ok).toBe(false);
     expect(
       evaluateBillingAccess(
         {
@@ -42,7 +42,7 @@ describe("paid feature access", () => {
           stripePriceId: "price_attacker",
           stripeCustomerId: "cus_1",
         },
-        configuredPrices,
+        configuredPrice,
       ).ok,
     ).toBe(false);
   });

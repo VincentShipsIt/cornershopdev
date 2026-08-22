@@ -115,10 +115,8 @@ describe("Stripe webhook event idempotency", () => {
   });
 
   it("provisions once without a browser return and converges lifecycle events", async () => {
-    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const previousPrice = process.env.STRIPE_PRICE_ID;
+    process.env.STRIPE_PRICE_ID = "price_founding";
 
     const { db, state } = createWebhookDatabase();
     let currentSubscription = subscriptionFixture();
@@ -162,7 +160,7 @@ describe("Stripe webhook event idempotency", () => {
             livemode: false,
             claimInvitationId: "invite_1",
             checkoutSessionId: "cs_test_1",
-            stripePriceId: "price_growth",
+            stripePriceId: "price_founding",
             paymentStatus: "paid",
           }),
         }),
@@ -230,8 +228,7 @@ describe("Stripe webhook event idempotency", () => {
       expect(state.sites[0].status).toBe("CLAIMED");
       expect(state.events).toHaveLength(6);
     } finally {
-      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+      restoreEnvironment("STRIPE_PRICE_ID", previousPrice);
     }
   });
 
@@ -309,10 +306,8 @@ describe("Stripe webhook event idempotency", () => {
   }
 
   it("rolls back partial claim writes and persists a durable rejection", async () => {
-    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const previousPrice = process.env.STRIPE_PRICE_ID;
+    process.env.STRIPE_PRICE_ID = "price_founding";
     const { db, state } = createWebhookDatabase({ loseClaimRace: true });
     const stripe = {
       checkout: {
@@ -346,8 +341,7 @@ describe("Stripe webhook event idempotency", () => {
       expect(state.audits).toHaveLength(1);
     } finally {
       console.error = original;
-      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+      restoreEnvironment("STRIPE_PRICE_ID", previousPrice);
     }
   });
 
@@ -437,10 +431,8 @@ describe("Stripe webhook event idempotency", () => {
   });
 
   it("refuses a completed Checkout that did not collect payment", async () => {
-    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const previousPrice = process.env.STRIPE_PRICE_ID;
+    process.env.STRIPE_PRICE_ID = "price_founding";
     const { db, state } = createWebhookDatabase();
     const fixture = checkoutFixture(subscriptionFixture());
     fixture.payment_status = "no_payment_required";
@@ -470,16 +462,13 @@ describe("Stripe webhook event idempotency", () => {
       ]);
     } finally {
       console.error = original;
-      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+      restoreEnvironment("STRIPE_PRICE_ID", previousPrice);
     }
   });
 
   it("refuses provisioning when an old operator approval lacks evidence", async () => {
-    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const previousPrice = process.env.STRIPE_PRICE_ID;
+    process.env.STRIPE_PRICE_ID = "price_founding";
     const { db, state } = createWebhookDatabase();
     state.invitation.proofMethod = "OPERATOR_APPROVAL";
     const stripe = {
@@ -509,22 +498,19 @@ describe("Stripe webhook event idempotency", () => {
       ]);
     } finally {
       console.error = original;
-      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+      restoreEnvironment("STRIPE_PRICE_ID", previousPrice);
     }
   });
 
   it("refuses a discounted founding Checkout even when Stripe marks it paid", async () => {
-    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+    const previousPrice = process.env.STRIPE_PRICE_ID;
+    process.env.STRIPE_PRICE_ID = "price_founding";
     const { db, state } = createWebhookDatabase();
-    state.invitation.stripePriceId = "price_starter";
+    state.invitation.stripePriceId = "price_founding";
     const subscription = subscriptionFixture();
-    subscription.items.data[0].price.id = "price_starter";
+    subscription.items.data[0].price.id = "price_founding";
     const fixture = checkoutFixture(subscription);
-    fixture.metadata = { ...fixture.metadata, plan: "starter" };
+    fixture.metadata = { ...fixture.metadata, plan: "founding" };
     fixture.total_details = {
       amount_discount: 1_000,
       amount_shipping: 0,
@@ -554,48 +540,44 @@ describe("Stripe webhook event idempotency", () => {
       ]);
     } finally {
       console.error = original;
-      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+      restoreEnvironment("STRIPE_PRICE_ID", previousPrice);
     }
   });
 
-  it("provisions an in-flight Checkout on an explicitly grandfathered price", async () => {
-    const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-    const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-    const previousLegacy = process.env.STRIPE_LEGACY_PRICE_IDS;
-    process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_growth_current";
-    process.env.STRIPE_LEGACY_PRICE_IDS = "price_growth_retired";
-    const { db, state } = createWebhookDatabase();
-    state.invitation.stripePriceId = "price_growth_retired";
-    const subscription = subscriptionFixture();
-    subscription.items.data[0].price.id = "price_growth_retired";
-    const stripe = {
-      checkout: {
-        sessions: {
-          retrieve: async () => checkoutFixture(subscription),
+  it("rejects a Checkout on a retired price", async () => {
+    await withConfiguredBilling(async () => {
+      const { db, state } = createWebhookDatabase();
+      state.invitation.stripePriceId = "price_retired";
+      const subscription = subscriptionFixture();
+      subscription.items.data[0].price.id = "price_retired";
+      const stripe = {
+        checkout: {
+          sessions: {
+            retrieve: async () => checkoutFixture(subscription),
+          },
         },
-      },
-    } as unknown as Stripe;
-
-    try {
-      expect(
-        await processStripeWebhookEvent(
-          checkoutEvent("evt_legacy_price", 600),
-          stripe,
-          db,
-        ),
-      ).toBe("processed");
-      expect(state.subscriptions[0]).toMatchObject({
-        stripePriceId: "price_growth_retired",
-        status: "ACTIVE",
-        siteId: "site_1",
-      });
-    } finally {
-      restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-      restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
-      restoreEnvironment("STRIPE_LEGACY_PRICE_IDS", previousLegacy);
-    }
+      } as unknown as Stripe;
+      const original = console.error;
+      console.error = mock(() => {});
+      try {
+        expect(
+          await processStripeWebhookEvent(
+            checkoutEvent("evt_retired_price", 600),
+            stripe,
+            db,
+          ),
+        ).toBe("rejected");
+        expect(state.subscriptions).toHaveLength(0);
+        expect(state.events).toContainEqual(
+          expect.objectContaining({
+            status: "REJECTED",
+            failureReason: "Checkout price is not configured",
+          }),
+        );
+      } finally {
+        console.error = original;
+      }
+    });
   });
 });
 
@@ -639,7 +621,7 @@ function createWebhookDatabase(
       acceptedAt: null as Date | null,
       revokedAt: null as Date | null,
       checkoutSessionId: "cs_test_1",
-      stripePriceId: "price_growth",
+      stripePriceId: "price_founding",
       siteId: "site_1",
     },
     sites: [
@@ -972,6 +954,18 @@ function checkoutFixture(
     mode: "subscription",
     status: "complete",
     payment_status: "paid",
+    currency: "usd",
+    amount_subtotal: 4_900,
+    total_details: {
+      amount_discount: 0,
+      amount_shipping: 0,
+      amount_tax: 0,
+    },
+    adaptive_pricing: { enabled: true },
+    presentment_details: {
+      presentment_amount: 4_300,
+      presentment_currency: "eur",
+    },
     client_reference_id: "invite_1",
     customer: "cus_1",
     customer_email: "owner@chez-lea.test",
@@ -979,7 +973,7 @@ function checkoutFixture(
     metadata: {
       claimInvitationId: "invite_1",
       siteSlug: "chez-lea",
-      plan: "growth",
+      plan: "founding",
     },
     subscription,
   } as unknown as Stripe.Checkout.Session;
@@ -998,7 +992,7 @@ function subscriptionFixture(
         {
           id: "si_1",
           current_period_end: 1_785_110_400,
-          price: { id: "price_growth" },
+          price: { id: "price_founding" },
         },
       ],
     },
@@ -1039,14 +1033,11 @@ function restoreEnvironment(name: string, value: string | undefined) {
 }
 
 async function withConfiguredBilling(run: () => Promise<void>) {
-  const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-  const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
-  process.env.STRIPE_STARTER_PRICE_ID = "price_starter";
-  process.env.STRIPE_GROWTH_PRICE_ID = "price_growth";
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  process.env.STRIPE_PRICE_ID = "price_founding";
   try {
     await run();
   } finally {
-    restoreEnvironment("STRIPE_STARTER_PRICE_ID", previousStarter);
-    restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
+    restoreEnvironment("STRIPE_PRICE_ID", previousPrice);
   }
 }

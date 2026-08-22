@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import {
-  configuredBillingPlans,
+  configuredBillingPlan,
   RESTOFRONT_FOUNDING_PLAN_ID,
   stripeLivemodeForSecret,
   validateRestofrontFoundingPrice,
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const priceId = configuredBillingPlans()[plan].priceId;
+    const priceId = configuredBillingPlan().priceId;
     const invitation = await authorizeClaimInvitationForCheckout({
       siteSlug,
       token: invitationToken,
@@ -164,6 +164,7 @@ export async function POST(request: Request) {
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
+        adaptive_pricing: { enabled: true },
         expires_at: checkoutExpiresAt,
         line_items: [{ price: priceId, quantity: 1 }],
         allow_promotion_codes: false,

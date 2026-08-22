@@ -65,10 +65,10 @@ export const localServiceMarketing = {
   pricing: {
     eyebrow: "Simple ongoing care",
     headline: "A current front door for the business.",
-    copy: "Preview first. Publish only after the facts, owner and billing state are verified.",
+    copy: "Preview first. Publish only after the facts, owner and billing state are verified. Local currency is shown at checkout.",
     plans: [{
       name: "Founding",
-      price: "€49",
+      price: "$49",
       cadence: "/month",
       copy: "The complete local-service website for one independent business.",
       features: ["Mobile-first services and project gallery", "Phone, WhatsApp and quote actions", "Custom domain and SSL", "Owner editing and source monitoring"],

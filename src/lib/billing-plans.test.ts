@@ -2,62 +2,33 @@ import { describe, expect, it } from "bun:test";
 import {
   billingPlanForPrice,
   BillingConfigurationError,
-  configuredBillingPlans,
-  configuredBillingPriceIds,
+  configuredBillingPlan,
+  configuredBillingPriceId,
   stripeLivemodeForSecret,
   validateRestofrontFoundingPrice,
 } from "@/lib/billing-plans";
 
-const configured = {
-  STRIPE_STARTER_PRICE_ID: "price_starter",
-  STRIPE_GROWTH_PRICE_ID: "price_growth",
-};
+const configured = { STRIPE_PRICE_ID: "price_founding" };
 
-describe("configuredBillingPlans", () => {
-  it("creates a server-owned plan and price allowlist", () => {
-    const plans = configuredBillingPlans(configured);
-    expect(plans.starter.priceId).toBe("price_starter");
-    expect(billingPlanForPrice("price_growth", plans)?.id).toBe("growth");
-    expect(billingPlanForPrice("price_attacker", plans)).toBeNull();
+describe("configuredBillingPlan", () => {
+  it("creates one server-owned founding plan", () => {
+    const plan = configuredBillingPlan(configured);
+    expect(plan).toEqual({ id: "founding", priceId: "price_founding" });
+    expect(billingPlanForPrice("price_founding", plan)?.id).toBe("founding");
+    expect(billingPlanForPrice("price_attacker", plan)).toBeNull();
+    expect(configuredBillingPriceId(configured)).toBe("price_founding");
   });
 
-  it("fails closed when a price is missing or reused", () => {
-    expect(() => configuredBillingPlans({})).toThrow(BillingConfigurationError);
-    expect(() =>
-      configuredBillingPlans({
-        STRIPE_STARTER_PRICE_ID: "price_same",
-        STRIPE_GROWTH_PRICE_ID: "price_same",
-      }),
-    ).toThrow("different Stripe prices");
-  });
-
-  it("grandfathers explicitly configured legacy prices for access only", () => {
-    const prices = configuredBillingPriceIds({
-      ...configured,
-      STRIPE_LEGACY_PRICE_IDS: "price_old_starter, price_old_growth",
-    });
-    expect(prices).toEqual(
-      new Set([
-        "price_starter",
-        "price_growth",
-        "price_old_starter",
-        "price_old_growth",
-      ]),
-    );
-    expect(
-      billingPlanForPrice(
-        "price_old_starter",
-        configuredBillingPlans(configured),
-      ),
-    ).toBeNull();
+  it("fails closed when the one price is missing", () => {
+    expect(() => configuredBillingPlan({})).toThrow(BillingConfigurationError);
   });
 });
 
 describe("Restofront founding Stripe price", () => {
   const price = {
-    id: "price_starter",
+    id: "price_founding",
     active: true,
-    currency: "eur",
+    currency: "usd",
     unit_amount: 4_900,
     type: "recurring",
     livemode: true,
@@ -70,10 +41,10 @@ describe("Restofront founding Stripe price", () => {
     product: { active: true },
   };
 
-  it("accepts only the approved live €49 monthly exclusive-tax offer", () => {
+  it("accepts only the approved live $49 USD monthly exclusive-tax offer", () => {
     expect(() =>
       validateRestofrontFoundingPrice(price, {
-        expectedPriceId: "price_starter",
+        expectedPriceId: "price_founding",
         expectedLivemode: true,
       }),
     ).not.toThrow();
@@ -90,7 +61,7 @@ describe("Restofront founding Stripe price", () => {
     ]) {
       expect(() =>
         validateRestofrontFoundingPrice(candidate, {
-          expectedPriceId: "price_starter",
+          expectedPriceId: "price_founding",
           expectedLivemode: true,
         }),
       ).toThrow(BillingConfigurationError);

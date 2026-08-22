@@ -1,5 +1,5 @@
 import type { SubscriptionStatus } from "@/generated/prisma/enums";
-import { configuredBillingPriceIds } from "@/lib/billing-plans";
+import { configuredBillingPriceId } from "@/lib/billing-plans";
 import { getDb } from "@/lib/db";
 
 export type BillingAccessRecord = {
@@ -23,7 +23,7 @@ export type BillingAccess =
 
 export function evaluateBillingAccess(
   subscription: BillingAccessRecord | null,
-  configuredPriceIds: ReadonlySet<string>,
+  configuredPriceId: string,
 ): BillingAccess {
   if (!subscription) {
     return {
@@ -37,7 +37,7 @@ export function evaluateBillingAccess(
   if (
     subscription.status !== "ACTIVE" ||
     !subscription.stripePriceId ||
-    !configuredPriceIds.has(subscription.stripePriceId)
+    subscription.stripePriceId !== configuredPriceId
   ) {
     return {
       ok: false,
@@ -56,9 +56,9 @@ export function evaluateBillingAccess(
 export async function getSiteBillingAccess(
   siteId: string,
 ): Promise<BillingAccess> {
-  let configuredPriceIds: Set<string>;
+  let configuredPriceId: string;
   try {
-    configuredPriceIds = configuredBillingPriceIds();
+    configuredPriceId = configuredBillingPriceId();
   } catch {
     return {
       ok: false,
@@ -77,7 +77,7 @@ export async function getSiteBillingAccess(
       stripeCustomerId: true,
     },
   });
-  return evaluateBillingAccess(subscription, configuredPriceIds);
+  return evaluateBillingAccess(subscription, configuredPriceId);
 }
 
 export function billingAccessFailureResponse(
