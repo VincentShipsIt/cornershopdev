@@ -97,10 +97,12 @@ describe("Restofront founding Stripe price", () => {
     }
   });
 
-  it("derives expected mode only from an explicit Stripe secret mode", () => {
+  it("derives expected mode from standard and restricted Stripe API keys", () => {
     expect(stripeLivemodeForSecret("sk_live_example")).toBe(true);
+    expect(stripeLivemodeForSecret("rk_live_example")).toBe(true);
     expect(stripeLivemodeForSecret("sk_test_example")).toBe(false);
-    expect(() => stripeLivemodeForSecret("rk_live_example")).toThrow(
+    expect(stripeLivemodeForSecret("rk_test_example")).toBe(false);
+    expect(() => stripeLivemodeForSecret("pk_live_example")).toThrow(
       BillingConfigurationError,
     );
   });

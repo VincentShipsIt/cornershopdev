@@ -11,6 +11,7 @@ import {
   type FirstCustomerProductionManifest,
 } from "@/lib/first-customer-evidence";
 import { getDb } from "@/lib/db";
+import { isStripeLiveApiKey } from "@/lib/billing-plans";
 import {
   evidenceDigest,
   integrationUrlDigest,
@@ -682,7 +683,7 @@ function assertProductionConfiguration(
   ) {
     throw new VerificationFailure("production_database_invalid");
   }
-  if (!stripeKey.startsWith("sk_live_") || !priceId.startsWith("price_")) {
+  if (!isStripeLiveApiKey(stripeKey) || !priceId.startsWith("price_")) {
     throw new VerificationFailure("live_stripe_configuration_required");
   }
   const publicUrl = new URL(manifest.publicUrl);

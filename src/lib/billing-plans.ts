@@ -118,11 +118,22 @@ export function validateRestofrontFoundingPrice(
   }
 }
 
+const STRIPE_LIVE_KEY_PREFIXES = ["sk_live_", "rk_live_"] as const;
+const STRIPE_TEST_KEY_PREFIXES = ["sk_test_", "rk_test_"] as const;
+
+export function isStripeLiveApiKey(secret: string | undefined): boolean {
+  return STRIPE_LIVE_KEY_PREFIXES.some((prefix) => secret?.startsWith(prefix));
+}
+
+export function isStripeTestApiKey(secret: string | undefined): boolean {
+  return STRIPE_TEST_KEY_PREFIXES.some((prefix) => secret?.startsWith(prefix));
+}
+
 export function stripeLivemodeForSecret(
   secret: string | undefined,
 ): boolean {
-  if (secret?.startsWith("sk_live_")) return true;
-  if (secret?.startsWith("sk_test_")) return false;
+  if (isStripeLiveApiKey(secret)) return true;
+  if (isStripeTestApiKey(secret)) return false;
   throw new BillingConfigurationError("STRIPE_SECRET_KEY is not configured");
 }
 
