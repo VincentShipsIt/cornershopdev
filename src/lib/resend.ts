@@ -4,8 +4,6 @@ import {
   firstCustomerTestModeEnabled,
 } from "@/lib/first-customer-test-mode";
 
-export { emailReplyTo, emailSender } from "@/lib/email-identity";
-
 let resend: Resend | undefined;
 
 export function getResend(): Resend {

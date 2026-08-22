@@ -9,10 +9,9 @@ import { z } from "zod";
 import { configuredSuperadminEmails } from "@/lib/superadmin-config";
 import { getDb } from "@/lib/db";
 import { sameJsonValue } from "@/lib/evidence-digests";
-import {
-  inspectPublicLink,
-} from "@/lib/importer";
-import { emailReplyTo, emailSender, getResend } from "@/lib/resend";
+import { inspectPublicLink } from "@/lib/importer";
+import { emailReplyTo, emailSender } from "@/lib/email-identity";
+import { getResend } from "@/lib/resend";
 import {
   buildSourceMonitoringDiff,
   type MonitoringSuggestionInput,
@@ -27,14 +26,8 @@ import {
   DraftRevisionConflictError,
   type PersistableSiteDraft,
 } from "@/lib/site-persistence";
-import {
-  projectSiteDraft,
-  siteDraftRelations,
-} from "@/lib/sites";
-import {
-  crawlSiteSource,
-  generateDraftForVertical,
-} from "@/lib/site-pipeline";
+import { projectSiteDraft, siteDraftRelations } from "@/lib/sites";
+import { crawlSiteSource, generateDraftForVertical } from "@/lib/site-pipeline";
 import {
   businessHoursSchema,
   catalogSectionSchema,
@@ -315,10 +308,7 @@ export async function executeSourceMonitoringRun(context: {
   if (!site) throw new Error("Source monitoring site not found");
   const current = projectSiteDraft(site).draft as PersistableSiteDraft;
   const extracted = await crawlSiteSource(context.sourceUrl, context.vertical);
-  const proposed = await generateDraftForVertical(
-    extracted,
-    context.vertical,
-  );
+  const proposed = await generateDraftForVertical(extracted, context.vertical);
   const linkUrls = [
     ...new Set([
       ...current.integrations.map((link) => link.url),
@@ -573,10 +563,7 @@ export async function reviewSourceMonitoringSuggestion(input: {
       }
       const loaded = projectSiteDraft(site);
       const currentDraft = loaded.draft as PersistableSiteDraft;
-      const currentValue = monitoringFieldValue(
-        currentDraft,
-        suggestion.field,
-      );
+      const currentValue = monitoringFieldValue(currentDraft, suggestion.field);
       if (!sameJsonValue(currentValue, suggestion.currentValue)) {
         throw new SourceMonitoringConflictError();
       }
@@ -750,7 +737,9 @@ async function applySuggestionValue(
     const updated = await transaction.site.update({
       where: { id: siteId },
       data: {
-        businessHours: businessHoursSchema.parse(value) as Prisma.InputJsonValue,
+        businessHours: businessHoursSchema.parse(
+          value,
+        ) as Prisma.InputJsonValue,
         draftRevision: { increment: 1 },
       },
       select: { draftRevision: true },
@@ -830,14 +819,16 @@ function integrationType(value: string): IntegrationType {
 function imageProvenance(value: string | null | undefined) {
   if (!value) return null;
   return value.replaceAll("-", "_").toUpperCase() as
-    | "OFFICIAL"
-    | "OWNER"
-    | "PERMISSIONED_UGC";
+    "OFFICIAL" | "OWNER" | "PERMISSIONED_UGC";
 }
 
 async function createReviewAudit(
   transaction: Prisma.TransactionClient,
-  suggestion: { id: string; runId: string; field: SourceMonitorSuggestionField },
+  suggestion: {
+    id: string;
+    runId: string;
+    field: SourceMonitorSuggestionField;
+  },
   input: {
     siteId: string;
     actor: { id: string; email: string; role: "owner" | "operator" };

@@ -1,4 +1,4 @@
-import { emailReplyTo, emailSender } from "@/lib/resend";
+import { emailReplyTo, emailSender } from "@/lib/email-identity";
 import { resolveVerticalConfig } from "@/lib/verticals/registry";
 import type { VerticalId } from "@/lib/verticals/types";
 

@@ -14,7 +14,8 @@ import {
   type OperatorAlertKind,
   safeAlertText,
 } from "@/lib/operator-alert-policy";
-import { emailSender, getResend } from "@/lib/resend";
+import { emailSender } from "@/lib/email-identity";
+import { getResend } from "@/lib/resend";
 
 export type CaptureOperatorAlertInput = {
   kind: OperatorAlertKind;
@@ -97,10 +98,7 @@ async function deliverOperatorAlert(id: string): Promise<AlertDeliveryOutcome> {
       status: "PENDING",
       attempts: { lt: OPERATOR_ALERT_MAX_ATTEMPTS },
       nextAttemptAt: { lte: now },
-      OR: [
-        { deliveryLeaseUntil: null },
-        { deliveryLeaseUntil: { lt: now } },
-      ],
+      OR: [{ deliveryLeaseUntil: null }, { deliveryLeaseUntil: { lt: now } }],
     },
     data: { deliveryLeaseToken: leaseToken, deliveryLeaseUntil: leaseUntil },
   });
@@ -134,7 +132,9 @@ async function deliverOperatorAlert(id: string): Promise<AlertDeliveryOutcome> {
           subject: `[Cornershopdev] ${alert.title}`,
           html: alertEmailHtml(alert),
         },
-        { headers: { "Idempotency-Key": `operator-alert-${alert.fingerprint}` } },
+        {
+          headers: { "Idempotency-Key": `operator-alert-${alert.fingerprint}` },
+        },
       ),
     );
     if (error) throw new Error(error.message);
@@ -248,7 +248,10 @@ function alertEmailHtml(alert: {
 
 function alertFailureCode(error: unknown): string {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
-  if (message.includes("operator_alert_emails") || message.includes("resend_api_key")) {
+  if (
+    message.includes("operator_alert_emails") ||
+    message.includes("resend_api_key")
+  ) {
     return "configuration_missing";
   }
   if (message.includes("rate") || message.includes("429")) {
