@@ -4,14 +4,14 @@ import type {
 } from "@/generated/prisma/enums";
 import {
   billingPlanForPrice,
-  configuredBillingPlans,
+  configuredBillingPlan,
   type BillingPlanId,
 } from "@/lib/billing-plans";
 
 const DAY_MS = 24 * 60 * 60_000;
 
 export type MonitoringEntitlement =
-  | { active: true; plan: BillingPlanId; cadenceDays: 7 | 30 }
+  | { active: true; plan: BillingPlanId; cadenceDays: 30 }
   | {
       active: false;
       reason:
@@ -43,7 +43,7 @@ export function monitoringEntitlement(
   try {
     plan = billingPlanForPrice(
       input.stripePriceId,
-      configuredBillingPlans(env),
+      configuredBillingPlan(env),
     );
   } catch {
     plan = null;
@@ -52,7 +52,7 @@ export function monitoringEntitlement(
   return {
     active: true,
     plan: plan.id,
-    cadenceDays: plan.id === "growth" ? 7 : 30,
+    cadenceDays: 30,
   };
 }
 

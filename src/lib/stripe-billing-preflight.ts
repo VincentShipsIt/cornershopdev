@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type Stripe from "stripe";
 import {
-  configuredBillingPlans,
+  configuredBillingPlan,
   RESTOFRONT_FOUNDING_PLAN_ID,
   RESTOFRONT_FOUNDING_PRICE,
   stripeLivemodeForSecret,
@@ -28,9 +28,7 @@ export async function preflightRestofrontBilling(input: {
     throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
   }
 
-  const plan = configuredBillingPlans(environment)[
-    RESTOFRONT_FOUNDING_PLAN_ID
-  ];
+  const plan = configuredBillingPlan(environment);
   const price = await input.stripe.prices.retrieve(plan.priceId, {
     expand: ["product"],
   });

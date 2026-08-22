@@ -105,13 +105,13 @@ export const foodRetailMarketing = {
   pricing: {
     eyebrow: "Launch after evidence",
     headline: "A maintained local storefront.",
-    copy: "Pricing and checkout remain private until the domain, sender and production configuration are verified.",
+    copy: "The one $49 founding offer becomes claimable after the domain, sender and production configuration are verified. Local currency is shown at checkout.",
     plans: [
       {
-        name: "Private pilot",
-        price: "Invite only",
-        cadence: "",
-        copy: "For independently verified food retailers during the bounded pilot.",
+        name: "Founding",
+        price: "$49",
+        cadence: "/month",
+        copy: "One maintained, mobile-first food-retail website on the business's own domain.",
         features: [
           "Mobile-first product ranges",
           "Existing preorder and delivery links",
@@ -119,7 +119,7 @@ export const foodRetailMarketing = {
           "Sourced allergen labels only",
         ],
         featured: true,
-        badge: "Not publicly launched",
+        badge: "Founding offer",
       },
     ],
   },

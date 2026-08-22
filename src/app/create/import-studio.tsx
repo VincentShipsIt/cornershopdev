@@ -94,7 +94,7 @@ const verticalCopy = {
     emptyStatePrompt:
       "Start with a website or salon name. No account is needed to see the result.",
     claimHint:
-      "Review the services and existing links, then choose a plan to keep this site current.",
+      "Review the services and existing links, then claim the founding plan to keep this site current.",
     catalogStage: "Recover services and prices",
     // No ordering or delivery: a salon has nothing to deliver, which is the same
     // reason `beauty/providers.ts` ships no hints for those integration types.

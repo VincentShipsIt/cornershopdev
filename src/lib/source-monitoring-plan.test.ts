@@ -5,50 +5,37 @@ import {
   nextMonitoringTime,
 } from "@/lib/source-monitoring-plan";
 
-const env = {
-  STRIPE_STARTER_PRICE_ID: "price_starter",
-  STRIPE_GROWTH_PRICE_ID: "price_growth",
-};
+const env = { STRIPE_PRICE_ID: "price_founding" };
 
 describe("source monitoring plan cadence", () => {
-  it("checks Starter monthly and Growth weekly", () => {
+  it("checks the founding plan monthly", () => {
     expect(
       monitoringEntitlement(
         {
           status: "ACTIVE",
-          stripePriceId: "price_starter",
+          stripePriceId: "price_founding",
           siteStatus: "LIVE",
         },
         env,
       ),
-    ).toEqual({ active: true, plan: "starter", cadenceDays: 30 });
-    expect(
-      monitoringEntitlement(
-        {
-          status: "ACTIVE",
-          stripePriceId: "price_growth",
-          siteStatus: "CLAIMED",
-        },
-        env,
-      ),
-    ).toEqual({ active: true, plan: "growth", cadenceDays: 7 });
+    ).toEqual({ active: true, plan: "founding", cadenceDays: 30 });
   });
 
   it("stops paused, canceled, past-due, and unknown subscriptions", () => {
     for (const input of [
       {
         status: "CANCELED" as const,
-        stripePriceId: "price_starter",
+        stripePriceId: "price_founding",
         siteStatus: "LIVE" as const,
       },
       {
         status: "PAST_DUE" as const,
-        stripePriceId: "price_growth",
+        stripePriceId: "price_retired",
         siteStatus: "LIVE" as const,
       },
       {
         status: "ACTIVE" as const,
-        stripePriceId: "price_starter",
+        stripePriceId: "price_founding",
         siteStatus: "PAUSED" as const,
       },
       {

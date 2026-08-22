@@ -321,7 +321,7 @@ async function verifyProductionEvidence(
       manifest.stripe.checkoutSessionId &&
     provisioningMetadata.stripeSubscriptionId === manifest.stripe.subscriptionId &&
     provisioningMetadata.stripePriceId ===
-      process.env.STRIPE_STARTER_PRICE_ID &&
+      process.env.STRIPE_PRICE_ID &&
     provisioningMetadata.paymentStatus === "paid" &&
     invitation?.checkoutSessionId === manifest.stripe.checkoutSessionId &&
     Boolean(invitation?.acceptedAt) &&
@@ -489,7 +489,7 @@ async function verifyProductionEvidence(
 }
 
 async function inspectStripe(manifest: FirstCustomerProductionManifest) {
-  const priceId = process.env.STRIPE_STARTER_PRICE_ID!;
+  const priceId = process.env.STRIPE_PRICE_ID!;
   const stripe = getStripe();
   const checkout = await stripe.checkout.sessions.retrieve(
     manifest.stripe.checkoutSessionId,
@@ -523,7 +523,7 @@ async function inspectStripe(manifest: FirstCustomerProductionManifest) {
     paidInvoice?.id === invoiceId &&
     paidInvoice.livemode &&
     paidInvoice.status === "paid" &&
-    paidInvoice.currency.toLowerCase() === "eur" &&
+    paidInvoice.currency.toLowerCase() === "usd" &&
     paidInvoice.subtotal === 4_900 &&
     (paidInvoice.total_discount_amounts ?? []).reduce(
       (total, discount) => total + discount.amount,
@@ -539,7 +539,7 @@ async function inspectStripe(manifest: FirstCustomerProductionManifest) {
       price.active &&
       activeProduct &&
       price.id === priceId &&
-      price.currency.toLowerCase() === "eur" &&
+      price.currency.toLowerCase() === "usd" &&
       price.unit_amount === 4_900 &&
       price.tax_behavior === "exclusive" &&
       price.recurring?.interval === "month" &&
@@ -550,7 +550,7 @@ async function inspectStripe(manifest: FirstCustomerProductionManifest) {
       checkout.mode === "subscription" &&
       checkout.status === "complete" &&
       checkout.payment_status === "paid" &&
-      checkout.currency?.toLowerCase() === "eur" &&
+      checkout.currency?.toLowerCase() === "usd" &&
       checkout.amount_subtotal === 4_900 &&
       (checkout.total_details?.amount_discount ?? 0) === 0 &&
       checkoutSubscription === manifest.stripe.subscriptionId &&
@@ -671,7 +671,7 @@ function assertProductionConfiguration(
 ) {
   const databaseUrl = process.env.DATABASE_URL;
   const stripeKey = process.env.STRIPE_SECRET_KEY;
-  const priceId = process.env.STRIPE_STARTER_PRICE_ID;
+  const priceId = process.env.STRIPE_PRICE_ID;
   const evidencePublicKey = process.env.FIRST_CUSTOMER_EVIDENCE_PUBLIC_KEY;
   if (!databaseUrl || !stripeKey || !priceId || !evidencePublicKey) {
     throw new VerificationFailure("production_configuration_missing");

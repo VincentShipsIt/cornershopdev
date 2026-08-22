@@ -1,6 +1,6 @@
-export const BILLING_PLAN_IDS = ["starter", "growth"] as const;
+export const RESTOFRONT_FOUNDING_PLAN_ID = "founding" as const;
 
-export type BillingPlanId = (typeof BILLING_PLAN_IDS)[number];
+export type BillingPlanId = typeof RESTOFRONT_FOUNDING_PLAN_ID;
 
 type BillingEnvironment = Record<string, string | undefined>;
 
@@ -9,9 +9,8 @@ export type BillingPlan = {
   priceId: string;
 };
 
-export const RESTOFRONT_FOUNDING_PLAN_ID = "starter" as const;
 export const RESTOFRONT_FOUNDING_PRICE = {
-  currency: "eur",
+  currency: "usd",
   unitAmount: 4_900,
   interval: "month",
   intervalCount: 1,
@@ -41,48 +40,26 @@ export class BillingConfigurationError extends Error {
   }
 }
 
-export function configuredBillingPlans(
+export function configuredBillingPlan(
   env: BillingEnvironment = process.env,
-): Record<BillingPlanId, BillingPlan> {
-  const starter = validatePriceId(
-    env.STRIPE_STARTER_PRICE_ID,
-    "STRIPE_STARTER_PRICE_ID",
-  );
-  const growth = validatePriceId(
-    env.STRIPE_GROWTH_PRICE_ID,
-    "STRIPE_GROWTH_PRICE_ID",
-  );
-  if (starter === growth) {
-    throw new BillingConfigurationError(
-      "Starter and Growth must use different Stripe prices",
-    );
-  }
+): BillingPlan {
   return {
-    starter: { id: "starter", priceId: starter },
-    growth: { id: "growth", priceId: growth },
+    id: RESTOFRONT_FOUNDING_PLAN_ID,
+    priceId: validatePriceId(env.STRIPE_PRICE_ID, "STRIPE_PRICE_ID"),
   };
 }
 
 export function billingPlanForPrice(
   priceId: string,
-  plans = configuredBillingPlans(),
+  plan = configuredBillingPlan(),
 ): BillingPlan | null {
-  return Object.values(plans).find((plan) => plan.priceId === priceId) ?? null;
+  return plan.priceId === priceId ? plan : null;
 }
 
-export function configuredBillingPriceIds(
+export function configuredBillingPriceId(
   env: BillingEnvironment = process.env,
-): Set<string> {
-  const current = new Set(
-    Object.values(configuredBillingPlans(env)).map((plan) => plan.priceId),
-  );
-  for (const priceId of (env.STRIPE_LEGACY_PRICE_IDS ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)) {
-    current.add(validatePriceId(priceId, "STRIPE_LEGACY_PRICE_IDS"));
-  }
-  return current;
+): string {
+  return configuredBillingPlan(env).priceId;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
-import { configuredBillingPlans } from "@/lib/billing-plans";
+import { configuredBillingPlan } from "@/lib/billing-plans";
 import { getDb } from "@/lib/db";
 import { isDatabaseLoopbackHostname } from "@/lib/environment-isolation";
 import { getRedisClient } from "@/lib/redis";
@@ -144,13 +144,13 @@ function validateStorage(env: Environment): ServiceReadiness | null {
 
 function validateBilling(env: Environment): ServiceReadiness | null {
   try {
-    configuredBillingPlans(env);
+    configuredBillingPlan(env);
   } catch {
     return {
       service: "billing",
       status: "misconfigured",
       message:
-        "Set distinct STRIPE_STARTER_PRICE_ID and STRIPE_GROWTH_PRICE_ID values.",
+        "Set STRIPE_PRICE_ID to the approved founding Stripe price.",
     };
   }
   if (

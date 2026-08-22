@@ -26,7 +26,7 @@ export const beautyMarketing = {
     headline: "Every service, priced and bookable.",
     subheadline:
       "Give us the salon. Get back a mobile-first website with the full service list, durations and prices already inside—and keep the booking system your clients already use.",
-    proofPoints: ["No setup call", "Private preview first", "From $25/month"],
+    proofPoints: ["No setup call", "Private preview first", "$49/month"],
   },
   form: {
     placeholder: "Salon website or name",
@@ -57,7 +57,7 @@ export const beautyMarketing = {
     {
       number: "03",
       title: "Claim it and go live",
-      copy: "Choose a plan, connect the domain, and keep the booking system already taking appointments.",
+      copy: "Claim the founding plan, connect the domain, and keep the booking system already taking appointments.",
     },
   ],
   valueProps: {
@@ -108,33 +108,21 @@ export const beautyMarketing = {
   pricing: {
     eyebrow: "Simple ongoing care",
     headline: "Less than one empty chair.",
-    copy: "Preview first. Pay only when the salon wants to claim and publish it.",
+    copy: "Preview first. Pay only when the salon wants to claim and publish it. Local currency is shown at checkout.",
     plans: [
       {
-        name: "Starter",
-        price: "$25",
+        name: "Founding",
+        price: "$49",
         cadence: "/month",
-        copy: "The always-current essentials for one independent salon.",
+        copy: "One maintained, mobile-first salon website on the business's own domain.",
         features: [
           "Mobile-first website and service list",
           "Existing booking links",
           "Custom domain and SSL",
-          "Monthly source checks",
-        ],
-      },
-      {
-        name: "Growth",
-        price: "$50",
-        cadence: "/month",
-        copy: "For salons that change their offer often and want the work handled.",
-        features: [
-          "Everything in Starter",
-          "Weekly price and hours monitoring",
-          "AI-assisted interior imagery",
-          "Priority human review queue",
+          "Owner editing and source monitoring",
         ],
         featured: true,
-        badge: "Most useful",
+        badge: "Founding offer",
       },
     ],
   },

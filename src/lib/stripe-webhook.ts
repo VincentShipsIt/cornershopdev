@@ -2,11 +2,7 @@ import type Stripe from "stripe";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { normalizeAccountEmail } from "@/lib/account-email";
 import {
-  BILLING_PLAN_IDS,
-  billingPlanForPrice,
-  configuredBillingPlans,
-  configuredBillingPriceIds,
-  RESTOFRONT_FOUNDING_PLAN_ID,
+  configuredBillingPlan,
   RESTOFRONT_FOUNDING_PRICE,
 } from "@/lib/billing-plans";
 import {
@@ -258,22 +254,14 @@ async function provisionCheckout(
 
   const priceId = snapshot.stripePriceId;
   const metadataPlan = session.metadata?.plan;
-  const plans = configuredBillingPlans();
-  const currentPlan = priceId ? billingPlanForPrice(priceId, plans) : null;
-  if (
-    !priceId ||
-    !configuredBillingPriceIds().has(priceId) ||
-    !BILLING_PLAN_IDS.some((planId) => planId === metadataPlan) ||
-    (currentPlan && currentPlan.id !== metadataPlan)
-  ) {
+  const plan = configuredBillingPlan();
+  if (!priceId || priceId !== plan.priceId || metadataPlan !== plan.id) {
     throw new StripeWebhookValidationError("Checkout price is not configured");
   }
   if (
-    metadataPlan === RESTOFRONT_FOUNDING_PLAN_ID &&
-    (session.currency?.toLowerCase() !==
-      RESTOFRONT_FOUNDING_PRICE.currency ||
-      session.amount_subtotal !== RESTOFRONT_FOUNDING_PRICE.unitAmount ||
-      (session.total_details?.amount_discount ?? 0) !== 0)
+    session.currency?.toLowerCase() !== RESTOFRONT_FOUNDING_PRICE.currency ||
+    session.amount_subtotal !== RESTOFRONT_FOUNDING_PRICE.unitAmount ||
+    (session.total_details?.amount_discount ?? 0) !== 0
   ) {
     throw new StripeWebhookValidationError(
       "Checkout total does not match the founding offer",

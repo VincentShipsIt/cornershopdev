@@ -61,7 +61,7 @@ describe("claim checkout idempotency", () => {
   it("binds the exact Stripe expiry to the idempotency key", () => {
     const input = {
       invitationId: "invite_1",
-      plan: "growth" as const,
+      plan: "founding" as const,
       previousSessionId: "cs_previous",
       expiresAt: 1_800_000_000,
     };

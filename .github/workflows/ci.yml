@@ -169,8 +169,7 @@ jobs:
       OUTREACH_LEGAL_CONTROLLER: Corner Shop Labs Ltd
       STRIPE_SECRET_KEY: sk_test_first_customer_e2e
       STRIPE_WEBHOOK_SECRET: whsec_first_customer_e2e
-      STRIPE_STARTER_PRICE_ID: price_first_customer_e2e
-      STRIPE_GROWTH_PRICE_ID: price_growth_e2e_access_only
+      STRIPE_PRICE_ID: price_founding_e2e
       STRIPE_API_BASE_URL: http://127.0.0.1:4100
       RESEND_API_KEY: re_test_first_customer_e2e
       RESEND_API_BASE_URL: http://127.0.0.1:4100

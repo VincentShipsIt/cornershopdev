@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 const port = 4100;
 const appOrigin = "http://127.0.0.1:3100";
 const webhookSecret = "whsec_first_customer_e2e";
-const priceId = "price_first_customer_e2e";
+const priceId = "price_founding_e2e";
 const ownerEmail = "owner@restaurant.example.test";
 const messages: Array<Record<string, unknown>> = [];
 const sessions = new Map<string, Record<string, unknown>>();
@@ -36,7 +36,7 @@ Bun.serve({
         object: "price",
         active: true,
         livemode: false,
-        currency: "eur",
+        currency: "usd",
         unit_amount: 4_900,
         type: "recurring",
         tax_behavior: "exclusive",
@@ -55,6 +55,9 @@ Bun.serve({
     }
     if (url.pathname === "/v1/checkout/sessions" && request.method === "POST") {
       const form = new URLSearchParams(await request.text());
+      if (form.get("adaptive_pricing[enabled]") !== "true") {
+        return stripeJson({ error: { message: "adaptive_pricing_required" } }, 400);
+      }
       const id = `cs_test_first_customer_${++counter}`;
       const invitationId = form.get("client_reference_id")!;
       const siteSlug = form.get("metadata[siteSlug]")!;
@@ -67,8 +70,13 @@ Bun.serve({
         mode: "subscription",
         status: "open",
         payment_status: "unpaid",
-        currency: "eur",
+        currency: "usd",
         amount_subtotal: 4_900,
+        adaptive_pricing: { enabled: true },
+        presentment_details: {
+          presentment_amount: 4_300,
+          presentment_currency: "eur",
+        },
         allow_promotion_codes: false,
         automatic_tax: { enabled: true },
         billing_address_collection: "required",
@@ -77,7 +85,7 @@ Bun.serve({
         client_reference_id: invitationId,
         customer_email: ownerEmail,
         customer_details: { email: ownerEmail },
-        metadata: { claimInvitationId: invitationId, siteSlug, plan: "starter" },
+        metadata: { claimInvitationId: invitationId, siteSlug, plan: "founding" },
         subscription,
         success_url: successUrl,
         url: `http://127.0.0.1:${port}/checkout/${id}`,
@@ -109,7 +117,7 @@ Bun.serve({
       const session = sessions.get(checkoutPage[1]!);
       if (!session) return new Response("Not found", { status: 404 });
       return new Response(
-        `<!doctype html><html><body><h1>Stripe test-mode founding checkout</h1><p>€49.00 per month</p><form method="post" action="/checkout/${checkoutPage[1]}/pay"><button type="submit">Pay €49 in test mode</button></form></body></html>`,
+        `<!doctype html><html><body><h1>Stripe test-mode founding checkout</h1><p>€43.00 local presentment for the $49 monthly plan</p><form method="post" action="/checkout/${checkoutPage[1]}/pay"><button type="submit">Pay €43 in test mode</button></form></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     }

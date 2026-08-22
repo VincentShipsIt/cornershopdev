@@ -18,10 +18,9 @@ import { restaurantMarketing } from "@/lib/verticals/restaurant/marketing";
 import type { VerticalId } from "@/lib/verticals/types";
 
 /**
- * Launch sells one founding plan. Checkout still uses STRIPE_STARTER_PRICE_ID.
- * Growth remains in configuredBillingPlans for legacy webhook mapping.
+ * Launch sells one founding plan through the single configured STRIPE_PRICE_ID.
  */
-const CLAIM_CHECKOUT_PLAN_ID = "starter" as const;
+const CLAIM_CHECKOUT_PLAN_ID = "founding" as const;
 const foundingPlan = restaurantMarketing.pricing.plans[0];
 
 export function ClaimPanel({

@@ -15,8 +15,7 @@ const siteId = `monitor-site-${randomUUID()}`;
 const organizationId = `monitor-org-${randomUUID()}`;
 const userId = `monitor-user-${randomUUID()}`;
 const slug = `monitor-${randomUUID()}`;
-const previousStarter = process.env.STRIPE_STARTER_PRICE_ID;
-const previousGrowth = process.env.STRIPE_GROWTH_PRICE_ID;
+const previousPrice = process.env.STRIPE_PRICE_ID;
 
 let db: ReturnType<typeof import("@/lib/db").getDb>;
 let dispatchDueSourceMonitoring: typeof import("@/lib/source-monitoring").dispatchDueSourceMonitoring;
@@ -25,8 +24,7 @@ let SourceMonitoringConflictError: typeof import("@/lib/source-monitoring").Sour
 
 describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
   beforeAll(async () => {
-    process.env.STRIPE_STARTER_PRICE_ID = "price_monitor_starter";
-    process.env.STRIPE_GROWTH_PRICE_ID = "price_monitor_growth";
+    process.env.STRIPE_PRICE_ID = "price_monitor_founding";
     const database = await import("@/lib/db");
     const monitoring = await import("@/lib/source-monitoring");
     db = database.getDb();
@@ -81,7 +79,7 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
           create: {
             stripeCustomerId: `cus_${randomUUID()}`,
             stripeSubscriptionId: `sub_${randomUUID()}`,
-            stripePriceId: "price_monitor_starter",
+            stripePriceId: "price_monitor_founding",
             status: "ACTIVE",
             organizationId,
           },
@@ -95,10 +93,9 @@ describe.skipIf(!enabled)("source monitoring PostgreSQL persistence", () => {
     await db.organization.deleteMany({ where: { id: organizationId } });
     await db.user.deleteMany({ where: { id: userId } });
     restoreEnvironment(
-      "STRIPE_STARTER_PRICE_ID",
-      previousStarter,
+      "STRIPE_PRICE_ID",
+      previousPrice,
     );
-    restoreEnvironment("STRIPE_GROWTH_PRICE_ID", previousGrowth);
   });
 
   test("claims one durable run for one schedule slot", async () => {

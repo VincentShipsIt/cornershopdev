@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { domainToASCII } from "node:url";
 import type Stripe from "stripe";
+import type { BillingPlanId } from "@/lib/billing-plans";
 import {
   CLAIM_INVITATION_MAX_RETRIES,
   isClaimInvitationDeliveryRetryable,
@@ -109,7 +110,7 @@ export function claimInvitationTokenForOutreach(
 
 export function buildClaimCheckoutIdempotencyKey(input: {
   invitationId: string;
-  plan: "starter" | "growth";
+  plan: BillingPlanId;
   previousSessionId: string | null;
   expiresAt: number;
 }): string {

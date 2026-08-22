@@ -277,8 +277,7 @@ bounded structured catalog candidates. Hero enhancement is skipped.
 - `WORKFLOW_POSTGRES_URL`
 
 With workflow execution enabled, each server instance participates in a
-database-backed due dispatcher. Active Starter subscriptions are checked every
-30 days and Growth subscriptions every 7 days. The due slot and run state are
+database-backed due dispatcher. Active founding subscriptions are checked every 30 days. The due slot and run state are
 persisted before a bounded Workflow run starts, so restarts and duplicate
 dispatchers are safe. Past-due/canceled subscriptions and paused sites perform
 no source fetches. Findings enter the owner/operator review queue and never
@@ -326,10 +325,7 @@ generation endpoint.
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_STARTER_PRICE_ID`
-- `STRIPE_GROWTH_PRICE_ID`
-- `STRIPE_LEGACY_PRICE_IDS` (optional comma-separated access allowlist used
-  during price migrations; never offered in Checkout)
+- `STRIPE_PRICE_ID` (the one USD 49 monthly founding Price)
 
 Configure the webhook endpoint as:
 
@@ -341,9 +337,8 @@ Test-mode verification, the exact event allowlist, retry/replay behavior,
 Customer Portal setup, and the production activation blockers are documented
 in [`docs/operations/stripe-billing.md`](docs/operations/stripe-billing.md).
 Checkout requires a valid hashed claim invitation; a public preview URL alone
-cannot authorize billing or ownership. Launch Checkout offers only the Starter
-founding subscription; the deployment-time Stripe preflight proves that it is
-the active, tax-exclusive EUR 49.00 monthly Price.
+cannot authorize billing or ownership. Launch Checkout offers only the founding subscription; the deployment-time Stripe
+preflight proves that it is the active, tax-exclusive USD 49.00 monthly Price.
 
 ### Owner sign-in
 

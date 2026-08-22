@@ -53,8 +53,7 @@ describe.skipIf(!enabled)(
     beforeAll(async () => {
       process.env.DATABASE_URL ||= "postgresql://unused.invalid/cornershopdev";
       process.env.NEXT_PUBLIC_APP_URL = "http://127.0.0.1:3000";
-      process.env.STRIPE_STARTER_PRICE_ID = "price_first_customer_test";
-      process.env.STRIPE_GROWTH_PRICE_ID = "price_growth_test";
+      process.env.STRIPE_PRICE_ID = "price_founding_test";
       process.env.STRIPE_SECRET_KEY = "sk_test_first_customer";
       process.env.CLAIM_TOKEN_SECRET =
         "first-customer-test-only-secret-at-least-32-characters";
@@ -346,7 +345,7 @@ describe.skipIf(!enabled)(
       await claim.bindClaimInvitationToCheckout({
         invitation: authorized,
         stripeCheckoutSessionId: checkoutSessionId,
-        stripePriceId: "price_first_customer_test",
+        stripePriceId: "price_founding_test",
         checkoutAttempt: 1,
         checkoutReturnTokenHash: evidenceDigest("test-return-token"),
         checkoutReturnExpiresAt: new Date(Date.now() + 30 * 60_000),
@@ -382,7 +381,7 @@ describe.skipIf(!enabled)(
         status: "CLAIMED",
         subscription: {
           status: "ACTIVE",
-          stripePriceId: "price_first_customer_test",
+          stripePriceId: "price_founding_test",
         },
       });
       expect(claimed.organization?.memberships).toHaveLength(1);
@@ -597,7 +596,7 @@ function subscriptionFixture(): Stripe.Subscription {
         {
           id: `si_${suffix}`,
           current_period_end: Math.floor(Date.now() / 1_000) + 30 * 24 * 60 * 60,
-          price: { id: "price_first_customer_test" },
+          price: { id: "price_founding_test" },
         },
       ],
     },
@@ -613,7 +612,7 @@ function checkoutFixture(
     mode: "subscription",
     status: "complete",
     payment_status: "paid",
-    currency: "eur",
+    currency: "usd",
     amount_subtotal: 4_900,
     total_details: {
       amount_discount: 0,
@@ -627,7 +626,7 @@ function checkoutFixture(
     metadata: {
       claimInvitationId: invitationId,
       siteSlug: slug,
-      plan: "starter",
+      plan: "founding",
     },
     subscription,
   } as unknown as Stripe.Checkout.Session;

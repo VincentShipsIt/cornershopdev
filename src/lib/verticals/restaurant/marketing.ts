@@ -43,7 +43,7 @@ export const restaurantMarketing = {
     headline: "Your front door, always current.",
     subheadline:
       "Give us the restaurant. Get back a polished mobile-first website with the menu already inside—and keep the booking and ordering tools that already work.",
-    proofPoints: ["No setup call", "Private preview first", "€49/month"],
+    proofPoints: ["No setup call", "Private preview first", "$49/month"],
   },
   form: {
     placeholder: "Restaurant website or name",
@@ -136,11 +136,11 @@ export const restaurantMarketing = {
   pricing: {
     eyebrow: "The founding offer",
     headline: "Less than one empty table.",
-    copy: "Preview first. Pay only when the restaurant wants to claim and publish it. One plan, no setup fee. VAT is added when applicable.",
+    copy: "Preview first. Pay only when the restaurant wants to claim and publish it. One plan, no setup fee. Local currency is shown at checkout; VAT is added when applicable.",
     plans: [
       {
         name: "Founding",
-        price: "€49",
+        price: "$49",
         cadence: "/month",
         copy: "One maintained, mobile-first restaurant website on the restaurant's own domain.",
         features: [
