@@ -44,6 +44,12 @@ export type CustomerHostDecision =
       locale: string | null;
     }
   | {
+      kind: "blog";
+      slug: string;
+      versionId: string;
+      articleSlug: string | null;
+    }
+  | {
       kind: "public_api";
       slug: string;
       versionId: string;
@@ -166,6 +172,14 @@ export function decideCustomerHostRoute(input: {
       versionId,
     };
   }
+  if (surface.kind === "blog") {
+    return {
+      kind: "blog",
+      slug: exact.site.slug,
+      versionId,
+      articleSlug: surface.articleSlug ?? null,
+    };
+  }
   return {
     kind: "page",
     slug: exact.site.slug,
@@ -220,6 +234,14 @@ export function decidePlatformSubdomainRoute(input: {
       kind: "opengraph",
       slug: input.site.slug,
       versionId,
+    };
+  }
+  if (surface.kind === "blog") {
+    return {
+      kind: "blog",
+      slug: input.site.slug,
+      versionId,
+      articleSlug: surface.articleSlug ?? null,
     };
   }
   return {
@@ -320,10 +342,19 @@ function customerSurface(
   | { kind: "page"; locale: string | null }
   | { kind: "public_api" }
   | { kind: "opengraph" }
+  | { kind: "blog"; articleSlug?: string }
   | { kind: "blocked" } {
   if (pathname === "/") return { kind: "page", locale: null };
   const locale = pathname.match(/^\/([a-z]{2})\/?$/i)?.[1];
   if (locale) return { kind: "page", locale: locale.toLowerCase() };
+  // The site's blog index and article pages. Only the exact two shapes below
+  // are public; anything deeper (`/blog/a/b`) stays blocked.
+  const blogIndex = pathname.match(/^\/blog\/?$/i);
+  if (blogIndex) return { kind: "blog" };
+  const blogArticle = pathname.match(/^\/blog\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/i);
+  if (blogArticle?.[1]) {
+    return { kind: "blog", articleSlug: blogArticle[1].toLowerCase() };
+  }
   if (pathname === "/api/analytics/events") return { kind: "public_api" };
   if (
     pathname ===

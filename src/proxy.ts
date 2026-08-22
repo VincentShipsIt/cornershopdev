@@ -209,9 +209,14 @@ function respondForCustomerHost(
   if (decision.kind === "public_api" || decision.kind === "opengraph") {
     return NextResponse.next({ request: { headers: upstreamHeaders } });
   }
-  const destination = decision.locale
-    ? `/preview/${decision.slug}/${decision.locale}`
-    : `/preview/${decision.slug}`;
+  const destination =
+    decision.kind === "blog"
+      ? decision.articleSlug
+        ? `/preview/${decision.slug}/blog/${decision.articleSlug}`
+        : `/preview/${decision.slug}/blog`
+      : decision.locale
+        ? `/preview/${decision.slug}/${decision.locale}`
+        : `/preview/${decision.slug}`;
   const response = NextResponse.rewrite(new URL(destination, request.url), {
     request: { headers: upstreamHeaders },
   });

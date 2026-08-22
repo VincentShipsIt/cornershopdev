@@ -1,6 +1,68 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { NextRequest } from "next/server";
-import { proxy } from "@/proxy";
+
+type PlatformSiteRow = {
+  id: string;
+  slug: string;
+  status: "PROSPECT" | "PREVIEW_READY" | "CLAIMED" | "LIVE" | "PAUSED";
+  publishedSiteVersionId: string | null;
+  publishedSiteVersion: {
+    id: string;
+    siteId: string;
+    publishedAt: Date | null;
+  } | null;
+  domains: Array<{ hostname: string; verified: boolean }>;
+} | null;
+
+let platformSite: PlatformSiteRow = null;
+let customDomainRows: unknown[] = [];
+
+mock.module("@/lib/db", () => ({
+  getDb: () => ({
+    site: {
+      findUnique: async ({ where }: { where: { slug: string } }) =>
+        platformSite && platformSite.slug === where.slug ? platformSite : null,
+    },
+    domain: {
+      findMany: async () => customDomainRows,
+    },
+  }),
+}));
+
+const { proxy } = await import("@/proxy");
+
+const SLUG = "le-petit-meunier";
+const VERSION_ID = "sv_1";
+
+function claimedSite(
+  overrides: Partial<NonNullable<PlatformSiteRow>> = {},
+): NonNullable<PlatformSiteRow> {
+  return {
+    id: "site_1",
+    slug: SLUG,
+    status: "CLAIMED",
+    publishedSiteVersionId: VERSION_ID,
+    publishedSiteVersion: {
+      id: VERSION_ID,
+      siteId: "site_1",
+      publishedAt: new Date("2026-08-01T00:00:00Z"),
+    },
+    domains: [],
+    ...overrides,
+  };
+}
+
+function request(pathname: string, hostname: string): NextRequest {
+  return new NextRequest(`http://localhost${pathname}`, {
+    headers: { "x-forwarded-host": hostname },
+  });
+}
+
+async function rewriteDestination(response: Response): Promise<string | null> {
+  const destination = response.headers.get("x-middleware-rewrite");
+  if (!destination) return null;
+  return new URL(destination, "http://localhost").pathname;
+}
 
 describe("health endpoint routing", () => {
   it("bypasses custom-domain resolution for container-local probes", async () => {
@@ -23,5 +85,150 @@ describe("health endpoint routing", () => {
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
     expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+});
+
+describe("platform-subdomain routing", () => {
+  beforeEach(() => {
+    platformSite = null;
+    customDomainRows = [];
+  });
+
+  it("serves a claimed site at its platform subdomain without DNS action", async () => {
+    platformSite = claimedSite();
+
+    const response = await proxy(request("/", `${SLUG}.restofront.com`));
+
+    expect(await rewriteDestination(response)).toBe(`/preview/${SLUG}`);
+    expect(response.headers.get("x-cornershop-site-version")).toBe(VERSION_ID);
+  });
+
+  it("rewrites localized platform paths onto the preview locale route", async () => {
+    platformSite = claimedSite();
+
+    const response = await proxy(request("/fr", `${SLUG}.restofront.com`));
+
+    expect(await rewriteDestination(response)).toBe(`/preview/${SLUG}/fr`);
+  });
+
+  it("marks the rewritten request with the serving slug and version", async () => {
+    platformSite = claimedSite();
+
+    const response = await proxy(request("/", `${SLUG}.restofront.com`));
+
+    expect(
+      response.headers.get(
+        "x-middleware-request-x-cornershop-live-site-slug",
+      ),
+    ).toBe(SLUG);
+    expect(
+      response.headers.get(
+        "x-middleware-request-x-cornershop-live-site-version",
+      ),
+    ).toBe(VERSION_ID);
+  });
+
+  it("never forwards caller-supplied live-site markers", async () => {
+    platformSite = null;
+
+    const response = await proxy(
+      new NextRequest("http://localhost/", {
+        headers: {
+          "x-forwarded-host": `${SLUG}.restofront.com`,
+          "x-cornershop-live-site-slug": "someone-elses-site",
+          "x-cornershop-live-site-version": "sv_fake",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(
+      response.headers.get(
+        "x-middleware-request-x-cornershop-live-site-slug",
+      ),
+    ).toBeNull();
+  });
+
+  it("404s unpublished prospects so previews stay private", async () => {
+    platformSite = claimedSite({
+      status: "PROSPECT",
+      publishedSiteVersionId: null,
+      publishedSiteVersion: null,
+    });
+
+    const response = await proxy(request("/", `${SLUG}.restofront.com`));
+
+    expect(response.status).toBe(404);
+    expect(await rewriteDestination(response)).toBeNull();
+  });
+
+  it("404s paused sites", async () => {
+    platformSite = claimedSite({ status: "PAUSED" });
+
+    const response = await proxy(request("/", `${SLUG}.restofront.com`));
+
+    expect(response.status).toBe(404);
+  });
+
+  it("blocks owner and operator surfaces on customer hosts", async () => {
+    platformSite = claimedSite();
+
+    for (const pathname of ["/dashboard", "/claim/x", "/api/auth/session"]) {
+      const response = await proxy(request(pathname, `${SLUG}.restofront.com`));
+      expect(response.status).toBe(404);
+    }
+  });
+
+  it("keeps the two public write endpoints reachable", async () => {
+    platformSite = claimedSite();
+
+    const analytics = await proxy(
+      request("/api/analytics/events", `${SLUG}.restofront.com`),
+    );
+    expect(analytics.headers.get("x-middleware-next")).toBe("1");
+
+    const booking = await proxy(
+      request(
+        `/api/sites/${SLUG}/booking-requests`,
+        `${SLUG}.restofront.com`,
+      ),
+    );
+    expect(booking.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("301s to the canonical verified custom domain once it exists", async () => {
+    platformSite = claimedSite({
+      status: "LIVE",
+      domains: [{ hostname: "lepetitmeunier.fr", verified: true }],
+    });
+
+    const response = await proxy(request("/", `${SLUG}.restofront.com`));
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe("https://lepetitmeunier.fr/");
+    expect(await rewriteDestination(response)).toBeNull();
+  });
+
+  it("falls back to the factory apex as a platform parent", async () => {
+    platformSite = claimedSite();
+
+    const response = await proxy(request("/", `${SLUG}.cornershop.dev`));
+
+    expect(await rewriteDestination(response)).toBe(`/preview/${SLUG}`);
+  });
+
+  it("keeps reserved operator labels under a niche domain closed", async () => {
+    const response = await proxy(request("/", "api.restofront.com"));
+
+    expect(response.status).toBe(404);
+    expect(await rewriteDestination(response)).toBeNull();
+  });
+
+  it("does not mint nested platform hosts", async () => {
+    const response = await proxy(
+      request("/", `foo.${SLUG}.restofront.com`),
+    );
+
+    expect(response.status).toBe(404);
   });
 });
