@@ -3,8 +3,8 @@ import {
   assertFirstCustomerTestModeSafety,
   firstCustomerTestModeEnabled,
 } from "@/lib/first-customer-test-mode";
-import { resolveVerticalConfig } from "@/lib/verticals/registry";
-import type { VerticalId } from "@/lib/verticals/types";
+
+export { emailReplyTo, emailSender } from "@/lib/email-identity";
 
 let resend: Resend | undefined;
 
@@ -92,58 +92,4 @@ export async function sendBoundedResendEmail(
   } finally {
     clearTimeout(timeout);
   }
-}
-
-/**
- * Reads EMAIL_FROM and EMAIL_REPLY_TO. Deliberately an index signature rather
- * than those two names: `process.env` is a weak type under bun-types, so a
- * type listing only optional keys it does not declare is not assignable to it.
- * Same shape `platform-readiness` uses for the same reason.
- */
-type EmailEnvironment = Record<string, string | undefined>;
-
-/**
- * The niche's declared sending identity, or null when it has not launched one.
- * An absent vertical — a caller with no site in hand — resolves the same way, so
- * the environment fallback below covers both without a second branch.
- */
-function nicheEmail(vertical: VerticalId | null | undefined) {
-  return vertical ? resolveVerticalConfig(vertical).marketing.email : null;
-}
-
-/**
- * The address a message goes out as, resolved from the niche that owns the site
- * it concerns rather than from one platform-wide identity. A restaurant bought
- * Restofrontapp, so Restofrontapp is who writes to it — the same rule the wordmark
- * already follows, applied to the envelope.
- *
- * EMAIL_FROM survives only as the floor for a niche with no verified sending
- * domain of its own. The resend.dev fallback beneath it reaches a developer
- * machine and nothing else; a blank value counts as unset, because Resend
- * rejects an empty `from` outright and a half-filled `.env` should not break
- * sign-in.
- */
-export function emailSender(
-  vertical?: VerticalId | null,
-  environment: EmailEnvironment = process.env,
-): string {
-  return (
-    nicheEmail(vertical)?.from ||
-    environment.EMAIL_FROM ||
-    "Cornershopdev <onboarding@resend.dev>"
-  );
-}
-
-/**
- * Where a reply lands. Senders are send-only subdomains nobody reads, so without
- * this a recipient who hits reply is talking to a black hole. Undefined leaves
- * the header off, which is the prior behaviour.
- */
-export function emailReplyTo(
-  vertical?: VerticalId | null,
-  environment: EmailEnvironment = process.env,
-): string | undefined {
-  return (
-    nicheEmail(vertical)?.replyTo || environment.EMAIL_REPLY_TO || undefined
-  );
 }

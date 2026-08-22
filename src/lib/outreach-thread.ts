@@ -1,5 +1,5 @@
 import { Vertical } from "@/generated/prisma/enums";
-import { emailSender } from "@/lib/resend";
+import { emailSender } from "@/lib/email-identity";
 import type { VerticalId } from "@/lib/verticals/types";
 
 export const OUTREACH_THREAD_PREFIX = "lead:";
