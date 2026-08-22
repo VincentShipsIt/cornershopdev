@@ -201,9 +201,13 @@ describe("bounded restaurant theme selection", () => {
       confidence: 1,
       rendererVersion: 1,
     });
+    const nextAlternative = automatic.alternatives.find(
+      (id) => id !== selected.themeId,
+    );
+    expect(nextAlternative).toBeDefined();
     expect(selected.alternatives).toEqual([
       automatic.themeId,
-      automatic.alternatives.find((id) => id !== selected.themeId),
+      nextAlternative!,
     ]);
     expect(selected.tokens).toEqual(
       getRestaurantThemeManifest("terroir-editorial").safeDefaultTokens,
