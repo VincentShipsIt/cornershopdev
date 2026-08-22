@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { isStripeLiveApiKey } from "@/lib/billing-plans";
 import { fingerprintFirstCustomerIdentifier } from "@/lib/first-customer-evidence";
 import { getStripe } from "@/lib/stripe";
 
@@ -138,7 +139,7 @@ function parseArguments(args: string[]): Mode {
 function assertProductionConfiguration() {
   const databaseUrl = process.env.DATABASE_URL;
   const stripeKey = process.env.STRIPE_SECRET_KEY;
-  if (!databaseUrl || !stripeKey?.startsWith("sk_live_")) {
+  if (!databaseUrl || !isStripeLiveApiKey(stripeKey)) {
     throw new Error("live_configuration_required");
   }
   const database = new URL(databaseUrl);

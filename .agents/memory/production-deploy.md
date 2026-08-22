@@ -12,10 +12,10 @@ Factory repo is `cornershopdev/cornershop.dev`; studio apps live in private
 `shipshitdev`) are connected to `cornershopdev/pro` — pushes to `master`
 deploy Pulse and the Servizo marketing app.
 
-Production deploy for v0.4.0 is blocked on **Stripe**: SSM
-`/shipshit/production/cornershopdev/STRIPE_SECRET_KEY` is a 26-character
-placeholder (`sk_live_…`), not a real secret. Stripe returns 401; live
-`operator:preflight-stripe` fails until a full live key is stored.
+Production deploy for v0.4.0 was blocked on **Stripe**: SSM
+`/shipshit/production/cornershopdev/STRIPE_SECRET_KEY` must be a live standard
+or restricted API key (`sk_live_…` or `rk_live_…`). Publishable keys (`pk_…`)
+are rejected.
 
 ## 2026-08-22 — Restofront inbound receiving verified
 
