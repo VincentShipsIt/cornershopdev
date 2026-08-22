@@ -34,5 +34,6 @@ customer and not a new Prisma vertical yet.
 bun run operator:import:servizo
 bun run operator:import:servizo --execute
 bun run operator:claim:servizo --email owner@example.com
-bun run operator:claim:servizo --email owner@example.com --execute
+bun run operator:claim:servizo --email owner@example.com --execute \
+  --evidence-ref private-crm:servizo-portable-demo-owner-consent
 ```

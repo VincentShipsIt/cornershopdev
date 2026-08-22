@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { NextResponse } from "next/server";
 import {
   isCornershopProClient,
+  isTrustedCornershopProSite,
   resolveProOwnerAppUrl,
 } from "@/lib/cornershop-pro";
 import { findSiteView } from "@/lib/sites";
@@ -15,9 +16,9 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!isCornershopProClient(slug)) notFound();
 
   const site = await findSiteView(slug);
-  if (!site) notFound();
+  if (!site || !isTrustedCornershopProSite(slug, site.draft)) notFound();
 
-  const appUrl = resolveProOwnerAppUrl(site.draft.integrations);
+  const appUrl = resolveProOwnerAppUrl(slug, site.draft.integrations);
   if (!appUrl) notFound();
 
   return NextResponse.redirect(appUrl, 307);

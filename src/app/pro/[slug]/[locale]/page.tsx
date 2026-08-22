@@ -5,6 +5,7 @@ import { SiteRenderer } from "@/components/site-renderer";
 import {
   CORNERSHOP_PRO_BRAND,
   isCornershopProClient,
+  isTrustedCornershopProSite,
   proSiteBasePath,
 } from "@/lib/cornershop-pro";
 import { FACTORY_BRAND } from "@/lib/brand";
@@ -34,7 +35,7 @@ export async function generateMetadata({
   const site = versionId
     ? await getCachedPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
-  if (!site) notFound();
+  if (!site || !isTrustedCornershopProSite(slug, site.draft)) notFound();
   const isLiveSurface = versionId !== null;
   const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();
@@ -70,7 +71,7 @@ export default async function ProLocalizedSitePage({ params }: PageProps) {
   const site = versionId
     ? await getCachedPublishedSiteView(slug, versionId)
     : await findSiteView(slug);
-  if (!site) notFound();
+  if (!site || !isTrustedCornershopProSite(slug, site.draft)) notFound();
   const isLiveSurface = versionId !== null;
   const locales = getSiteLocales(site.draft);
   if (!locales.includes(locale)) notFound();

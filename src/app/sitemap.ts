@@ -26,12 +26,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
   if (origin === restaurantOrigin) {
     routes.push({
-      url: `${origin}/themes`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.8,
-    });
-    routes.push({
       url: `${origin}/themes/restaurant`,
       lastModified: new Date(),
       changeFrequency: "monthly",
