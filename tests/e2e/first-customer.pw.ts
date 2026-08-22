@@ -13,7 +13,9 @@ test("food-retail factory preview issues ownership and starts the one-plan check
 }) => {
   const claimPage = await page.goto(`/claim/${e2e.foodSlug}`);
   expect(claimPage?.status()).toBe(200);
-  await expect(page.getByText(e2e.foodName)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: e2e.foodName, exact: true }),
+  ).toBeVisible();
 
   const invitation = await request.post("/api/claim-invitations", {
     headers: { Origin: "http://127.0.0.1:3100" },
