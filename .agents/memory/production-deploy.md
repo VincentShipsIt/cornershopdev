@@ -1,9 +1,18 @@
 ---
-last_verified: 2026-08-20
+last_verified: 2026-08-22
 status: durable
 ---
 
 # Production deploy — mechanism and gotchas
+
+## 2026-08-22 — Restofront inbound receiving verified
+
+`restofront.com` is registered in Resend with receiving enabled (sending
+disabled on the root; outbound stays on `send.restofront.com`). Route 53 carries
+the root MX (`inbound-smtp.eu-west-1.amazonaws.com`) and DKIM TXT. Resend
+domain status is `verified`, so `operator:preflight-outreach` should pass the
+`senderAndReplyDomains` gate once a release ships. Cut the next production
+release to deploy; no further code change is required for this gate.
 
 ## 2026-08-21 — Caddy validation blocker fixed, v0.3.1 released
 

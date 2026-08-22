@@ -144,6 +144,17 @@ verified receiving-capable reply-to domain declared by its vertical config.
 An unlaunched vertical with no niche domain/sender remains discoverable and
 previewable but cannot deliver mail.
 
+Restofront uses two Resend domains on the same niche:
+
+| Resend domain | DNS | Role |
+|---------------|-----|------|
+| `send.restofront.com` | `send.send.restofront.com` MX/TXT + DKIM | Outbound `from` |
+| `restofront.com` | root MX + `resend._domainkey` TXT; receiving only | Inbound `replyTo` (`vincent@restofront.com`) |
+
+Inbound mail is webhook-driven (`email.received`); there is no IMAP mailbox.
+Operator threads live in the admin outreach panel and in Postgres, not in a
+traditional mail client.
+
 Before approving a release, run the read-only preflight inside the exact
 candidate image with its deployment env:
 
